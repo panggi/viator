@@ -1,0 +1,190 @@
+Viator
+Copyright (c) 2026 Panggi Libersa Jasri Akadol
+
+This product is licensed under the MIT License.
+
+================================================================================
+THIRD-PARTY DEPENDENCIES
+================================================================================
+
+Viator includes the following third-party dependencies. We gratefully
+acknowledge the work of their authors and contributors.
+
+--------------------------------------------------------------------------------
+Core Runtime
+--------------------------------------------------------------------------------
+
+tokio (MIT OR Apache-2.0)
+  High-performance async runtime for Rust
+  https://tokio.rs
+
+bytes (MIT)
+  Efficient byte buffer handling
+  https://github.com/tokio-rs/bytes
+
+--------------------------------------------------------------------------------
+Data Structures
+--------------------------------------------------------------------------------
+
+dashmap (MIT)
+  Concurrent hash map implementation
+  https://github.com/xacrimon/dashmap
+
+crossbeam-skiplist (MIT OR Apache-2.0)
+crossbeam-queue (MIT OR Apache-2.0)
+crossbeam-channel (MIT OR Apache-2.0)
+  Lock-free data structures
+  https://github.com/crossbeam-rs/crossbeam
+
+parking_lot (MIT OR Apache-2.0)
+  Faster synchronization primitives
+  https://github.com/Amanieu/parking_lot
+
+smallvec (MIT OR Apache-2.0)
+  Small vector optimization
+  https://github.com/servo/rust-smallvec
+
+--------------------------------------------------------------------------------
+Cryptography & Security
+--------------------------------------------------------------------------------
+
+argon2 (MIT OR Apache-2.0)
+  Argon2 password hashing
+  https://github.com/RustCrypto/password-hashes
+
+sha1 (MIT OR Apache-2.0)
+sha2 (MIT OR Apache-2.0)
+  SHA-1 and SHA-2 hash functions
+  https://github.com/RustCrypto/hashes
+
+hmac (MIT OR Apache-2.0)
+  HMAC message authentication
+  https://github.com/RustCrypto/MACs
+
+subtle (BSD-3-Clause)
+  Constant-time comparison
+  https://github.com/dalek-cryptography/subtle
+
+zeroize (MIT OR Apache-2.0)
+  Secure memory wiping
+  https://github.com/RustCrypto/utils
+
+--------------------------------------------------------------------------------
+Serialization & Encoding
+--------------------------------------------------------------------------------
+
+serde (MIT OR Apache-2.0)
+serde_json (MIT OR Apache-2.0)
+  Serialization framework
+  https://serde.rs
+
+crc32fast (MIT OR Apache-2.0)
+  Fast CRC32 checksums
+  https://github.com/srijs/rust-crc32fast
+
+crc64 (BSD-3-Clause)
+  CRC64-ECMA checksums
+  https://github.com/badboy/crc64-rs
+
+lzf (MIT)
+  LZF compression/decompression
+  https://github.com/badboy/lzf-rs
+
+integer-encoding (MIT)
+  Variable-length integer encoding
+  https://github.com/dermesser/integer-encoding-rs
+
+xxhash-rust (MIT OR Apache-2.0)
+  XXH3 hashing algorithm
+  https://github.com/DoumanAsh/xxhash-rust
+
+--------------------------------------------------------------------------------
+Scripting
+--------------------------------------------------------------------------------
+
+mlua (MIT)
+  Lua 5.4 bindings for Rust
+  https://github.com/khvzak/mlua
+
+--------------------------------------------------------------------------------
+Search & Vectors
+--------------------------------------------------------------------------------
+
+instant-distance (MIT OR Apache-2.0)
+  HNSW algorithm implementation
+  https://github.com/InstantDomain/instant-distance
+
+jsonpath-rust (MIT)
+  JSONPath query implementation
+  https://github.com/besok/jsonpath-rust
+
+--------------------------------------------------------------------------------
+Utilities
+--------------------------------------------------------------------------------
+
+tracing (MIT)
+tracing-subscriber (MIT)
+  Structured logging and diagnostics
+  https://github.com/tokio-rs/tracing
+
+thiserror (MIT OR Apache-2.0)
+anyhow (MIT OR Apache-2.0)
+  Error handling utilities
+  https://github.com/dtolnay/thiserror
+
+chrono (MIT OR Apache-2.0)
+  Date and time handling
+  https://github.com/chronotope/chrono
+
+rand (MIT OR Apache-2.0)
+  Random number generation
+  https://github.com/rust-random/rand
+
+bitflags (MIT OR Apache-2.0)
+  Type-safe bitflags
+  https://github.com/bitflags/bitflags
+
+memchr (Unlicense OR MIT)
+  SIMD-accelerated byte searching
+  https://github.com/BurntSushi/memchr
+
+fnv (MIT OR Apache-2.0)
+  Fowler-Noll-Vo hash function
+  https://github.com/servo/rust-fnv
+
+--------------------------------------------------------------------------------
+Memory Allocation
+--------------------------------------------------------------------------------
+
+tikv-jemallocator (MIT OR Apache-2.0)
+  jemalloc memory allocator bindings
+  https://github.com/tikv/jemallocator
+
+--------------------------------------------------------------------------------
+Optional: TLS
+--------------------------------------------------------------------------------
+
+tokio-rustls (MIT OR Apache-2.0)
+rustls-pemfile (MIT OR Apache-2.0)
+  Memory-safe TLS implementation
+  https://github.com/rustls/rustls
+
+--------------------------------------------------------------------------------
+Optional: Telemetry
+--------------------------------------------------------------------------------
+
+opentelemetry (Apache-2.0)
+opentelemetry_sdk (Apache-2.0)
+opentelemetry-otlp (Apache-2.0)
+tracing-opentelemetry (MIT)
+  OpenTelemetry observability
+  https://opentelemetry.io
+
+================================================================================
+TRADEMARKS
+================================================================================
+
+Redis is a registered trademark of Redis Ltd. Viator is not affiliated with
+or endorsed by Redis Ltd.
+
+The Rust logo and wordmark are trademarks of the Rust Foundation.

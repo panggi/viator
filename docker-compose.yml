@@ -1,0 +1,84 @@
+# Viator Docker Compose Configuration
+# Usage: docker-compose up -d
+
+services:
+  viator:
+    build: .
+    image: viator:latest
+    container_name: viator
+    ports:
+      - "6379:6379"
+    volumes:
+      - viator-data:/data
+      - ./viator.conf:/etc/viator/viator.conf:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/viator", "--version"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  # Optional: Viator with persistence enabled
+  viator-persistent:
+    build: .
+    image: viator:latest
+    container_name: viator-persistent
+    ports:
+      - "6380:6379"
+    volumes:
+      - viator-persistent-data:/data
+    command: ["--appendonly", "--dir", "/data"]
+    restart: unless-stopped
+    profiles:
+      - persistent
+
+  # Optional: Viator cluster (3 nodes)
+  viator-node-1:
+    build: .
+    image: viator:latest
+    container_name: viator-node-1
+    ports:
+      - "7001:6379"
+    volumes:
+      - viator-cluster-1:/data
+    restart: unless-stopped
+    profiles:
+      - cluster
+
+  viator-node-2:
+    build: .
+    image: viator:latest
+    container_name: viator-node-2
+    ports:
+      - "7002:6379"
+    volumes:
+      - viator-cluster-2:/data
+    restart: unless-stopped
+    profiles:
+      - cluster
+
+  viator-node-3:
+    build: .
+    image: viator:latest
+    container_name: viator-node-3
+    ports:
+      - "7003:6379"
+    volumes:
+      - viator-cluster-3:/data
+    restart: unless-stopped
+    profiles:
+      - cluster
+
+volumes:
+  viator-data:
+  viator-persistent-data:
+  viator-cluster-1:
+  viator-cluster-2:
+  viator-cluster-3:

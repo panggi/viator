@@ -1,0 +1,51 @@
+[Unit]
+Description=Viator - High-performance key-value store
+Documentation=https://github.com/panggi/viator
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/viator --config /etc/viator/viator.conf
+ExecStop=/bin/kill -SIGTERM $MAINPID
+ExecReload=/bin/kill -SIGHUP $MAINPID
+
+# Process management
+TimeoutStartSec=30
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+
+# User and group
+User=viator
+Group=viator
+
+# Directories
+WorkingDirectory=/var/lib/viator
+RuntimeDirectory=viator
+StateDirectory=viator
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/viator /var/log/viator
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+
+# Resource limits
+LimitNOFILE=65535
+LimitNPROC=65535
+
+# Capabilities
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

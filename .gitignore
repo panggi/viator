@@ -1,0 +1,51 @@
+# Build artifacts
+/target
+*.rlib
+*.rmeta
+
+# Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Credentials and secrets
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# Data files
+*.vdb
+*.aof
+dump.vdb
+appendonly.aof
+
+# Logs
+*.log
+logs/
+
+# Coverage
+coverage/
+*.profraw
+*.profdata
+tarpaulin-report.html
+
+# Fuzzing artifacts
+fuzz/artifacts/
+fuzz/corpus/
+
+# Local configuration
+.local/
+*.local.toml
+.serena/

@@ -1,0 +1,187 @@
+[package]
+name = "viator"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Panggi Libersa Jasri Akadol"]
+description = "A high-performance, memory-safe key-value store"
+license = "MIT"
+repository = "https://github.com/panggi/viator"
+keywords = ["viator", "database", "cache", "key-value"]
+categories = ["database", "caching", "network-programming"]
+
+[features]
+default = ["server", "persistence"]
+server = ["tokio/net", "tokio/signal"]
+persistence = ["crc32fast"]
+tls = ["tokio-rustls", "rustls-pemfile"]
+telemetry = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "tracing-opentelemetry"]
+cluster = []
+sentinel = []
+
+[dependencies]
+# Async runtime - tokio is the industry standard
+tokio = { version = "1.43", features = ["rt-multi-thread", "io-util", "sync", "time", "macros", "fs"] }
+
+# Zero-copy byte handling
+bytes = "1.9"
+
+# Fast byte searching (SIMD-optimized)
+memchr = "2.7"
+
+# High-performance concurrent data structures
+dashmap = "6.1"
+crossbeam-skiplist = "0.1"
+crossbeam-queue = "0.3"
+crossbeam-channel = "0.5"
+
+# Better synchronization primitives
+parking_lot = "0.12"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Logging and tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Serialization for RDB/config
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Time handling
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+
+# CRC for RDB checksums
+crc32fast = { version = "1.4", optional = true }
+crc64 = "2.0"
+
+# LZF decompression for RDB
+lzf = "1.0"
+
+# SHA1 for Lua script hashing (Redis compatibility)
+sha1 = "0.10"
+
+# TLS support
+tokio-rustls = { version = "0.26", optional = true }
+rustls-pemfile = { version = "2.2", optional = true }
+
+# OpenTelemetry (optional, enable with --features telemetry)
+opentelemetry = { version = "0.27", optional = true }
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"], optional = true }
+opentelemetry-otlp = { version = "0.27", features = ["tonic"], optional = true }
+tracing-opentelemetry = { version = "0.28", optional = true }
+
+# Memory allocator - jemalloc for production
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.6"
+
+# Small string optimization
+smallvec = { version = "1.13", features = ["union", "const_generics"] }
+
+# Random number generation (for RANDOMKEY, etc.)
+rand = "0.8"
+
+# Unix process control (daemonize)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# Fnv hash for small keys
+fnv = "1.0"
+
+# Bitflags for command flags
+bitflags = "2.6"
+
+# SHA-256 hashing
+sha2 = "0.10"
+
+# XXH3 hashing for DIGEST command (Redis 8.4+)
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+
+# Security
+argon2 = "0.5"                    # Password hashing (Argon2id)
+subtle = "2.6"                    # Constant-time comparison
+zeroize = { version = "1.8", features = ["derive"] }  # Secure memory wiping
+hmac = "0.12"                     # HMAC for data integrity
+
+# Integer encoding
+integer-encoding = "4.0"
+
+# Lua scripting
+mlua = { version = "0.10", features = ["lua54", "vendored", "send"] }
+
+# Probabilistic data structures (Bloom, Cuckoo filters)
+# Note: We implement these from scratch for better Redis compatibility
+
+# JSON path queries
+jsonpath-rust = "0.7"
+
+# Vector similarity search (HNSW algorithm)
+instant-distance = "0.6"
+
+[dev-dependencies]
+# Testing
+tokio-test = "0.4"
+criterion = { version = "0.5", features = ["async_tokio"] }
+proptest = "1.5"
+test-case = "3.3"
+pretty_assertions = "1.4"
+
+# Fuzzing
+arbitrary = { version = "1.4", features = ["derive"] }
+
+[[bin]]
+name = "viator"
+path = "src/main.rs"
+
+[[bin]]
+name = "viator-benchmark"
+path = "src/bin/viator-benchmark.rs"
+
+[[bin]]
+name = "viator-check-vdb"
+path = "src/bin/viator-check-vdb.rs"
+
+[[bin]]
+name = "viator-check-aof"
+path = "src/bin/viator-check-aof.rs"
+
+[[bin]]
+name = "viator-cli"
+path = "src/bin/viator-cli.rs"
+
+[[bin]]
+name = "viator-sentinel"
+path = "src/bin/viator-sentinel.rs"
+
+[[bench]]
+name = "protocol"
+harness = false
+
+[[bench]]
+name = "storage"
+harness = false
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+[profile.bench]
+lto = "thin"
+codegen-units = 1
+
+[lints.rust]
+unsafe_code = "warn"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
+cargo = "warn"
+# Allow some pedantic lints that are too strict
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
