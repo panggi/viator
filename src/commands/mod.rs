@@ -6,6 +6,7 @@ mod bitmap;
 mod blocking;
 mod cluster;
 mod connection;
+pub mod dispatch;
 mod executor;
 mod geo;
 mod hashes;

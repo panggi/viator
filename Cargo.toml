@@ -18,6 +18,8 @@ tls = ["tokio-rustls", "rustls-pemfile"]
 telemetry = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "tracing-opentelemetry"]
 cluster = []
 sentinel = []
+# Linux io_uring for high-performance async I/O (Linux 5.1+ only)
+io-uring = []
 
 [dependencies]
 # Async runtime - tokio is the industry standard
@@ -89,6 +91,9 @@ libc = "0.2"
 
 # Fnv hash for small keys
 fnv = "1.0"
+
+# Perfect hash for command dispatch
+phf = { version = "0.11", features = ["macros"] }
 
 # Bitflags for command flags
 bitflags = "2.6"
@@ -164,10 +169,17 @@ name = "storage"
 harness = false
 
 [profile.release]
-lto = "thin"
-codegen-units = 1
-panic = "abort"
+lto = "fat"              # Full LTO for maximum optimization
+codegen-units = 1        # Single codegen unit for better inlining
+panic = "abort"          # No unwinding overhead
 strip = "symbols"
+opt-level = 3            # Maximum optimization
+debug = false
+
+[profile.release-with-debug]
+inherits = "release"
+debug = true
+strip = false
 
 [profile.bench]
 lto = "thin"

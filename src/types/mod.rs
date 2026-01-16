@@ -3,6 +3,7 @@
 //! This module defines the fundamental types used throughout Viator,
 //! a high-performance key-value store implementation.
 
+pub mod compact;
 mod key;
 mod list;
 mod set;

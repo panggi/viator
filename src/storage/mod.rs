@@ -7,6 +7,7 @@
 
 mod db;
 mod expiry;
+pub mod sharded;
 
 pub use db::{
     Database, Db, DbEntry, DbStats, MemoryManager, MemoryStatus, ServerAuth, ServerStats,

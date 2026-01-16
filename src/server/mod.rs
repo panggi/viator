@@ -7,6 +7,7 @@ pub mod cluster;
 pub mod cluster_bus;
 pub mod config;
 mod connection;
+pub mod io_uring;
 pub mod metrics;
 pub mod pubsub;
 pub mod rate_limit;
@@ -145,6 +146,12 @@ impl Server {
                 result = listener.accept() => {
                     match result {
                         Ok((socket, peer_addr)) => {
+                            // Configure socket for low-latency
+                            // TCP_NODELAY disables Nagle's algorithm for immediate sends
+                            if let Err(e) = socket.set_nodelay(true) {
+                                warn!("Failed to set TCP_NODELAY: {}", e);
+                            }
+
                             // Check rate limit first
                             if !self.rate_limiter.allow_connection(peer_addr.ip()) {
                                 warn!("Rate limited connection from {}", peer_addr);
@@ -183,6 +190,7 @@ impl Server {
                                     server.executor.clone(),
                                     server.database.clone(),
                                     server.metrics.clone(),
+                                    server.buffer_pool.clone(),
                                 );
 
                                 if let Err(e) = connection.run().await {

@@ -5,6 +5,7 @@ use super::metrics::ServerMetrics;
 use super::pubsub::PubSubMessage;
 use crate::Result;
 use crate::commands::{CommandExecutor, ParsedCommand};
+use crate::pool::BufferPool;
 use crate::protocol::{Frame, RespParser};
 use crate::storage::Database;
 use bytes::{Bytes, BytesMut};
@@ -17,14 +18,19 @@ use tokio::sync::broadcast;
 use tracing::{debug, trace};
 
 /// Buffer size for reading from socket.
-const READ_BUFFER_SIZE: usize = 8 * 1024;
+/// 64KB aligns with typical TCP receive window sizes for better throughput.
+const READ_BUFFER_SIZE: usize = 64 * 1024;
 
 /// Maximum number of responses to batch before flushing.
 /// This significantly improves throughput for pipelined requests.
-const WRITE_BATCH_SIZE: usize = 64;
+const WRITE_BATCH_SIZE: usize = 128;
 
 /// Maximum bytes to buffer before forcing a flush.
-const WRITE_BUFFER_HIGH_WATER: usize = 64 * 1024;
+/// 128KB allows batching more responses before syscall.
+const WRITE_BUFFER_HIGH_WATER: usize = 128 * 1024;
+
+/// Initial write buffer capacity.
+const WRITE_BUFFER_INITIAL: usize = 16 * 1024;
 
 /// A connection to a single client.
 pub struct Connection {
@@ -43,6 +49,8 @@ pub struct Connection {
     database: Arc<Database>,
     /// Server metrics for performance tracking
     metrics: Arc<ServerMetrics>,
+    /// Buffer pool for read buffer reuse
+    buffer_pool: Arc<BufferPool>,
     /// Write buffer
     write_buffer: BytesMut,
     /// Number of pending writes (for batching)
@@ -58,6 +66,7 @@ impl Connection {
         executor: Arc<CommandExecutor>,
         database: Arc<Database>,
         metrics: Arc<ServerMetrics>,
+        buffer_pool: Arc<BufferPool>,
     ) -> Self {
         debug!("New connection from {} (id={})", peer_addr, id);
 
@@ -73,7 +82,8 @@ impl Connection {
             executor,
             database,
             metrics,
-            write_buffer: BytesMut::with_capacity(4096),
+            buffer_pool,
+            write_buffer: BytesMut::with_capacity(WRITE_BUFFER_INITIAL),
             pending_writes: 0,
         }
     }
