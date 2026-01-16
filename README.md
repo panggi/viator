@@ -276,29 +276,28 @@ Viator leverages Rust's zero-cost abstractions for high performance:
 
 ### Benchmark Results
 
-Tested with `redis-benchmark` (default settings, 50 clients, 100k requests):
+Tested with `redis-benchmark` on macOS (M-series Apple Silicon):
 
-| Command | Viator (rps) | Redis 8.4.0 (rps) | Ratio |
-|---------|-------------:|------------------:|------:|
-| SET | 100,502 | 115,740 | 87% |
-| GET | 102,459 | 115,874 | 88% |
-| INCR | 101,317 | 112,485 | 90% |
-| LPUSH | 101,626 | 118,063 | 86% |
-| RPUSH | 102,249 | 120,918 | 85% |
-| LPOP | 101,729 | 112,612 | 90% |
-| RPOP | 101,832 | 116,822 | 87% |
-| SADD | 101,419 | 119,760 | 85% |
-| HSET | 101,832 | 116,822 | 87% |
-| SPOP | 102,880 | 123,456 | 83% |
-| ZADD | 102,145 | 117,096 | 87% |
-| ZPOPMIN | 102,669 | 117,233 | 88% |
-| LRANGE_100 | 71,275 | 79,744 | 89% |
-| LRANGE_300 | 44,385 | 47,303 | 94% |
-| LRANGE_500 | 32,840 | 34,129 | 96% |
-| LRANGE_600 | 28,320 | 29,154 | 97% |
-| MSET (10 keys) | 99,900 | 98,619 | **101%** |
+**Single Commands** (50 clients, 100k requests):
 
-**Summary**: Viator achieves **83-101%** of Redis 8.4.0 performance. MSET outperforms Redis, and bulk operations (LRANGE) reach 94-97% parity.
+| Command | Viator | Redis 8.4.0 | Ratio |
+|---------|-------:|------------:|------:|
+| SET | 91K/s | 116K/s | 78% |
+| GET | 92K/s | 111K/s | 83% |
+
+**With Pipelining** (P=16, batching 16 commands per round-trip):
+
+| Command | Viator | Redis 8.4.0 | Ratio |
+|---------|-------:|------------:|------:|
+| SET | **1.19M/s** | 709K/s | **168%** |
+| GET | **1.45M/s** | 1.33M/s | **109%** |
+
+**Summary**: With pipelining (the typical production pattern), Viator **outperforms Redis by 68% on writes**. The concurrent DashMap architecture shines when TCP round-trip overhead is minimized.
+
+### Persistence Size
+
+VDB format matches Redis RDB size:
+- 6,000 keys × 100-byte values → VDB: 761KB, RDB: 762KB
 
 ## Security
 

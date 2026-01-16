@@ -138,14 +138,24 @@ pub fn cmd_set(
             return Err(CommandError::SyntaxError.into());
         }
 
-        // Get old value (needed for GET option and compare conditions)
-        let old_value = db.get_string(&key)?;
-
-        // Handle KEEPTTL
+        // Handle KEEPTTL validation
         if keepttl && !matches!(expiry, Expiry::Never) {
             return Err(CommandError::SyntaxError.into());
         }
 
+        // Fast path: basic SET without GET/KEEPTTL/compare options
+        let needs_old_value = get || keepttl || !matches!(compare_cond, SetCompareCondition::None);
+
+        if !needs_old_value && !nx && !xx {
+            // Fastest path: SET key value [EX/PX]
+            db.set_fast_with_expiry(key, ViatorValue::string(value), expiry);
+            return Ok(Frame::ok());
+        }
+
+        // Slower path: need to check old value
+        let old_value = db.get_string(&key)?;
+
+        // Handle KEEPTTL
         if keepttl {
             if let Some(pttl) = db.pttl(&key) {
                 if pttl > 0 {
@@ -207,7 +217,7 @@ pub fn cmd_set(
         } else if xx {
             db.set_xx_with_expiry(key, ViatorValue::string(value), expiry)
         } else {
-            db.set_with_expiry(key, ViatorValue::string(value), expiry);
+            db.set_fast_with_expiry(key, ViatorValue::string(value), expiry);
             true
         };
 

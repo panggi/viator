@@ -389,6 +389,30 @@ impl Db {
             .insert(key, StoredValue::with_expiry(value, expiry));
     }
 
+    /// Fast path for SET without expiration.
+    /// Optimized for the common case: SET key value (no options).
+    /// Skips expires cleanup and LRU tracking for better performance.
+    #[inline]
+    pub fn set_fast(&self, key: Key, value: ViatorValue) {
+        self.data.insert(key, StoredValue::new(value));
+    }
+
+    /// Fast path for SET with expiration.
+    /// Only updates data and expires, skips LRU tracking.
+    #[inline]
+    pub fn set_fast_with_expiry(&self, key: Key, value: ViatorValue, expiry: Expiry) {
+        match expiry {
+            Expiry::Never => {
+                self.data.insert(key, StoredValue::new(value));
+            }
+            Expiry::At(ts) => {
+                self.expires.insert(key.clone(), ts);
+                self.data
+                    .insert(key, StoredValue::with_expiry(value, expiry));
+            }
+        }
+    }
+
     /// Set only if key doesn't exist (SETNX).
     pub fn set_nx(&self, key: Key, value: ViatorValue) -> bool {
         self.set_nx_with_expiry(key, value, Expiry::Never)
