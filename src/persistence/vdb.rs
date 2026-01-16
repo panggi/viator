@@ -125,6 +125,128 @@ fn lzf_decompress(compressed: &[u8], expected_len: usize) -> Result<Vec<u8>, &'s
     Ok(output)
 }
 
+/// Compress data using LZF algorithm.
+///
+/// LZF compression uses a simple hash-based approach to find back-references.
+/// Returns None if compression doesn't save space.
+fn lzf_compress(input: &[u8]) -> Option<Vec<u8>> {
+    if input.len() < 4 {
+        return None;
+    }
+
+    let mut output = Vec::with_capacity(input.len());
+    let mut hash_table: [usize; 8192] = [0; 8192];
+    let mut ip = 0; // input position
+    let mut literal_start = 0;
+    let mut literal_len = 0;
+
+    // Hash function for 3-byte sequence
+    let hash = |data: &[u8], pos: usize| -> usize {
+        let v = (data[pos] as usize)
+            | ((data[pos + 1] as usize) << 8)
+            | ((data[pos + 2] as usize) << 16);
+        ((v >> 3) ^ v) & 0x1FFF
+    };
+
+    while ip < input.len() - 2 {
+        let h = hash(input, ip);
+        let ref_pos = hash_table[h];
+        hash_table[h] = ip;
+
+        // Check if we have a match
+        let offset = ip.saturating_sub(ref_pos);
+        if offset > 0 && offset <= 8192 && ref_pos < ip && ip + 3 <= input.len() {
+            // Check for actual match
+            if ref_pos + 2 < input.len()
+                && input[ref_pos] == input[ip]
+                && input[ref_pos + 1] == input[ip + 1]
+                && input[ref_pos + 2] == input[ip + 2]
+            {
+                // Found a match, flush literals first
+                if literal_len > 0 {
+                    let mut remaining = literal_len;
+                    let mut lit_pos = literal_start;
+                    while remaining > 0 {
+                        let chunk = remaining.min(32);
+                        output.push((chunk - 1) as u8);
+                        output.extend_from_slice(&input[lit_pos..lit_pos + chunk]);
+                        lit_pos += chunk;
+                        remaining -= chunk;
+                    }
+                    literal_len = 0;
+                }
+
+                // Find match length
+                let mut match_len = 3;
+                while ip + match_len < input.len()
+                    && ref_pos + match_len < ip
+                    && input[ref_pos + match_len] == input[ip + match_len]
+                    && match_len < 264
+                {
+                    match_len += 1;
+                }
+
+                let back_offset = offset - 1;
+
+                if match_len <= 8 {
+                    // Short match: 3-8 bytes
+                    let ctrl = ((match_len - 2) << 5) | ((back_offset >> 8) & 0x1F);
+                    output.push(ctrl as u8);
+                    output.push((back_offset & 0xFF) as u8);
+                } else {
+                    // Long match: 9+ bytes
+                    output.push((7 << 5) | ((back_offset >> 8) & 0x1F) as u8);
+                    output.push((match_len - 9) as u8);
+                    output.push((back_offset & 0xFF) as u8);
+                }
+
+                ip += match_len;
+                literal_start = ip;
+                continue;
+            }
+        }
+
+        // No match, add to literal run
+        if literal_len == 0 {
+            literal_start = ip;
+        }
+        literal_len += 1;
+        ip += 1;
+    }
+
+    // Handle remaining bytes as literals
+    while ip < input.len() {
+        if literal_len == 0 {
+            literal_start = ip;
+        }
+        literal_len += 1;
+        ip += 1;
+    }
+
+    // Flush remaining literals
+    if literal_len > 0 {
+        let mut remaining = literal_len;
+        let mut lit_pos = literal_start;
+        while remaining > 0 {
+            let chunk = remaining.min(32);
+            output.push((chunk - 1) as u8);
+            output.extend_from_slice(&input[lit_pos..lit_pos + chunk]);
+            lit_pos += chunk;
+            remaining -= chunk;
+        }
+    }
+
+    // Only return compressed data if it's actually smaller
+    if output.len() < input.len() {
+        Some(output)
+    } else {
+        None
+    }
+}
+
+/// Minimum string length to attempt LZF compression (same as Redis)
+const LZF_COMPRESS_MIN_LEN: usize = 20;
+
 /// VDB file magic string
 const VDB_MAGIC: &[u8; 5] = b"VIATR";
 
@@ -466,6 +588,18 @@ impl VdbSaver {
                     self.write_bytes(&bytes)?;
                     return Ok(());
                 }
+            }
+        }
+
+        // Try LZF compression for strings >= 20 bytes
+        if s.len() >= LZF_COMPRESS_MIN_LEN {
+            if let Some(compressed) = lzf_compress(s) {
+                // Write LZF-compressed string
+                self.write_u8((VDB_ENCVAL << 6) | VDB_ENC_LZF)?;
+                self.write_length(compressed.len() as u64)?;
+                self.write_length(s.len() as u64)?;
+                self.write_bytes(&compressed)?;
+                return Ok(());
             }
         }
 
@@ -870,7 +1004,56 @@ impl VdbLoader {
 
 #[cfg(test)]
 mod tests {
+    use super::{lzf_compress, lzf_decompress};
     use bytes::{BufMut, BytesMut};
+
+    #[test]
+    fn test_lzf_roundtrip() {
+        // Test with repetitive data (compresses well)
+        let input = b"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+        let compressed = lzf_compress(input).expect("Should compress repetitive data");
+        assert!(
+            compressed.len() < input.len(),
+            "Compressed should be smaller"
+        );
+        let decompressed = lzf_decompress(&compressed, input.len()).expect("Should decompress");
+        assert_eq!(decompressed, input);
+
+        // Test with more complex repetitive pattern
+        let input2: Vec<u8> = (0..1000).map(|i| (i % 256) as u8).collect();
+        if let Some(compressed2) = lzf_compress(&input2) {
+            let decompressed2 =
+                lzf_decompress(&compressed2, input2.len()).expect("Should decompress");
+            assert_eq!(decompressed2, input2);
+        }
+
+        // Test with benchmark-like data (key:value patterns)
+        let mut benchmark_data = Vec::new();
+        for i in 0..100 {
+            benchmark_data.extend_from_slice(format!("key:{:012}", i).as_bytes());
+            benchmark_data.extend_from_slice(b"xxxxxxxxxxxxxxxxxxxx");
+        }
+        if let Some(compressed3) = lzf_compress(&benchmark_data) {
+            assert!(
+                compressed3.len() < benchmark_data.len(),
+                "Benchmark data should compress"
+            );
+            let decompressed3 =
+                lzf_decompress(&compressed3, benchmark_data.len()).expect("Should decompress");
+            assert_eq!(decompressed3, benchmark_data);
+        }
+    }
+
+    #[test]
+    fn test_lzf_incompressible() {
+        // Random-ish data that doesn't compress well
+        let input: Vec<u8> = (0..100).map(|i| ((i * 7 + 13) % 256) as u8).collect();
+        // May or may not compress - just verify roundtrip if it does
+        if let Some(compressed) = lzf_compress(&input) {
+            let decompressed = lzf_decompress(&compressed, input.len()).expect("Should decompress");
+            assert_eq!(decompressed, input);
+        }
+    }
 
     #[test]
     fn test_length_encoding() {
