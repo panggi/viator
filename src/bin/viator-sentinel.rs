@@ -6,11 +6,12 @@
 #![allow(clippy::type_complexity)]
 
 use bytes::BytesMut;
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 /// Sentinel configuration
@@ -153,7 +154,7 @@ impl Sentinel {
             auth_pass: None,
         };
 
-        let mut state = self.state.write().unwrap();
+        let mut state = self.state.write();
         state.masters.insert(name.to_string(), config);
 
         let key = format!("{host}:{port}");
@@ -173,10 +174,7 @@ impl Sentinel {
         listener.set_nonblocking(true).ok();
 
         println!("Viator Sentinel {} running on {}", &self.my_id[..8], addr);
-        println!(
-            "Monitoring {} master(s)",
-            self.state.read().unwrap().masters.len()
-        );
+        println!("Monitoring {} master(s)", self.state.read().masters.len());
 
         // Start monitoring threads
         let state_clone = self.state.clone();
@@ -218,7 +216,7 @@ impl Sentinel {
 fn monitor_loop(state: Arc<RwLock<SentinelState>>, config: SentinelConfig) {
     loop {
         let masters: Vec<(String, String, u16)> = {
-            let s = state.read().unwrap();
+            let s = state.read();
             s.masters
                 .iter()
                 .map(|(name, cfg)| (name.clone(), cfg.host.clone(), cfg.port))
@@ -228,7 +226,7 @@ fn monitor_loop(state: Arc<RwLock<SentinelState>>, config: SentinelConfig) {
         for (name, host, port) in masters {
             // Ping master
             if let Ok(info) = ping_instance(&host, port) {
-                let mut s = state.write().unwrap();
+                let mut s = state.write();
                 let key = format!("{host}:{port}");
                 if let Some(inst) = s.instances.get_mut(&key) {
                     inst.last_pong = Some(Instant::now());
@@ -251,7 +249,7 @@ fn monitor_loop(state: Arc<RwLock<SentinelState>>, config: SentinelConfig) {
                     }
                 }
             } else {
-                let mut s = state.write().unwrap();
+                let mut s = state.write();
                 let key = format!("{host}:{port}");
                 if let Some(inst) = s.instances.get_mut(&key) {
                     let elapsed = inst
@@ -270,7 +268,7 @@ fn monitor_loop(state: Arc<RwLock<SentinelState>>, config: SentinelConfig) {
 
             // Ping replicas
             let replicas: Vec<(String, u16)> = {
-                let s = state.read().unwrap();
+                let s = state.read();
                 s.replicas
                     .get(&name)
                     .map(|r| r.iter().map(|i| (i.host.clone(), i.port)).collect())
@@ -279,7 +277,7 @@ fn monitor_loop(state: Arc<RwLock<SentinelState>>, config: SentinelConfig) {
 
             for (rhost, rport) in replicas {
                 if let Ok(info) = ping_instance(&rhost, rport) {
-                    let mut s = state.write().unwrap();
+                    let mut s = state.write();
                     if let Some(replicas) = s.replicas.get_mut(&name) {
                         if let Some(inst) = replicas
                             .iter_mut()
@@ -291,7 +289,7 @@ fn monitor_loop(state: Arc<RwLock<SentinelState>>, config: SentinelConfig) {
                         }
                     }
                 } else {
-                    let mut s = state.write().unwrap();
+                    let mut s = state.write();
                     if let Some(replicas) = s.replicas.get_mut(&name) {
                         if let Some(inst) = replicas
                             .iter_mut()
@@ -504,7 +502,7 @@ fn handle_command(
             let subcmd = args[0].to_uppercase();
             match subcmd.as_str() {
                 "MASTERS" => {
-                    let s = state.read().unwrap();
+                    let s = state.read();
                     let mut result = format!("*{}\r\n", s.masters.len());
 
                     for (name, cfg) in &s.masters {
@@ -539,7 +537,7 @@ fn handle_command(
                         return "-ERR wrong number of arguments\r\n".to_string();
                     }
                     let name = &args[1];
-                    let s = state.read().unwrap();
+                    let s = state.read();
 
                     if let Some(cfg) = s.masters.get(name) {
                         let inst_key = format!("{}:{}", cfg.host, cfg.port);
@@ -573,7 +571,7 @@ fn handle_command(
                         return "-ERR wrong number of arguments\r\n".to_string();
                     }
                     let name = &args[1];
-                    let s = state.read().unwrap();
+                    let s = state.read();
 
                     if let Some(replicas) = s.replicas.get(name) {
                         let mut result = format!("*{}\r\n", replicas.len());
@@ -601,7 +599,7 @@ fn handle_command(
                     if args.len() < 2 {
                         return "-ERR wrong number of arguments\r\n".to_string();
                     }
-                    let s = state.read().unwrap();
+                    let s = state.read();
                     let name = &args[1];
 
                     if let Some(sentinels) = s.sentinels.get(name) {
@@ -624,7 +622,7 @@ fn handle_command(
                         return "-ERR wrong number of arguments\r\n".to_string();
                     }
                     let name = &args[1];
-                    let s = state.read().unwrap();
+                    let s = state.read();
 
                     if let Some(cfg) = s.masters.get(name) {
                         let port_str = cfg.port.to_string();
@@ -651,7 +649,7 @@ fn handle_command(
                         return "-ERR wrong number of arguments\r\n".to_string();
                     }
                     let name = &args[1];
-                    let s = state.read().unwrap();
+                    let s = state.read();
 
                     if let Some(cfg) = s.masters.get(name) {
                         let num_sentinels = s.sentinels.get(name).map_or(0, std::vec::Vec::len) + 1;
@@ -775,7 +773,7 @@ fn format_replica_info(host: &str, port: u16, flags: &str, offset: u64, priority
 }
 
 fn format_info(state: &Arc<RwLock<SentinelState>>, my_id: &str, section: &str) -> String {
-    let s = state.read().unwrap();
+    let s = state.read();
 
     let mut info = String::new();
 
