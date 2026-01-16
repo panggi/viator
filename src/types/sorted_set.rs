@@ -158,8 +158,8 @@ impl SortedSet {
         let existing = self.scores.get(&member).copied();
 
         match existing {
-            Some(old_score) if nx => (false, false), // NX: don't update existing
-            None if xx => (false, false),            // XX: only update existing
+            Some(_old_score) if nx => (false, false), // NX: don't update existing
+            None if xx => (false, false),             // XX: only update existing
             Some(old_score) => {
                 // Check GT/LT conditions
                 let should_update = match (gt, lt) {

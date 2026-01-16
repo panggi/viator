@@ -744,7 +744,7 @@ impl ClusterManager {
                     current_start = Some(slot);
                     current_owner = Some(*id);
                 }
-                (Some(start), Some(prev), Some(id)) if prev == *id => {
+                (Some(_start), Some(prev), Some(id)) if prev == *id => {
                     // Continue current range
                 }
                 (Some(start), Some(prev), next) => {
