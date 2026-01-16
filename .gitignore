@@ -49,3 +49,4 @@ fuzz/corpus/
 .local/
 *.local.toml
 .serena/
+CLAUDE.md
