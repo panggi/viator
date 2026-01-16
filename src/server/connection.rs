@@ -65,7 +65,11 @@ impl Connection {
             stream: BufWriter::new(stream),
             peer_addr,
             parser: RespParser::new(),
-            state: Arc::new(ClientState::new(id)),
+            state: Arc::new(ClientState::new(
+                id,
+                database.server_stats().clone(),
+                metrics.clone(),
+            )),
             executor,
             database,
             metrics,
@@ -122,6 +126,8 @@ impl Connection {
                         if self.pending_writes > 0 {
                             self.flush_writes().await?;
                         }
+                        // Periodically trim parser buffer to prevent unbounded growth
+                        self.parser.maybe_trim();
                         break;
                     }
                     Err(e) => {

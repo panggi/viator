@@ -87,6 +87,37 @@ impl RespParser {
         self.buffer.clear();
     }
 
+    /// Trim the buffer if it has grown too large relative to its contents.
+    ///
+    /// This prevents unbounded memory growth when a client sends a large command
+    /// followed by many small ones. The buffer retains its large capacity until
+    /// explicitly trimmed.
+    ///
+    /// Call this periodically (e.g., every N commands or after idle time).
+    #[inline]
+    pub fn maybe_trim(&mut self) {
+        const MIN_CAPACITY: usize = 4096;
+        const SHRINK_RATIO: usize = 4; // Shrink if capacity > 4x len
+
+        let capacity = self.buffer.capacity();
+        let len = self.buffer.len();
+
+        // Only shrink if capacity is significantly larger than needed
+        if capacity > MIN_CAPACITY && capacity > len.saturating_mul(SHRINK_RATIO) {
+            // Create a new buffer with right-sized capacity
+            let target_capacity = len.max(MIN_CAPACITY);
+            let mut new_buffer = BytesMut::with_capacity(target_capacity);
+            new_buffer.extend_from_slice(&self.buffer);
+            self.buffer = new_buffer;
+        }
+    }
+
+    /// Get the current buffer capacity (for metrics/debugging).
+    #[inline]
+    pub fn capacity(&self) -> usize {
+        self.buffer.capacity()
+    }
+
     /// Try to parse a complete frame from the buffer.
     ///
     /// Returns:

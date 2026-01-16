@@ -1,9 +1,12 @@
 //! Client connection state.
 
+use super::metrics::ServerMetrics;
+use crate::storage::SharedServerStats;
 use crate::types::{DbIndex, Key};
 use bytes::Bytes;
 use parking_lot::RwLock;
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
@@ -55,6 +58,10 @@ pub struct ClientState {
     id: u64,
     /// Selected database index
     db_index: AtomicU16,
+    /// Server-wide statistics (shared with all clients)
+    server_stats: SharedServerStats,
+    /// Server metrics (latency, throughput, etc.)
+    server_metrics: Arc<ServerMetrics>,
     /// Client name
     name: RwLock<Option<String>>,
     /// Is authenticated
@@ -85,10 +92,16 @@ pub struct ClientState {
 
 impl ClientState {
     /// Create a new client state.
-    pub fn new(id: u64) -> Self {
+    pub fn new(
+        id: u64,
+        server_stats: SharedServerStats,
+        server_metrics: Arc<ServerMetrics>,
+    ) -> Self {
         Self {
             id,
             db_index: AtomicU16::new(0),
+            server_stats,
+            server_metrics,
             name: RwLock::new(None),
             authenticated: AtomicBool::new(false),
             in_transaction: AtomicBool::new(false),
@@ -103,6 +116,18 @@ impl ClientState {
             auth_failures: AtomicU32::new(0),
             auth_lockout_until: AtomicU64::new(0),
         }
+    }
+
+    /// Get the server statistics.
+    #[inline]
+    pub fn server_stats(&self) -> &SharedServerStats {
+        &self.server_stats
+    }
+
+    /// Get the server metrics.
+    #[inline]
+    pub fn server_metrics(&self) -> &Arc<ServerMetrics> {
+        &self.server_metrics
     }
 
     /// Get the connection ID.

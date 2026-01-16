@@ -440,6 +440,15 @@ Viator targets Redis 8.4.0 protocol compatibility:
 | Redis Stack | ✅ Full | JSON, TimeSeries, Bloom, Cuckoo, TopK, T-Digest, CMS |
 | Security | ✅ Full | ACL, TLS 1.3, AUTH rate limiting |
 
+## Known Limitations
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| Stream Persistence | ⚠️ Not Yet | Stream data is not persisted to AOF/VDB. Stream keys will be lost on restart. |
+| CPU Metrics | ⚠️ Basic | INFO CPU section shows placeholder values |
+
+> **Note:** Stream commands (XADD, XREAD, XRANGE, etc.) work correctly in-memory. Only persistence is affected.
+
 ## Project Structure
 
 ```

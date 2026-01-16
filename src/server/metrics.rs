@@ -5,27 +5,127 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Get current process memory usage in bytes.
-/// Returns (used_memory, used_memory_rss) tuple.
-/// Falls back to 0 if unable to determine.
+///
+/// Returns `(used_memory, used_memory_rss)` tuple where:
+/// - `used_memory`: Virtual memory size (or heap approximation)
+/// - `used_memory_rss`: Resident Set Size (physical memory)
+///
+/// Falls back to `(0, 0)` if unable to determine on unsupported platforms.
 pub fn get_memory_usage() -> (usize, usize) {
     #[cfg(target_os = "linux")]
     {
-        // Read from /proc/self/statm (page-based memory stats)
-        if let Ok(statm) = std::fs::read_to_string("/proc/self/statm") {
-            let parts: Vec<&str> = statm.split_whitespace().collect();
-            if parts.len() >= 2 {
-                let page_size = 4096usize; // Standard page size
-                let vsize = parts[0].parse::<usize>().unwrap_or(0) * page_size;
-                let rss = parts[1].parse::<usize>().unwrap_or(0) * page_size;
-                return (vsize, rss);
-            }
-        }
-        (0, 0)
+        get_memory_usage_linux()
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
-        // Fallback for other platforms
+        get_memory_usage_macos()
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        get_memory_usage_windows()
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        // Fallback for other platforms - try POSIX getrusage
+        get_memory_usage_posix()
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[allow(unsafe_code)]
+fn get_memory_usage_linux() -> (usize, usize) {
+    // Read from /proc/self/statm (page-based memory stats)
+    if let Ok(statm) = std::fs::read_to_string("/proc/self/statm") {
+        let parts: Vec<&str> = statm.split_whitespace().collect();
+        if parts.len() >= 2 {
+            // Get actual page size from system
+            let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize };
+            let vsize = parts[0].parse::<usize>().unwrap_or(0) * page_size;
+            let rss = parts[1].parse::<usize>().unwrap_or(0) * page_size;
+            return (vsize, rss);
+        }
+    }
+    (0, 0)
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn get_memory_usage_macos() -> (usize, usize) {
+    // Use getrusage for RSS on macOS - it's reliable and simple
+    let mut rusage: libc::rusage = unsafe { std::mem::zeroed() };
+    let ret = unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut rusage) };
+
+    if ret == 0 {
+        // On macOS, ru_maxrss is in bytes (unlike Linux where it's in KB)
+        let rss = rusage.ru_maxrss as usize;
+
+        // For virtual memory, we can use task_info but getrusage doesn't provide it
+        // Use RSS as approximation for used_memory as well
+        (rss, rss)
+    } else {
+        (0, 0)
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
+fn get_memory_usage_windows() -> (usize, usize) {
+    // Windows implementation using GetProcessMemoryInfo
+    use std::mem::size_of;
+
+    #[repr(C)]
+    #[allow(non_snake_case)]
+    struct PROCESS_MEMORY_COUNTERS {
+        cb: u32,
+        PageFaultCount: u32,
+        PeakWorkingSetSize: usize,
+        WorkingSetSize: usize,
+        QuotaPeakPagedPoolUsage: usize,
+        QuotaPagedPoolUsage: usize,
+        QuotaPeakNonPagedPoolUsage: usize,
+        QuotaNonPagedPoolUsage: usize,
+        PagefileUsage: usize,
+        PeakPagefileUsage: usize,
+    }
+
+    #[link(name = "psapi")]
+    extern "system" {
+        fn GetProcessMemoryInfo(
+            process: *mut std::ffi::c_void,
+            pmc: *mut PROCESS_MEMORY_COUNTERS,
+            cb: u32,
+        ) -> i32;
+        fn GetCurrentProcess() -> *mut std::ffi::c_void;
+    }
+
+    unsafe {
+        let mut pmc: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
+        pmc.cb = size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+
+        if GetProcessMemoryInfo(GetCurrentProcess(), &mut pmc, pmc.cb) != 0 {
+            // PagefileUsage is virtual memory, WorkingSetSize is RSS
+            (pmc.PagefileUsage, pmc.WorkingSetSize)
+        } else {
+            (0, 0)
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+#[allow(unsafe_code)]
+fn get_memory_usage_posix() -> (usize, usize) {
+    // POSIX fallback using getrusage
+    let mut rusage: libc::rusage = unsafe { std::mem::zeroed() };
+    let ret = unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut rusage) };
+
+    if ret == 0 {
+        // ru_maxrss is in kilobytes on most POSIX systems (except macOS)
+        let rss = (rusage.ru_maxrss as usize) * 1024;
+        (rss, rss)
+    } else {
         (0, 0)
     }
 }
@@ -367,5 +467,31 @@ mod tests {
         let info = metrics.to_info_string();
         assert!(info.contains("connected_clients:1"));
         assert!(info.contains("total_commands_processed:1"));
+    }
+
+    #[test]
+    fn test_memory_usage() {
+        let (used, rss) = get_memory_usage();
+        // Should return non-zero values on supported platforms
+        // At minimum, we're using some memory to run this test!
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        {
+            assert!(rss > 0, "RSS should be non-zero on supported platforms");
+            assert!(
+                used > 0,
+                "Used memory should be non-zero on supported platforms"
+            );
+        }
+        // On unsupported platforms, just verify it doesn't panic
+        let _ = (used, rss);
+    }
+
+    #[test]
+    fn test_format_bytes() {
+        assert_eq!(format_bytes(512), "512B");
+        assert_eq!(format_bytes(1024), "1.00K");
+        assert_eq!(format_bytes(1536), "1.50K");
+        assert_eq!(format_bytes(1024 * 1024), "1.00M");
+        assert_eq!(format_bytes(1024 * 1024 * 1024), "1.00G");
     }
 }

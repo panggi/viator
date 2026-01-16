@@ -17,6 +17,10 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
+use tracing::warn;
+
+/// Flag to track if stream warning has been logged (avoid spam)
+static AOF_STREAM_WARNING_LOGGED: AtomicBool = AtomicBool::new(false);
 
 /// AOF fsync policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -255,7 +259,13 @@ impl AofWriter {
                         }
                     }
                     crate::types::ValueType::Stream => {
-                        // Skip streams for now
+                        // Stream persistence not yet implemented - log warning once
+                        if !AOF_STREAM_WARNING_LOGGED.swap(true, Ordering::Relaxed) {
+                            warn!(
+                                "Stream data type not yet supported in AOF persistence. \
+                                 Stream keys will NOT be saved."
+                            );
+                        }
                         continue;
                     }
                     crate::types::ValueType::VectorSet => {

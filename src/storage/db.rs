@@ -27,6 +27,70 @@ pub struct ServerAuth {
     requirepass: RwLock<Option<String>>,
 }
 
+/// Shared server statistics for INFO command.
+/// These are server-wide stats that all databases can read.
+#[derive(Debug, Default)]
+pub struct ServerStats {
+    /// Currently connected clients
+    pub connected_clients: AtomicU64,
+    /// Total connections since server start
+    pub total_connections: AtomicU64,
+    /// Last VDB save timestamp (Unix timestamp)
+    pub last_vdb_save_time: AtomicU64,
+    /// VDB background save in progress
+    pub vdb_bgsave_in_progress: std::sync::atomic::AtomicBool,
+    /// Changes since last VDB save
+    pub vdb_changes_since_save: AtomicU64,
+    /// AOF enabled
+    pub aof_enabled: std::sync::atomic::AtomicBool,
+    /// AOF rewrite in progress
+    pub aof_rewrite_in_progress: std::sync::atomic::AtomicBool,
+}
+
+impl ServerStats {
+    /// Create new server stats.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Increment connection count.
+    pub fn connection_opened(&self) {
+        self.connected_clients.fetch_add(1, Ordering::Relaxed);
+        self.total_connections.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Decrement connection count.
+    pub fn connection_closed(&self) {
+        self.connected_clients.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    /// Record a data modification (for VDB change tracking).
+    pub fn record_modification(&self) {
+        self.vdb_changes_since_save.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Mark VDB save started.
+    pub fn vdb_save_started(&self) {
+        self.vdb_bgsave_in_progress.store(true, Ordering::Relaxed);
+    }
+
+    /// Mark VDB save completed.
+    pub fn vdb_save_completed(&self) {
+        self.vdb_bgsave_in_progress.store(false, Ordering::Relaxed);
+        self.vdb_changes_since_save.store(0, Ordering::Relaxed);
+        self.last_vdb_save_time.store(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            Ordering::Relaxed,
+        );
+    }
+}
+
+/// Shared reference to server stats.
+pub type SharedServerStats = Arc<ServerStats>;
+
 impl ServerAuth {
     /// Create a new ServerAuth with optional password.
     pub fn new(requirepass: Option<String>) -> Self {
@@ -919,10 +983,8 @@ pub struct Database {
     server_auth: SharedServerAuth,
     /// Memory manager for maxmemory enforcement
     memory_manager: SharedMemoryManager,
-    /// Current connected client count (for INFO command)
-    connected_clients: AtomicU64,
-    /// Total connections since server start (for INFO command)
-    total_connections: AtomicU64,
+    /// Server-wide statistics (connections, persistence, etc.)
+    server_stats: SharedServerStats,
     /// Shutdown requested flag (set by SHUTDOWN command)
     shutdown_requested: std::sync::atomic::AtomicBool,
     /// Save on shutdown flag (for SHUTDOWN SAVE vs NOSAVE)
@@ -949,13 +1011,13 @@ impl Database {
         let pubsub = Arc::new(PubSubHub::new());
         let server_auth = Arc::new(ServerAuth::new(requirepass));
         let memory_manager = Arc::new(MemoryManager::new(maxmemory, maxmemory_policy));
+        let server_stats = Arc::new(ServerStats::new());
         Self {
             dbs: std::array::from_fn(|_| Arc::new(Db::with_pubsub(pubsub.clone()))),
             pubsub,
             server_auth,
             memory_manager,
-            connected_clients: AtomicU64::new(0),
-            total_connections: AtomicU64::new(0),
+            server_stats,
             shutdown_requested: std::sync::atomic::AtomicBool::new(false),
             save_on_shutdown: std::sync::atomic::AtomicBool::new(true), // Default: save before shutdown
         }
@@ -979,27 +1041,32 @@ impl Database {
         &self.memory_manager
     }
 
+    /// Get the server statistics.
+    #[inline]
+    pub fn server_stats(&self) -> &SharedServerStats {
+        &self.server_stats
+    }
+
     /// Record a new connection (call when client connects).
     pub fn connection_opened(&self) {
-        self.connected_clients.fetch_add(1, Ordering::Relaxed);
-        self.total_connections.fetch_add(1, Ordering::Relaxed);
+        self.server_stats.connection_opened();
     }
 
     /// Record a connection close (call when client disconnects).
     pub fn connection_closed(&self) {
-        self.connected_clients.fetch_sub(1, Ordering::Relaxed);
+        self.server_stats.connection_closed();
     }
 
     /// Get the current connected client count.
     #[inline]
     pub fn connected_clients(&self) -> u64 {
-        self.connected_clients.load(Ordering::Relaxed)
+        self.server_stats.connected_clients.load(Ordering::Relaxed)
     }
 
     /// Get the total connections since server start.
     #[inline]
     pub fn total_connections(&self) -> u64 {
-        self.total_connections.load(Ordering::Relaxed)
+        self.server_stats.total_connections.load(Ordering::Relaxed)
     }
 
     /// Request server shutdown (called by SHUTDOWN command).

@@ -162,6 +162,10 @@ pub struct BloomInfo {
     pub expansion_rate: u32,
 }
 
+/// Default maximum number of sub-filters to prevent unbounded memory growth.
+/// With expansion_rate=2, 32 filters can hold 2^32 * initial_capacity items.
+pub const DEFAULT_MAX_FILTERS: usize = 32;
+
 /// A scaling Bloom filter that grows as items are added.
 #[derive(Debug, Clone)]
 pub struct ScalingBloomFilter {
@@ -173,14 +177,27 @@ pub struct ScalingBloomFilter {
     error_rate: f64,
     /// Expansion rate (multiply capacity by this for new filters)
     expansion_rate: u32,
+    /// Maximum number of sub-filters (prevents unbounded memory growth)
+    max_filters: usize,
     /// Total items added
     total_items: usize,
 }
 
 impl ScalingBloomFilter {
-    /// Create a new scaling Bloom filter.
+    /// Create a new scaling Bloom filter with default max_filters limit.
     #[must_use]
     pub fn new(capacity: usize, error_rate: f64, expansion_rate: u32) -> Self {
+        Self::with_max_filters(capacity, error_rate, expansion_rate, DEFAULT_MAX_FILTERS)
+    }
+
+    /// Create a new scaling Bloom filter with a custom max_filters limit.
+    #[must_use]
+    pub fn with_max_filters(
+        capacity: usize,
+        error_rate: f64,
+        expansion_rate: u32,
+        max_filters: usize,
+    ) -> Self {
         let mut filters = Vec::new();
         filters.push(BloomFilter::new(capacity, error_rate));
         Self {
@@ -188,11 +205,15 @@ impl ScalingBloomFilter {
             initial_capacity: capacity,
             error_rate,
             expansion_rate: expansion_rate.max(2),
+            max_filters: max_filters.max(1),
             total_items: 0,
         }
     }
 
     /// Add an item to the filter.
+    ///
+    /// Returns `true` if the item was added, `false` if it already exists
+    /// or if the filter has reached its maximum capacity (max_filters limit).
     pub fn add(&mut self, item: &[u8]) -> bool {
         // Check if already exists
         if self.contains(item) {
@@ -202,6 +223,14 @@ impl ScalingBloomFilter {
         // Check if we need a new filter
         let last = self.filters.last().unwrap();
         if last.len() >= self.current_capacity() {
+            // Check if we've hit the max_filters limit
+            if self.filters.len() >= self.max_filters {
+                // Cannot expand further - filter is at capacity
+                // Still add to the last filter (may increase false positive rate)
+                self.filters.last_mut().unwrap().add(item);
+                self.total_items += 1;
+                return true;
+            }
             let new_capacity = self.current_capacity() * self.expansion_rate as usize;
             // Reduce error rate for subsequent filters
             let new_error_rate = self.error_rate / (self.filters.len() as f64 + 1.0);
@@ -213,6 +242,23 @@ impl ScalingBloomFilter {
         self.filters.last_mut().unwrap().add(item);
         self.total_items += 1;
         true
+    }
+
+    /// Check if the filter has reached its maximum capacity.
+    #[must_use]
+    pub fn is_at_capacity(&self) -> bool {
+        if self.filters.len() >= self.max_filters {
+            let last = self.filters.last().unwrap();
+            last.len() >= self.current_capacity()
+        } else {
+            false
+        }
+    }
+
+    /// Get the maximum number of sub-filters allowed.
+    #[must_use]
+    pub fn max_filters(&self) -> usize {
+        self.max_filters
     }
 
     /// Check if an item might be in the filter.

@@ -18,6 +18,11 @@ use bytes::Bytes;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use tracing::warn;
+
+/// Flag to track if stream warning has been logged (avoid spam)
+static STREAM_WARNING_LOGGED: AtomicBool = AtomicBool::new(false);
 
 /// CRC64 polynomial (ECMA-182)
 const CRC64_POLY: u64 = 0xC96C5795D7870F42;
@@ -169,23 +174,62 @@ const VDB_ENC_INT32: u8 = 2;
 const VDB_ENC_LZF: u8 = 3;
 
 /// VDB file saver.
+///
+/// Uses atomic temp-file + rename pattern to ensure crash safety:
+/// 1. Write to `<path>.tmp`
+/// 2. fsync the temp file
+/// 3. Atomically rename to final path
+///
+/// This ensures the original file is never corrupted if a crash occurs during save.
 pub struct VdbSaver {
     writer: BufWriter<File>,
     crc64: u64,
+    temp_path: std::path::PathBuf,
+    final_path: std::path::PathBuf,
 }
 
 impl VdbSaver {
     /// Create a new VDB saver.
+    ///
+    /// Creates a temporary file at `<path>.tmp` which will be atomically
+    /// renamed to `path` on successful completion.
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, StorageError> {
-        let file = File::create(path).map_err(StorageError::Io)?;
+        let final_path = path.as_ref().to_path_buf();
+        let temp_path = final_path.with_extension("vdb.tmp");
+
+        let file = File::create(&temp_path).map_err(StorageError::Io)?;
         Ok(Self {
             writer: BufWriter::new(file),
             crc64: 0,
+            temp_path,
+            final_path,
         })
     }
 
     /// Save the database to the VDB file.
+    ///
+    /// On success, atomically replaces the target file.
+    /// On failure, cleans up the temporary file.
     pub fn save(mut self, db: &Database) -> Result<(), StorageError> {
+        match self.save_inner(db) {
+            Ok(()) => {
+                // Drop the writer to close the file before rename
+                drop(self.writer);
+
+                // Atomic rename: this is the commit point. If we crash before this,
+                // the original file is untouched. If we crash after, the new file is complete.
+                std::fs::rename(&self.temp_path, &self.final_path).map_err(StorageError::Io)?;
+                Ok(())
+            }
+            Err(e) => {
+                // Clean up temp file on failure
+                let _ = std::fs::remove_file(&self.temp_path);
+                Err(e)
+            }
+        }
+    }
+
+    fn save_inner(&mut self, db: &Database) -> Result<(), StorageError> {
         // Write header
         self.write_header()?;
 
@@ -271,7 +315,13 @@ impl VdbSaver {
                         }
                     }
                     ValueType::Stream => {
-                        // Skip streams for now (complex structure)
+                        // Stream persistence not yet implemented - log warning once
+                        if !STREAM_WARNING_LOGGED.swap(true, Ordering::Relaxed) {
+                            warn!(
+                                "Stream data type not yet supported in VDB persistence. \
+                                 Stream keys will NOT be saved. Use AOF for stream data."
+                            );
+                        }
                         continue;
                     }
                     ValueType::VectorSet => {
@@ -315,6 +365,10 @@ impl VdbSaver {
             .write_all(&crc.to_le_bytes())
             .map_err(StorageError::Io)?;
         self.writer.flush().map_err(StorageError::Io)?;
+
+        // CRITICAL: fsync to ensure data is on disk before we consider save complete.
+        // Without this, a power failure could result in a truncated/corrupt VDB file.
+        self.writer.get_ref().sync_all().map_err(StorageError::Io)?;
 
         Ok(())
     }

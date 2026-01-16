@@ -61,10 +61,14 @@ pub fn cmd_info(
         }
 
         if include_all || section == Some("clients") {
+            let server_stats = client.server_stats();
             info.push_str("# Clients\r\n");
-            // Note: connected_clients would ideally come from ServerMetrics,
-            // but we don't have access to it here. For now, report at least 1.
-            info.push_str("connected_clients:1\r\n");
+            info.push_str(&format!(
+                "connected_clients:{}\r\n",
+                server_stats
+                    .connected_clients
+                    .load(std::sync::atomic::Ordering::Relaxed)
+            ));
             info.push_str("\r\n");
         }
 
@@ -86,8 +90,14 @@ pub fn cmd_info(
 
         if include_all || section == Some("stats") {
             let stats = db.stats();
+            let server_stats = client.server_stats();
             info.push_str("# Stats\r\n");
-            info.push_str(&format!("total_connections_received:{}\r\n", 1));
+            info.push_str(&format!(
+                "total_connections_received:{}\r\n",
+                server_stats
+                    .total_connections
+                    .load(std::sync::atomic::Ordering::Relaxed)
+            ));
             info.push_str(&format!(
                 "keyspace_hits:{}\r\n",
                 stats.hits.load(std::sync::atomic::Ordering::Relaxed)
@@ -106,20 +116,64 @@ pub fn cmd_info(
         }
 
         if include_all || section == Some("persistence") {
+            let server_stats = client.server_stats();
             info.push_str("# Persistence\r\n");
             info.push_str("loading:0\r\n");
-            info.push_str("vdb_changes_since_last_save:0\r\n");
-            info.push_str("vdb_bgsave_in_progress:0\r\n");
+            info.push_str(&format!(
+                "vdb_changes_since_last_save:{}\r\n",
+                server_stats
+                    .vdb_changes_since_save
+                    .load(std::sync::atomic::Ordering::Relaxed)
+            ));
+            info.push_str(&format!(
+                "vdb_bgsave_in_progress:{}\r\n",
+                if server_stats
+                    .vdb_bgsave_in_progress
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    1
+                } else {
+                    0
+                }
+            ));
+            let last_save_time = server_stats
+                .last_vdb_save_time
+                .load(std::sync::atomic::Ordering::Relaxed);
             info.push_str(&format!(
                 "vdb_last_save_time:{}\r\n",
-                chrono::Utc::now().timestamp()
+                if last_save_time == 0 {
+                    // If never saved, report current time (like Redis does on startup)
+                    chrono::Utc::now().timestamp() as u64
+                } else {
+                    last_save_time
+                }
             ));
             info.push_str("vdb_last_bgsave_status:ok\r\n");
             info.push_str("vdb_last_bgsave_time_sec:0\r\n");
             info.push_str("vdb_current_bgsave_time_sec:-1\r\n");
             info.push_str("vdb_last_cow_size:0\r\n");
-            info.push_str("aof_enabled:0\r\n");
-            info.push_str("aof_rewrite_in_progress:0\r\n");
+            info.push_str(&format!(
+                "aof_enabled:{}\r\n",
+                if server_stats
+                    .aof_enabled
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    1
+                } else {
+                    0
+                }
+            ));
+            info.push_str(&format!(
+                "aof_rewrite_in_progress:{}\r\n",
+                if server_stats
+                    .aof_rewrite_in_progress
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    1
+                } else {
+                    0
+                }
+            ));
             info.push_str("aof_rewrite_scheduled:0\r\n");
             info.push_str("aof_last_rewrite_time_sec:-1\r\n");
             info.push_str("aof_current_rewrite_time_sec:-1\r\n");
@@ -167,6 +221,35 @@ pub fn cmd_info(
         if include_all || section == Some("cluster") {
             info.push_str("# Cluster\r\n");
             info.push_str("cluster_enabled:0\r\n");
+            info.push_str("\r\n");
+        }
+
+        if include_all || section == Some("latencystats") {
+            let metrics = client.server_metrics();
+            info.push_str("# Latencystats\r\n");
+            info.push_str(&format!(
+                "latency_p50_us:{}\r\n",
+                metrics.command_latency.percentile(50.0).as_micros()
+            ));
+            info.push_str(&format!(
+                "latency_p99_us:{}\r\n",
+                metrics.command_latency.percentile(99.0).as_micros()
+            ));
+            info.push_str(&format!(
+                "latency_p999_us:{}\r\n",
+                metrics.command_latency.percentile(99.9).as_micros()
+            ));
+            info.push_str(&format!(
+                "latency_avg_us:{}\r\n",
+                metrics.command_latency.average().as_micros()
+            ));
+            info.push_str(&format!(
+                "total_commands_processed:{}\r\n",
+                metrics
+                    .commands_processed
+                    .load(std::sync::atomic::Ordering::Relaxed)
+            ));
+            info.push_str(&format!("ops_per_sec:{:.2}\r\n", metrics.ops_per_second()));
             info.push_str("\r\n");
         }
 
