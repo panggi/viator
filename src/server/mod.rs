@@ -191,6 +191,7 @@ impl Server {
                                     server.database.clone(),
                                     server.metrics.clone(),
                                     server.buffer_pool.clone(),
+                                    server.config.timeout,
                                 );
 
                                 if let Err(e) = connection.run().await {

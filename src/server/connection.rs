@@ -55,10 +55,13 @@ pub struct Connection {
     write_buffer: BytesMut,
     /// Number of pending writes (for batching)
     pending_writes: usize,
+    /// Idle timeout for clients (0 = disabled)
+    idle_timeout: Option<Duration>,
 }
 
 impl Connection {
     /// Create a new connection.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         stream: TcpStream,
         peer_addr: SocketAddr,
@@ -67,8 +70,15 @@ impl Connection {
         database: Arc<Database>,
         metrics: Arc<ServerMetrics>,
         buffer_pool: Arc<BufferPool>,
+        idle_timeout_secs: u32,
     ) -> Self {
         debug!("New connection from {} (id={})", peer_addr, id);
+
+        let idle_timeout = if idle_timeout_secs > 0 {
+            Some(Duration::from_secs(idle_timeout_secs as u64))
+        } else {
+            None
+        };
 
         Self {
             stream: BufWriter::new(stream),
@@ -85,6 +95,7 @@ impl Connection {
             buffer_pool,
             write_buffer: BytesMut::with_capacity(WRITE_BUFFER_INITIAL),
             pending_writes: 0,
+            idle_timeout,
         }
     }
 
@@ -105,8 +116,25 @@ impl Connection {
             }
 
             // Normal command mode
-            // Read data from socket
-            let n = self.stream.get_mut().read(&mut read_buf).await?;
+            // Read data from socket with optional timeout
+            let read_result = if let Some(timeout) = self.idle_timeout {
+                match tokio::time::timeout(timeout, self.stream.get_mut().read(&mut read_buf)).await
+                {
+                    Ok(result) => result,
+                    Err(_) => {
+                        // Timeout - close connection
+                        debug!(
+                            "Connection timeout after {:?} for {}",
+                            timeout, self.peer_addr
+                        );
+                        break;
+                    }
+                }
+            } else {
+                self.stream.get_mut().read(&mut read_buf).await
+            };
+
+            let n = read_result?;
             if n == 0 {
                 // Connection closed by peer
                 debug!("Connection closed by peer: {}", self.peer_addr);
