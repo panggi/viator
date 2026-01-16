@@ -64,11 +64,12 @@
     dead_code     // Some fields/methods reserved for future use
 )]
 
-// Use jemalloc for better performance on Unix systems
-// Disabled under Miri since it cannot interpret jemalloc's foreign functions
+// Use mimalloc for better performance on Unix systems
+// mimalloc has excellent performance for short-lived allocations common in Redis workloads
+// Disabled under Miri since it cannot interpret foreign functions
 #[cfg(all(not(target_env = "msvc"), not(miri), feature = "server"))]
 #[global_allocator]
-static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Modules

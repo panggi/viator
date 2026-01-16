@@ -5,9 +5,11 @@
 
 mod frame;
 mod parser;
+pub mod responses;
 
 pub use frame::Frame;
 pub use parser::{RespParser, parse_frame};
+pub use responses::{OK, PONG, NULL_BULK, NULL_ARRAY, EMPTY_BULK, EMPTY_ARRAY, ZERO, ONE};
 
 /// RESP protocol version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

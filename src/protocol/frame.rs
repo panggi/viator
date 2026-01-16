@@ -2,6 +2,7 @@
 //!
 //! A Frame represents a complete RESP message that can be sent or received.
 
+use super::responses;
 use bytes::{BufMut, Bytes, BytesMut};
 use std::fmt;
 
@@ -152,13 +153,22 @@ impl Frame {
 
     /// Serialize the frame to a buffer.
     ///
-    /// This is optimized for minimal allocations.
+    /// This is optimized for minimal allocations using pre-computed responses
+    /// for common cases like OK, PONG, NULL, and small integers.
     pub fn serialize(&self, buf: &mut BytesMut) {
         match self {
             Self::Simple(s) => {
-                buf.put_u8(b'+');
-                buf.put_slice(s.as_bytes());
-                buf.put_slice(b"\r\n");
+                // Check for pre-allocated common responses
+                match s.as_str() {
+                    "OK" => buf.put_slice(responses::OK),
+                    "PONG" => buf.put_slice(responses::PONG),
+                    "QUEUED" => buf.put_slice(responses::QUEUED),
+                    _ => {
+                        buf.put_u8(b'+');
+                        buf.put_slice(s.as_bytes());
+                        buf.put_slice(b"\r\n");
+                    }
+                }
             }
             Self::Error(s) => {
                 buf.put_u8(b'-');
@@ -166,30 +176,44 @@ impl Frame {
                 buf.put_slice(b"\r\n");
             }
             Self::Integer(n) => {
-                buf.put_u8(b':');
-                // Use itoa for fast integer formatting
-                let mut temp = itoa::Buffer::new();
-                buf.put_slice(temp.format(*n).as_bytes());
-                buf.put_slice(b"\r\n");
+                // Try to use pre-allocated integer response
+                if let Some(static_resp) = responses::integer(*n) {
+                    buf.put_slice(static_resp);
+                } else {
+                    buf.put_u8(b':');
+                    let mut temp = itoa::Buffer::new();
+                    buf.put_slice(temp.format(*n).as_bytes());
+                    buf.put_slice(b"\r\n");
+                }
             }
             Self::Bulk(data) => {
-                buf.put_u8(b'$');
-                let mut temp = itoa::Buffer::new();
-                buf.put_slice(temp.format(data.len() as i64).as_bytes());
-                buf.put_slice(b"\r\n");
-                buf.put_slice(data);
-                buf.put_slice(b"\r\n");
+                // Check for empty bulk string
+                if data.is_empty() {
+                    buf.put_slice(responses::EMPTY_BULK);
+                } else {
+                    buf.put_u8(b'$');
+                    let mut temp = itoa::Buffer::new();
+                    buf.put_slice(temp.format(data.len() as i64).as_bytes());
+                    buf.put_slice(b"\r\n");
+                    buf.put_slice(data);
+                    buf.put_slice(b"\r\n");
+                }
             }
             Self::Null => {
-                buf.put_slice(b"$-1\r\n");
+                buf.put_slice(responses::NULL_BULK);
             }
             Self::Array(frames) => {
-                buf.put_u8(b'*');
-                let mut temp = itoa::Buffer::new();
-                buf.put_slice(temp.format(frames.len() as i64).as_bytes());
-                buf.put_slice(b"\r\n");
-                for frame in frames {
-                    frame.serialize(buf);
+                // Check for empty array
+                if frames.is_empty() {
+                    buf.put_slice(responses::EMPTY_ARRAY);
+                } else {
+                    buf.put_u8(b'*');
+                    let mut temp = itoa::Buffer::new();
+                    buf.put_slice(temp.format(frames.len() as i64).as_bytes());
+                    buf.put_slice(b"\r\n");
+                    for frame in frames {
+                        frame.serialize(buf);
+                    }
                 }
             }
         }
