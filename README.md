@@ -266,9 +266,37 @@ Viator leverages Rust's zero-cost abstractions for high performance:
 
 - **Memory Allocator**: jemalloc for reduced fragmentation
 - **Concurrency**: Lock-free data structures (DashMap, crossbeam)
-- **I/O**: Tokio async runtime with io_uring support
+- **I/O**: Tokio async runtime with io_uring support (Linux)
 - **Zero-Copy**: Bytes crate for efficient buffer management
 - **SIMD**: memchr for fast byte searching
+- **Perfect Hashing**: O(1) command dispatch with PHF
+- **Sharded Storage**: 64-shard architecture for reduced lock contention
+
+### Benchmark Results
+
+Tested with `redis-benchmark` (default settings, 50 clients, 100k requests):
+
+| Command | Viator (rps) | Redis 8.4 (rps) | Ratio |
+|---------|-------------|-----------------|-------|
+| SET | 99,700 | 128,865 | 77% |
+| GET | 101,317 | 123,152 | 82% |
+| INCR | 101,214 | 122,249 | 83% |
+| LPUSH | 101,214 | 120,627 | 84% |
+| RPUSH | 101,317 | 117,924 | 86% |
+| LPOP | 101,112 | 123,152 | 82% |
+| RPOP | 102,145 | 124,069 | 82% |
+| SADD | 101,419 | 119,331 | 85% |
+| HSET | 101,317 | 120,481 | 84% |
+| SPOP | 102,145 | 124,533 | 82% |
+| ZADD | 101,317 | 120,772 | 84% |
+| ZPOPMIN | 101,626 | 124,223 | 82% |
+| LRANGE_100 | 70,871 | 80,321 | 88% |
+| LRANGE_300 | 43,994 | 47,036 | 94% |
+| LRANGE_500 | 32,425 | 34,223 | 95% |
+| LRANGE_600 | 28,129 | 29,180 | 96% |
+| MSET (10 keys) | 98,814 | 104,821 | 94% |
+
+**Summary**: Viator achieves **77-96%** of Redis 8.4 performance, with bulk operations (LRANGE, MSET) reaching near-parity at 94-96%.
 
 ## Security
 
