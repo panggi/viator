@@ -173,7 +173,7 @@ impl HyperLogLog {
 fn get_or_create_hll(db: &Db, key: &Key) -> Result<(ViatorValue, HyperLogLog)> {
     match db.get(key) {
         Some(v) if v.is_string() => {
-            let data = v.as_string().unwrap();
+            let data = v.as_string().expect("type verified before access");
             let hll = HyperLogLog::from_bytes(data).unwrap_or_else(HyperLogLog::new);
             Ok((v, hll))
         }
@@ -222,7 +222,7 @@ pub fn cmd_pfcount(
             let key = Key::from(cmd.args[0].clone());
             let count = match db.get_typed(&key, ValueType::String)? {
                 Some(v) => {
-                    let data = v.as_string().unwrap();
+                    let data = v.as_string().expect("type verified before access");
                     let hll = HyperLogLog::from_bytes(data).unwrap_or_else(HyperLogLog::new);
                     hll.count()
                 }
@@ -236,7 +236,7 @@ pub fn cmd_pfcount(
             for arg in &cmd.args {
                 let key = Key::from(arg.clone());
                 if let Some(v) = db.get_typed(&key, ValueType::String)? {
-                    let data = v.as_string().unwrap();
+                    let data = v.as_string().expect("type verified before access");
                     if let Some(hll) = HyperLogLog::from_bytes(data) {
                         merged.merge(&hll);
                     }
@@ -262,7 +262,7 @@ pub fn cmd_pfmerge(
         for arg in &cmd.args[1..] {
             let key = Key::from(arg.clone());
             if let Some(v) = db.get_typed(&key, ValueType::String)? {
-                let data = v.as_string().unwrap();
+                let data = v.as_string().expect("type verified before access");
                 if let Some(hll) = HyperLogLog::from_bytes(data) {
                     merged.merge(&hll);
                 }
@@ -271,7 +271,7 @@ pub fn cmd_pfmerge(
 
         // Also include the destination key if it exists
         if let Some(v) = db.get_typed(&destkey, ValueType::String)? {
-            let data = v.as_string().unwrap();
+            let data = v.as_string().expect("type verified before access");
             if let Some(hll) = HyperLogLog::from_bytes(data) {
                 merged.merge(&hll);
             }
@@ -313,7 +313,7 @@ pub fn cmd_pfdebug(
                 let key = Key::from(cmd.args[1].clone());
                 let hll = match db.get_typed(&key, ValueType::String)? {
                     Some(v) => {
-                        let data = v.as_string().unwrap();
+                        let data = v.as_string().expect("type verified before access");
                         HyperLogLog::from_bytes(data).unwrap_or_else(HyperLogLog::new)
                     }
                     None => HyperLogLog::new(),

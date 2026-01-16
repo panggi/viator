@@ -30,7 +30,9 @@ pub fn cmd_lpush(
         let key = Key::from(cmd.args[0].clone());
         let value = get_or_create_list(&db, &key)?;
 
-        let list = value.as_list().unwrap();
+        let list = value
+            .as_list()
+            .expect("type guaranteed by get_or_create_list");
         let mut list = list.write();
 
         for arg in cmd.args.iter().skip(1) {
@@ -55,7 +57,9 @@ pub fn cmd_rpush(
         let key = Key::from(cmd.args[0].clone());
         let value = get_or_create_list(&db, &key)?;
 
-        let list = value.as_list().unwrap();
+        let list = value
+            .as_list()
+            .expect("type guaranteed by get_or_create_list");
         let mut list = list.write();
 
         for arg in cmd.args.iter().skip(1) {
@@ -89,7 +93,9 @@ pub fn cmd_lpop(
             None => return Ok(Frame::Null),
         };
 
-        let list = value.as_list().unwrap();
+        let list = value
+            .as_list()
+            .expect("type guaranteed by get_or_create_list");
         let mut list = list.write();
 
         let result = match count {
@@ -138,7 +144,9 @@ pub fn cmd_rpop(
             None => return Ok(Frame::Null),
         };
 
-        let list = value.as_list().unwrap();
+        let list = value
+            .as_list()
+            .expect("type guaranteed by get_or_create_list");
         let mut list = list.write();
 
         let result = match count {
@@ -178,7 +186,11 @@ pub fn cmd_llen(
         let key = Key::from(cmd.args[0].clone());
 
         let len = match db.get_typed(&key, ValueType::List)? {
-            Some(v) => v.as_list().unwrap().read().len(),
+            Some(v) => v
+                .as_list()
+                .expect("type guaranteed by get_or_create_list")
+                .read()
+                .len(),
             None => 0,
         };
 
@@ -202,7 +214,10 @@ pub fn cmd_lrange(
             None => return Ok(Frame::Array(vec![])),
         };
 
-        let list = value.as_list().unwrap().read();
+        let list = value
+            .as_list()
+            .expect("type guaranteed by get_or_create_list")
+            .read();
         let range = list.range(start, stop);
         let frames: Vec<Frame> = range.into_iter().map(|b| Frame::Bulk(b.clone())).collect();
 
@@ -225,7 +240,10 @@ pub fn cmd_lindex(
             None => return Ok(Frame::Null),
         };
 
-        let list = value.as_list().unwrap().read();
+        let list = value
+            .as_list()
+            .expect("type guaranteed by get_or_create_list")
+            .read();
         match list.get(index) {
             Some(v) => Ok(Frame::Bulk(v.clone())),
             None => Ok(Frame::Null),
@@ -249,7 +267,9 @@ pub fn cmd_lset(
             None => return Err(CommandError::NoSuchKey.into()),
         };
 
-        let list = value.as_list().unwrap();
+        let list = value
+            .as_list()
+            .expect("type guaranteed by get_or_create_list");
         if list.write().set(index, element) {
             Ok(Frame::ok())
         } else {
@@ -270,7 +290,9 @@ pub fn cmd_ltrim(
         let stop = cmd.get_i64(2)?;
 
         if let Some(value) = db.get_typed(&key, ValueType::List)? {
-            let list = value.as_list().unwrap();
+            let list = value
+                .as_list()
+                .expect("type guaranteed by get_or_create_list");
             list.write().trim(start, stop);
         }
 
@@ -291,7 +313,9 @@ pub fn cmd_lrem(
 
         let removed = match db.get_typed(&key, ValueType::List)? {
             Some(value) => {
-                let list = value.as_list().unwrap();
+                let list = value
+                    .as_list()
+                    .expect("type guaranteed by get_or_create_list");
                 let mut list_guard = list.write();
                 let removed = list_guard.remove(count, element);
                 let is_empty = list_guard.is_empty();
@@ -331,7 +355,9 @@ pub fn cmd_linsert(
 
         let result = match db.get_typed(&key, ValueType::List)? {
             Some(value) => {
-                let list = value.as_list().unwrap();
+                let list = value
+                    .as_list()
+                    .expect("type guaranteed by get_or_create_list");
                 list.write().insert(pivot, element, before)
             }
             None => 0,
@@ -393,7 +419,10 @@ pub fn cmd_lpos(
             }
         };
 
-        let list = value.as_list().unwrap().read();
+        let list = value
+            .as_list()
+            .expect("type guaranteed by get_or_create_list")
+            .read();
         let list_len = list.len();
         let max_iterations = maxlen.unwrap_or(list_len);
 
@@ -499,7 +528,9 @@ pub fn cmd_lmpop(
         // Find first non-empty list
         for key in keys {
             if let Some(value) = db.get_typed(&key, ValueType::List)? {
-                let list = value.as_list().unwrap();
+                let list = value
+                    .as_list()
+                    .expect("type guaranteed by get_or_create_list");
                 let mut list_guard = list.write();
 
                 if list_guard.is_empty() {
@@ -549,7 +580,9 @@ pub fn cmd_lpushx(
             None => return Ok(Frame::Integer(0)),
         };
 
-        let list = value.as_list().unwrap();
+        let list = value
+            .as_list()
+            .expect("type guaranteed by get_or_create_list");
         let mut list = list.write();
 
         for arg in cmd.args.iter().skip(1) {
@@ -575,7 +608,9 @@ pub fn cmd_rpushx(
             None => return Ok(Frame::Integer(0)),
         };
 
-        let list = value.as_list().unwrap();
+        let list = value
+            .as_list()
+            .expect("type guaranteed by get_or_create_list");
         let mut list = list.write();
 
         for arg in cmd.args.iter().skip(1) {
@@ -602,7 +637,9 @@ pub fn cmd_rpoplpush(
             None => return Ok(Frame::Null),
         };
 
-        let src_list = src_value.as_list().unwrap();
+        let src_list = src_value
+            .as_list()
+            .expect("type guaranteed by get_or_create_list");
         let mut src_guard = src_list.write();
 
         // Pop from right of source
@@ -621,7 +658,9 @@ pub fn cmd_rpoplpush(
 
         // Get or create destination list
         let dst_value = get_or_create_list(&db, &dst_key)?;
-        let dst_list = dst_value.as_list().unwrap();
+        let dst_list = dst_value
+            .as_list()
+            .expect("type guaranteed by get_or_create_list");
         let mut dst_guard = dst_list.write();
 
         // Push to left of destination
@@ -663,7 +702,9 @@ pub fn cmd_lmove(
             None => return Ok(Frame::Null),
         };
 
-        let src_list = src_value.as_list().unwrap();
+        let src_list = src_value
+            .as_list()
+            .expect("type guaranteed by get_or_create_list");
         let mut src_guard = src_list.write();
 
         // Pop from source
@@ -688,7 +729,9 @@ pub fn cmd_lmove(
 
         // Get or create destination list
         let dst_value = get_or_create_list(&db, &dst_key)?;
-        let dst_list = dst_value.as_list().unwrap();
+        let dst_list = dst_value
+            .as_list()
+            .expect("type guaranteed by get_or_create_list");
         let mut dst_guard = dst_list.write();
 
         // Push to destination

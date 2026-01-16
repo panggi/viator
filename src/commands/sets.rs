@@ -29,7 +29,9 @@ pub fn cmd_sadd(
         let key = Key::from(cmd.args[0].clone());
         let value = get_or_create_set(&db, &key)?;
 
-        let set = value.as_set().unwrap();
+        let set = value
+            .as_set()
+            .expect("type guaranteed by get_or_create_set");
         let mut set = set.write();
         let added = set.add_multi(cmd.args[1..].iter().cloned());
 
@@ -54,7 +56,9 @@ pub fn cmd_srem(
             None => return Ok(Frame::Integer(0)),
         };
 
-        let set = value.as_set().unwrap();
+        let set = value
+            .as_set()
+            .expect("type guaranteed by get_or_create_set");
         let mut set_guard = set.write();
         let removed = set_guard.remove_multi(cmd.args[1..].iter().map(|b| b.as_ref()));
         let is_empty = set_guard.is_empty();
@@ -105,7 +109,11 @@ pub fn cmd_sismember(
         let member = &cmd.args[1];
 
         let is_member = match db.get_typed(&key, ValueType::Set)? {
-            Some(v) => v.as_set().unwrap().read().contains(member),
+            Some(v) => v
+                .as_set()
+                .expect("type guaranteed by get_or_create_set")
+                .read()
+                .contains(member),
             None => false,
         };
 
@@ -123,7 +131,11 @@ pub fn cmd_scard(
         let key = Key::from(cmd.args[0].clone());
 
         let len = match db.get_typed(&key, ValueType::Set)? {
-            Some(v) => v.as_set().unwrap().read().len(),
+            Some(v) => v
+                .as_set()
+                .expect("type guaranteed by get_or_create_set")
+                .read()
+                .len(),
             None => 0,
         };
 
@@ -150,7 +162,9 @@ pub fn cmd_spop(
             None => return Ok(Frame::Null),
         };
 
-        let set = value.as_set().unwrap();
+        let set = value
+            .as_set()
+            .expect("type guaranteed by get_or_create_set");
 
         let result = match count {
             Some(count) => {
@@ -217,7 +231,10 @@ pub fn cmd_srandmember(
             }
         };
 
-        let set = value.as_set().unwrap().read();
+        let set = value
+            .as_set()
+            .expect("type guaranteed by get_or_create_set")
+            .read();
 
         match count {
             Some(count) => {
@@ -255,8 +272,8 @@ pub fn cmd_smove(
 
         let dst = get_or_create_set(&db, &dst_key)?;
 
-        let src_set = src.as_set().unwrap();
-        let dst_set = dst.as_set().unwrap();
+        let src_set = src.as_set().expect("type guaranteed by get_or_create_set");
+        let dst_set = dst.as_set().expect("type guaranteed by get_or_create_set");
 
         let moved = src_set.write().move_to(&mut dst_set.write(), member);
 
@@ -339,7 +356,9 @@ pub fn cmd_sinterstore(
             db.delete(&dest_key);
         } else {
             let dest_value = ViatorValue::new_set();
-            let dest_set = dest_value.as_set().unwrap();
+            let dest_set = dest_value
+                .as_set()
+                .expect("type guaranteed by get_or_create_set");
             let mut guard = dest_set.write();
             for member in result {
                 guard.add(member);
@@ -372,7 +391,9 @@ pub fn cmd_sunionstore(
             db.delete(&dest_key);
         } else {
             let dest_value = ViatorValue::new_set();
-            let dest_set = dest_value.as_set().unwrap();
+            let dest_set = dest_value
+                .as_set()
+                .expect("type guaranteed by get_or_create_set");
             let mut guard = dest_set.write();
             for member in result {
                 guard.add(member);
@@ -405,7 +426,9 @@ pub fn cmd_sdiffstore(
             db.delete(&dest_key);
         } else {
             let dest_value = ViatorValue::new_set();
-            let dest_set = dest_value.as_set().unwrap();
+            let dest_set = dest_value
+                .as_set()
+                .expect("type guaranteed by get_or_create_set");
             let mut guard = dest_set.write();
             for member in result {
                 guard.add(member);
@@ -424,7 +447,11 @@ fn collect_sets(db: &Db, keys: &[bytes::Bytes]) -> Result<Vec<ViatorSet>> {
         .map(|k| {
             let key = Key::from(k.clone());
             match db.get_typed(&key, ValueType::Set)? {
-                Some(v) => Ok(v.as_set().unwrap().read().clone()),
+                Some(v) => Ok(v
+                    .as_set()
+                    .expect("type guaranteed by get_or_create_set")
+                    .read()
+                    .clone()),
                 None => Ok(ViatorSet::new()),
             }
         })
@@ -447,7 +474,12 @@ pub fn cmd_smismember(
             .map(|member| {
                 let is_member = value
                     .as_ref()
-                    .map(|v| v.as_set().unwrap().read().contains(member))
+                    .map(|v| {
+                        v.as_set()
+                            .expect("type guaranteed by get_or_create_set")
+                            .read()
+                            .contains(member)
+                    })
                     .unwrap_or(false);
                 Frame::Integer(if is_member { 1 } else { 0 })
             })
@@ -500,7 +532,10 @@ pub fn cmd_sscan(
             }
         };
 
-        let set = value.as_set().unwrap().read();
+        let set = value
+            .as_set()
+            .expect("type guaranteed by get_or_create_set")
+            .read();
         let members: Vec<bytes::Bytes> = set.members().into_iter().cloned().collect();
 
         // Simple scan implementation - just paginate through members

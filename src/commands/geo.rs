@@ -871,7 +871,9 @@ pub fn cmd_geosearchstore(
 
         // Store results
         let dest_value = ViatorValue::new_zset();
-        let dest_zset = dest_value.as_zset().unwrap();
+        let dest_zset = dest_value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset");
         let mut dest_guard = dest_zset.write();
 
         for (dist, member, score) in &results {

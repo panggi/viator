@@ -68,7 +68,9 @@ pub fn cmd_zadd(
         }
 
         let value = get_or_create_zset(&db, &key)?;
-        let zset = value.as_zset().unwrap();
+        let zset = value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset");
         let mut zset = zset.write();
 
         let mut added = 0;
@@ -116,7 +118,9 @@ pub fn cmd_zrem(
             None => return Ok(Frame::Integer(0)),
         };
 
-        let zset = value.as_zset().unwrap();
+        let zset = value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset");
         let mut zset_guard = zset.write();
         let removed = zset_guard.remove_multi(cmd.args[1..].iter().map(|b| b.as_ref()));
         let is_empty = zset_guard.is_empty();
@@ -142,7 +146,11 @@ pub fn cmd_zscore(
         let member = &cmd.args[1];
 
         let score = match db.get_typed(&key, ValueType::ZSet)? {
-            Some(v) => v.as_zset().unwrap().read().score(member),
+            Some(v) => v
+                .as_zset()
+                .expect("type guaranteed by get_or_create_zset")
+                .read()
+                .score(member),
             None => None,
         };
 
@@ -164,7 +172,11 @@ pub fn cmd_zrank(
         let member = &cmd.args[1];
 
         let rank = match db.get_typed(&key, ValueType::ZSet)? {
-            Some(v) => v.as_zset().unwrap().read().rank(member),
+            Some(v) => v
+                .as_zset()
+                .expect("type guaranteed by get_or_create_zset")
+                .read()
+                .rank(member),
             None => None,
         };
 
@@ -186,7 +198,11 @@ pub fn cmd_zrevrank(
         let member = &cmd.args[1];
 
         let rank = match db.get_typed(&key, ValueType::ZSet)? {
-            Some(v) => v.as_zset().unwrap().read().rev_rank(member),
+            Some(v) => v
+                .as_zset()
+                .expect("type guaranteed by get_or_create_zset")
+                .read()
+                .rev_rank(member),
             None => None,
         };
 
@@ -207,7 +223,11 @@ pub fn cmd_zcard(
         let key = Key::from(cmd.args[0].clone());
 
         let len = match db.get_typed(&key, ValueType::ZSet)? {
-            Some(v) => v.as_zset().unwrap().read().len(),
+            Some(v) => v
+                .as_zset()
+                .expect("type guaranteed by get_or_create_zset")
+                .read()
+                .len(),
             None => 0,
         };
 
@@ -227,7 +247,11 @@ pub fn cmd_zcount(
         let max = ScoreBound::parse(cmd.get_str(2)?).ok_or(CommandError::SyntaxError)?;
 
         let count = match db.get_typed(&key, ValueType::ZSet)? {
-            Some(v) => v.as_zset().unwrap().read().count_by_score(min, max),
+            Some(v) => v
+                .as_zset()
+                .expect("type guaranteed by get_or_create_zset")
+                .read()
+                .count_by_score(min, max),
             None => 0,
         };
 
@@ -256,7 +280,11 @@ pub fn cmd_zrange(
             .unwrap_or(false);
 
         let entries = match db.get_typed(&key, ValueType::ZSet)? {
-            Some(v) => v.as_zset().unwrap().read().range(start, stop),
+            Some(v) => v
+                .as_zset()
+                .expect("type guaranteed by get_or_create_zset")
+                .read()
+                .range(start, stop),
             None => vec![],
         };
 
@@ -299,7 +327,11 @@ pub fn cmd_zrevrange(
             .unwrap_or(false);
 
         let entries = match db.get_typed(&key, ValueType::ZSet)? {
-            Some(v) => v.as_zset().unwrap().read().rev_range(start, stop),
+            Some(v) => v
+                .as_zset()
+                .expect("type guaranteed by get_or_create_zset")
+                .read()
+                .rev_range(start, stop),
             None => vec![],
         };
 
@@ -333,7 +365,9 @@ pub fn cmd_zincrby(
         let member = cmd.args[2].clone();
 
         let value = get_or_create_zset(&db, &key)?;
-        let zset = value.as_zset().unwrap();
+        let zset = value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset");
         let new_score = zset.write().incr(member, increment);
 
         db.set(key, value);
@@ -360,7 +394,9 @@ pub fn cmd_zpopmin(
             None => return Ok(Frame::Array(vec![])),
         };
 
-        let zset = value.as_zset().unwrap();
+        let zset = value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset");
         let mut zset_guard = zset.write();
         let entries = zset_guard.pop_min(count);
         let is_empty = zset_guard.is_empty();
@@ -404,7 +440,9 @@ pub fn cmd_zpopmax(
             None => return Ok(Frame::Array(vec![])),
         };
 
-        let zset = value.as_zset().unwrap();
+        let zset = value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset");
         let mut zset_guard = zset.write();
         let entries = zset_guard.pop_max(count);
         let is_empty = zset_guard.is_empty();
@@ -476,7 +514,10 @@ pub fn cmd_zscan(
             }
         };
 
-        let zset = value.as_zset().unwrap().read();
+        let zset = value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset")
+            .read();
         // Get all entries in sorted order
         let entries = zset.range(0, -1);
 
@@ -545,7 +586,10 @@ pub fn cmd_zrandmember(
             }
         };
 
-        let zset = value.as_zset().unwrap().read();
+        let zset = value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset")
+            .read();
         let entries = zset.range(0, -1);
 
         if entries.is_empty() {
@@ -680,7 +724,10 @@ pub fn cmd_zrangestore(
             }
         };
 
-        let src_zset = src_value.as_zset().unwrap().read();
+        let src_zset = src_value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset")
+            .read();
 
         let entries = if by_score {
             let min = ScoreBound::parse(start_str).ok_or(CommandError::NotFloat)?;
@@ -711,7 +758,9 @@ pub fn cmd_zrangestore(
             db.delete(&dest_key);
         } else {
             let dest_value = ViatorValue::new_zset();
-            let dest_zset = dest_value.as_zset().unwrap();
+            let dest_zset = dest_value
+                .as_zset()
+                .expect("type guaranteed by get_or_create_zset");
             let mut guard = dest_zset.write();
             for entry in entries {
                 guard.add(entry.member, entry.score);
@@ -783,7 +832,10 @@ pub fn cmd_zunion(
 
         for (i, key) in keys.iter().enumerate() {
             if let Some(value) = db.get_typed(key, ValueType::ZSet)? {
-                let zset = value.as_zset().unwrap().read();
+                let zset = value
+                    .as_zset()
+                    .expect("type guaranteed by get_or_create_zset")
+                    .read();
                 for entry in zset.iter() {
                     let weighted_score = entry.score * weights[i];
                     result_map
@@ -883,7 +935,10 @@ pub fn cmd_zinter(
             None => return Ok(Frame::Array(vec![])),
         };
 
-        let first_zset = first_value.as_zset().unwrap().read();
+        let first_zset = first_value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset")
+            .read();
         let mut result_map: std::collections::HashMap<Bytes, f64> =
             std::collections::HashMap::new();
 
@@ -895,7 +950,10 @@ pub fn cmd_zinter(
         // Intersect with remaining sets
         for (i, key) in keys.iter().enumerate().skip(1) {
             if let Some(value) = db.get_typed(key, ValueType::ZSet)? {
-                let zset = value.as_zset().unwrap().read();
+                let zset = value
+                    .as_zset()
+                    .expect("type guaranteed by get_or_create_zset")
+                    .read();
                 let members_in_current: std::collections::HashSet<_> =
                     zset.iter().map(|e| e.member.clone()).collect();
 
@@ -974,7 +1032,10 @@ pub fn cmd_zdiff(
             None => return Ok(Frame::Array(vec![])),
         };
 
-        let first_zset = first_value.as_zset().unwrap().read();
+        let first_zset = first_value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset")
+            .read();
         let mut result_map: std::collections::HashMap<Bytes, f64> =
             std::collections::HashMap::new();
 
@@ -986,7 +1047,10 @@ pub fn cmd_zdiff(
         // Remove members from other sets
         for key in keys.iter().skip(1) {
             if let Some(value) = db.get_typed(key, ValueType::ZSet)? {
-                let zset = value.as_zset().unwrap().read();
+                let zset = value
+                    .as_zset()
+                    .expect("type guaranteed by get_or_create_zset")
+                    .read();
                 for entry in zset.iter() {
                     result_map.remove(&entry.member);
                 }
@@ -1129,7 +1193,10 @@ pub fn cmd_zdiffstore(
             }
         };
 
-        let first_zset = first_value.as_zset().unwrap().read();
+        let first_zset = first_value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset")
+            .read();
         let mut result_map: std::collections::HashMap<Bytes, f64> =
             std::collections::HashMap::new();
 
@@ -1140,7 +1207,10 @@ pub fn cmd_zdiffstore(
 
         for key in keys.iter().skip(1) {
             if let Some(value) = db.get_typed(key, ValueType::ZSet)? {
-                let zset = value.as_zset().unwrap().read();
+                let zset = value
+                    .as_zset()
+                    .expect("type guaranteed by get_or_create_zset")
+                    .read();
                 for entry in zset.iter() {
                     result_map.remove(&entry.member);
                 }
@@ -1153,7 +1223,9 @@ pub fn cmd_zdiffstore(
             db.delete(&dest_key);
         } else {
             let new_zset = ViatorValue::new_zset();
-            let zset = new_zset.as_zset().unwrap();
+            let zset = new_zset
+                .as_zset()
+                .expect("type guaranteed by get_or_create_zset");
             let mut guard = zset.write();
             for (member, score) in result_map {
                 guard.add(member, score);
@@ -1226,7 +1298,10 @@ pub fn cmd_zinterstore(
             }
         };
 
-        let first_zset = first_value.as_zset().unwrap().read();
+        let first_zset = first_value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset")
+            .read();
         let mut result: std::collections::HashMap<Bytes, f64> = std::collections::HashMap::new();
 
         'outer: for entry in first_zset.iter() {
@@ -1234,7 +1309,10 @@ pub fn cmd_zinterstore(
 
             for (idx, key) in keys.iter().enumerate().skip(1) {
                 if let Some(value) = db.get_typed(key, ValueType::ZSet)? {
-                    let zset = value.as_zset().unwrap().read();
+                    let zset = value
+                        .as_zset()
+                        .expect("type guaranteed by get_or_create_zset")
+                        .read();
                     if let Some(score) = zset.score(&entry.member) {
                         scores.push(score * weights[idx]);
                     } else {
@@ -1261,7 +1339,9 @@ pub fn cmd_zinterstore(
             db.delete(&dest_key);
         } else {
             let new_zset = ViatorValue::new_zset();
-            let zset = new_zset.as_zset().unwrap();
+            let zset = new_zset
+                .as_zset()
+                .expect("type guaranteed by get_or_create_zset");
             let mut guard = zset.write();
             for (member, score) in result {
                 guard.add(member, score);
@@ -1331,7 +1411,10 @@ pub fn cmd_zunionstore(
 
         for (idx, key) in keys.iter().enumerate() {
             if let Some(value) = db.get_typed(key, ValueType::ZSet)? {
-                let zset = value.as_zset().unwrap().read();
+                let zset = value
+                    .as_zset()
+                    .expect("type guaranteed by get_or_create_zset")
+                    .read();
                 for entry in zset.iter() {
                     result
                         .entry(entry.member.clone())
@@ -1346,7 +1429,9 @@ pub fn cmd_zunionstore(
             db.delete(&dest_key);
         } else {
             let new_zset = ViatorValue::new_zset();
-            let zset = new_zset.as_zset().unwrap();
+            let zset = new_zset
+                .as_zset()
+                .expect("type guaranteed by get_or_create_zset");
             let mut guard = zset.write();
             for (member, scores) in result {
                 let final_score = match aggregate {
@@ -1391,13 +1476,19 @@ pub fn cmd_zintercard(
             None => return Ok(Frame::Integer(0)),
         };
 
-        let first_zset = first_value.as_zset().unwrap().read();
+        let first_zset = first_value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset")
+            .read();
         let mut count = 0usize;
 
         'outer: for entry in first_zset.iter() {
             for key in keys.iter().skip(1) {
                 if let Some(value) = db.get_typed(key, ValueType::ZSet)? {
-                    let zset = value.as_zset().unwrap().read();
+                    let zset = value
+                        .as_zset()
+                        .expect("type guaranteed by get_or_create_zset")
+                        .read();
                     if zset.score(&entry.member).is_none() {
                         continue 'outer;
                     }
@@ -1432,7 +1523,10 @@ pub fn cmd_zmscore(
             .iter()
             .map(|member| match &value {
                 Some(v) => {
-                    let zset = v.as_zset().unwrap().read();
+                    let zset = v
+                        .as_zset()
+                        .expect("type guaranteed by get_or_create_zset")
+                        .read();
                     match zset.score(member) {
                         Some(score) => Frame::Bulk(Bytes::from(score.to_string())),
                         None => Frame::Null,
@@ -1464,7 +1558,10 @@ pub fn cmd_zlexcount(
             None => return Ok(Frame::Integer(0)),
         };
 
-        let zset = value.as_zset().unwrap().read();
+        let zset = value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset")
+            .read();
         let count = zset
             .iter()
             .filter(|entry| {
@@ -1503,7 +1600,10 @@ pub fn cmd_zrangebylex(
             None => return Ok(Frame::Array(vec![])),
         };
 
-        let zset = value.as_zset().unwrap().read();
+        let zset = value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset")
+            .read();
         let results: Vec<Frame> = zset
             .iter()
             .filter(|entry| {
@@ -1545,7 +1645,10 @@ pub fn cmd_zrevrangebylex(
             None => return Ok(Frame::Array(vec![])),
         };
 
-        let zset = value.as_zset().unwrap().read();
+        let zset = value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset")
+            .read();
         let mut entries: Vec<_> = zset
             .iter()
             .filter(|entry| {
@@ -1603,7 +1706,10 @@ pub fn cmd_zrangebyscore(
             None => return Ok(Frame::Array(vec![])),
         };
 
-        let zset = value.as_zset().unwrap().read();
+        let zset = value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset")
+            .read();
         let entries: Vec<_> = zset
             .iter()
             .filter(|entry| score_in_range(entry.score, &min, &max))
@@ -1666,7 +1772,10 @@ pub fn cmd_zrevrangebyscore(
             None => return Ok(Frame::Array(vec![])),
         };
 
-        let zset = value.as_zset().unwrap().read();
+        let zset = value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset")
+            .read();
         let mut entries: Vec<_> = zset
             .iter()
             .filter(|entry| score_in_range(entry.score, &min, &max))
@@ -1711,7 +1820,9 @@ pub fn cmd_zremrangebylex(
             None => return Ok(Frame::Integer(0)),
         };
 
-        let zset = value.as_zset().unwrap();
+        let zset = value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset");
         let mut guard = zset.write();
 
         let to_remove: Vec<Bytes> = guard
@@ -1757,7 +1868,9 @@ pub fn cmd_zremrangebyrank(
             None => return Ok(Frame::Integer(0)),
         };
 
-        let zset = value.as_zset().unwrap();
+        let zset = value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset");
         let mut guard = zset.write();
         let len = guard.len() as i64;
 
@@ -1817,7 +1930,9 @@ pub fn cmd_zremrangebyscore(
             None => return Ok(Frame::Integer(0)),
         };
 
-        let zset = value.as_zset().unwrap();
+        let zset = value
+            .as_zset()
+            .expect("type guaranteed by get_or_create_zset");
         let mut guard = zset.write();
 
         let to_remove: Vec<Bytes> = guard
