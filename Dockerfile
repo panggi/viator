@@ -29,6 +29,7 @@ FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Create viator user
@@ -52,9 +53,9 @@ USER viator
 # Expose default port
 EXPOSE 6379
 
-# Health check
+# Health check - verify server responds to PING
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD ["/usr/local/bin/viator", "--version"] || exit 1
+    CMD echo "PING" | nc -q1 localhost 6379 | grep -q PONG || exit 1
 
 # Default command
 ENTRYPOINT ["/usr/local/bin/viator"]
