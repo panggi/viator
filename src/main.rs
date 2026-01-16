@@ -151,7 +151,7 @@ async fn main() -> anyhow::Result<()> {
         // Ignore additional Ctrl-C signals during shutdown
         // This prevents corruption from interrupting VDB save
         loop {
-            if let Err(_) = tokio::signal::ctrl_c().await {
+            if tokio::signal::ctrl_c().await.is_err() {
                 break;
             }
             warn!("Shutdown in progress, please wait for VDB save to complete");

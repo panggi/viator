@@ -255,11 +255,9 @@ impl Server {
 
             // Spawn blocking task to ensure save completes even if signals arrive
             let db_clone = self.database.clone();
-            let save_result = tokio::task::spawn_blocking(move || {
-                match VdbSaver::new(&vdb_path) {
-                    Ok(saver) => saver.save(&db_clone),
-                    Err(e) => Err(e),
-                }
+            let save_result = tokio::task::spawn_blocking(move || match VdbSaver::new(&vdb_path) {
+                Ok(saver) => saver.save(&db_clone),
+                Err(e) => Err(e),
             })
             .await;
 
