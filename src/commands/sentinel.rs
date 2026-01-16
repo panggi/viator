@@ -939,7 +939,7 @@ fn handle_is_master_down(cmd: &ParsedCommand, state: &SentinelState) -> Result<F
 // COMMAND REGISTRY WRAPPER
 // =============================================================================
 
-/// SENTINEL subcommand [arguments] - Registry-compatible wrapper
+/// SENTINEL subcommand \[arguments\] - Registry-compatible wrapper
 pub fn cmd_sentinel(
     cmd: ParsedCommand,
     _db: Arc<Db>,

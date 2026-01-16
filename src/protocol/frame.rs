@@ -231,7 +231,7 @@ impl Frame {
         }
     }
 
-    /// Convert to a Vec<u8> for convenience.
+    /// Convert to a `Vec<u8>` for convenience.
     pub fn to_vec(&self) -> Vec<u8> {
         let mut buf = BytesMut::with_capacity(self.serialized_size());
         self.serialize(&mut buf);

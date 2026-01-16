@@ -65,9 +65,9 @@ pub struct Config {
 /// Keyspace notification event flags (Redis 8.2+ adds O and T)
 #[derive(Debug, Clone, Copy, Default)]
 pub struct KeyspaceEventFlags {
-    /// K - Keyspace events (__keyspace@<db>__)
+    /// K - Keyspace events (`__keyspace@<db>__`)
     pub keyspace: bool,
-    /// E - Keyevent events (__keyevent@<db>__)
+    /// E - Keyevent events (`__keyevent@<db>__`)
     pub keyevent: bool,
     /// g - Generic commands (DEL, EXPIRE, RENAME, etc.)
     pub generic: bool,

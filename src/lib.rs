@@ -63,7 +63,8 @@
 )]
 
 // Use jemalloc for better performance on Unix systems
-#[cfg(all(not(target_env = "msvc"), feature = "server"))]
+// Disabled under Miri since it cannot interpret jemalloc's foreign functions
+#[cfg(all(not(target_env = "msvc"), not(miri), feature = "server"))]
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 

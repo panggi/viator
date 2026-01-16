@@ -5,7 +5,7 @@
 use bytes::Bytes;
 use std::collections::BTreeMap;
 
-/// Stream entry ID in format <milliseconds>-<sequence>
+/// Stream entry ID in format `<milliseconds>-<sequence>`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct StreamId {
     /// Milliseconds timestamp
