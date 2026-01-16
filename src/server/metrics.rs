@@ -23,54 +23,7 @@ pub fn get_memory_usage() -> (usize, usize) {
         (0, 0)
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        // Use mach task_info for macOS
-        use std::mem::MaybeUninit;
-
-        unsafe extern "C" {
-            fn mach_task_self() -> u32;
-            fn task_info(
-                target_task: u32,
-                flavor: i32,
-                task_info_out: *mut i32,
-                task_info_outCnt: *mut u32,
-            ) -> i32;
-        }
-
-        const TASK_BASIC_INFO: i32 = 5;
-        const TASK_BASIC_INFO_COUNT: u32 = 10;
-
-        #[repr(C)]
-        struct TaskBasicInfo {
-            suspend_count: i32,
-            virtual_size: usize,
-            resident_size: usize,
-            user_time: [u32; 2],
-            system_time: [u32; 2],
-            policy: i32,
-        }
-
-        unsafe {
-            let mut info: MaybeUninit<TaskBasicInfo> = MaybeUninit::uninit();
-            let mut count = TASK_BASIC_INFO_COUNT;
-
-            let result = task_info(
-                mach_task_self(),
-                TASK_BASIC_INFO,
-                info.as_mut_ptr() as *mut i32,
-                &mut count,
-            );
-
-            if result == 0 {
-                let info = info.assume_init();
-                return (info.virtual_size, info.resident_size);
-            }
-        }
-        (0, 0)
-    }
-
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(not(target_os = "linux"))]
     {
         // Fallback for other platforms
         (0, 0)
