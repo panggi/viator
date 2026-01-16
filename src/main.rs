@@ -326,11 +326,13 @@ fn parse_memory_arg(value: &str) -> Option<usize> {
 #[allow(unsafe_code)]
 fn daemonize(config: &Config) -> anyhow::Result<()> {
     // Fork and exit parent
+    // SAFETY: fork() is safe to call; it creates a new process. Return value is checked.
     match unsafe { libc::fork() } {
         -1 => Err(anyhow::anyhow!("Fork failed")),
         0 => {
             // Child process continues
             // Create new session
+            // SAFETY: setsid() is safe to call after fork in child process. Return value is checked.
             if unsafe { libc::setsid() } == -1 {
                 return Err(anyhow::anyhow!("setsid failed"));
             }
@@ -339,6 +341,10 @@ fn daemonize(config: &Config) -> anyhow::Result<()> {
             std::env::set_current_dir(&config.dir)?;
 
             // Close standard file descriptors
+            // SAFETY: These are standard POSIX daemonization steps:
+            // - close(0/1/2) closes stdin/stdout/stderr which is safe
+            // - open("/dev/null") with null-terminated string literal is safe
+            // - dup(0) duplicates fd 0 to next available fd, which is safe
             unsafe {
                 libc::close(0); // stdin
                 libc::close(1); // stdout

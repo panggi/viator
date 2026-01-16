@@ -42,6 +42,7 @@ fn get_memory_usage_linux() -> (usize, usize) {
         let parts: Vec<&str> = statm.split_whitespace().collect();
         if parts.len() >= 2 {
             // Get actual page size from system
+            // SAFETY: sysconf(_SC_PAGESIZE) is a safe POSIX call that returns page size.
             let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize };
             let vsize = parts[0].parse::<usize>().unwrap_or(0) * page_size;
             let rss = parts[1].parse::<usize>().unwrap_or(0) * page_size;
@@ -55,7 +56,9 @@ fn get_memory_usage_linux() -> (usize, usize) {
 #[allow(unsafe_code)]
 fn get_memory_usage_macos() -> (usize, usize) {
     // Use getrusage for RSS on macOS - it's reliable and simple
+    // SAFETY: zeroed() produces a valid libc::rusage struct (all-zeros is valid).
     let mut rusage: libc::rusage = unsafe { std::mem::zeroed() };
+    // SAFETY: getrusage(RUSAGE_SELF, &mut rusage) is a safe POSIX call that fills rusage.
     let ret = unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut rusage) };
 
     if ret == 0 {
@@ -101,6 +104,10 @@ fn get_memory_usage_windows() -> (usize, usize) {
         fn GetCurrentProcess() -> *mut std::ffi::c_void;
     }
 
+    // SAFETY: Windows API calls are safe when:
+    // - zeroed() produces valid PROCESS_MEMORY_COUNTERS (all-zeros is valid)
+    // - GetCurrentProcess() returns pseudo-handle that doesn't need closing
+    // - GetProcessMemoryInfo() is called with correct cb size and valid pointer
     unsafe {
         let mut pmc: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
         pmc.cb = size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
@@ -118,7 +125,9 @@ fn get_memory_usage_windows() -> (usize, usize) {
 #[allow(unsafe_code)]
 fn get_memory_usage_posix() -> (usize, usize) {
     // POSIX fallback using getrusage
+    // SAFETY: zeroed() produces a valid libc::rusage struct (all-zeros is valid).
     let mut rusage: libc::rusage = unsafe { std::mem::zeroed() };
+    // SAFETY: getrusage(RUSAGE_SELF, &mut rusage) is a safe POSIX call that fills rusage.
     let ret = unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut rusage) };
 
     if ret == 0 {
