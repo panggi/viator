@@ -172,7 +172,9 @@ impl ViatorStream {
         // SAFETY: System time before UNIX_EPOCH (1970) indicates misconfigured clock
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_else(|_| unreachable!("system clock is before UNIX_EPOCH - check system time"))
+            .unwrap_or_else(|_| {
+                unreachable!("system clock is before UNIX_EPOCH - check system time")
+            })
             .as_millis() as u64;
 
         let new_id = match id {

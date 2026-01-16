@@ -222,10 +222,9 @@ impl ScalingBloomFilter {
 
         // Check if we need a new filter
         // INVARIANT: filters is never empty - constructor always adds one filter
-        let last = self
-            .filters
-            .last()
-            .unwrap_or_else(|| unreachable!("ScalingBloomFilter invariant: filters is never empty"));
+        let last = self.filters.last().unwrap_or_else(|| {
+            unreachable!("ScalingBloomFilter invariant: filters is never empty")
+        });
         if last.len() >= self.current_capacity() {
             // Check if we've hit the max_filters limit
             if self.filters.len() >= self.max_filters {
@@ -234,7 +233,9 @@ impl ScalingBloomFilter {
                 // INVARIANT: filters is never empty
                 self.filters
                     .last_mut()
-                    .unwrap_or_else(|| unreachable!("ScalingBloomFilter invariant: filters is never empty"))
+                    .unwrap_or_else(|| {
+                        unreachable!("ScalingBloomFilter invariant: filters is never empty")
+                    })
                     .add(item);
                 self.total_items += 1;
                 return true;
@@ -261,10 +262,9 @@ impl ScalingBloomFilter {
     pub fn is_at_capacity(&self) -> bool {
         if self.filters.len() >= self.max_filters {
             // INVARIANT: filters is never empty
-            let last = self
-                .filters
-                .last()
-                .unwrap_or_else(|| unreachable!("ScalingBloomFilter invariant: filters is never empty"));
+            let last = self.filters.last().unwrap_or_else(|| {
+                unreachable!("ScalingBloomFilter invariant: filters is never empty")
+            });
             last.len() >= self.current_capacity()
         } else {
             false

@@ -272,8 +272,12 @@ pub fn cmd_smove(
 
         let dst = get_or_create_set(&db, &dst_key)?;
 
-        let src_set = src.as_set().unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"));
-        let dst_set = dst.as_set().unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"));
+        let src_set = src
+            .as_set()
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"));
+        let dst_set = dst
+            .as_set()
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"));
 
         let moved = src_set.write().move_to(&mut dst_set.write(), member);
 
