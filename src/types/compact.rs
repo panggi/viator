@@ -536,8 +536,8 @@ mod tests {
     fn test_listpack_integers() {
         let mut lp = Listpack::new();
 
-        lp.push_bytes(b"127");   // Small int
-        lp.push_bytes(b"1000");  // 13-bit int
+        lp.push_bytes(b"127"); // Small int
+        lp.push_bytes(b"1000"); // 13-bit int
         lp.push_bytes(b"50000"); // 16-bit int
 
         let values = lp.to_vec();
