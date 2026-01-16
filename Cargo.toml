@@ -67,6 +67,8 @@ sha1 = "0.10"
 
 # TLS support
 tokio-rustls = { version = "0.26", optional = true }
+# TODO: rustls-pemfile is unmaintained (RUSTSEC-2025-0134)
+# Consider migrating to rustls's built-in PEM parsing or the `pem` crate
 rustls-pemfile = { version = "2.2", optional = true }
 
 # OpenTelemetry (optional, enable with --features telemetry)
