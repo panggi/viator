@@ -9,7 +9,7 @@ pub mod responses;
 
 pub use frame::Frame;
 pub use parser::{RespParser, parse_frame};
-pub use responses::{OK, PONG, NULL_BULK, NULL_ARRAY, EMPTY_BULK, EMPTY_ARRAY, ZERO, ONE};
+pub use responses::{EMPTY_ARRAY, EMPTY_BULK, NULL_ARRAY, NULL_BULK, OK, ONE, PONG, ZERO};
 
 /// RESP protocol version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
