@@ -221,13 +221,19 @@ impl ScalingBloomFilter {
         }
 
         // Check if we need a new filter
-        let last = self.filters.last().unwrap();
+        let last = self
+            .filters
+            .last()
+            .expect("filters always has at least one element");
         if last.len() >= self.current_capacity() {
             // Check if we've hit the max_filters limit
             if self.filters.len() >= self.max_filters {
                 // Cannot expand further - filter is at capacity
                 // Still add to the last filter (may increase false positive rate)
-                self.filters.last_mut().unwrap().add(item);
+                self.filters
+                    .last_mut()
+                    .expect("filters always has at least one element")
+                    .add(item);
                 self.total_items += 1;
                 return true;
             }
@@ -239,7 +245,10 @@ impl ScalingBloomFilter {
         }
 
         // Add to the last filter
-        self.filters.last_mut().unwrap().add(item);
+        self.filters
+            .last_mut()
+            .expect("filters always has at least one element")
+            .add(item);
         self.total_items += 1;
         true
     }
@@ -248,7 +257,10 @@ impl ScalingBloomFilter {
     #[must_use]
     pub fn is_at_capacity(&self) -> bool {
         if self.filters.len() >= self.max_filters {
-            let last = self.filters.last().unwrap();
+            let last = self
+                .filters
+                .last()
+                .expect("filters always has at least one element");
             last.len() >= self.current_capacity()
         } else {
             false

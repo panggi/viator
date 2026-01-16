@@ -147,7 +147,7 @@ impl ViatorStream {
     pub fn add(&mut self, id: StreamIdParsed, fields: Vec<(Bytes, Bytes)>) -> Option<StreamId> {
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("system time is after UNIX_EPOCH")
             .as_millis() as u64;
 
         let new_id = match id {

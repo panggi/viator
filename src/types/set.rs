@@ -195,7 +195,7 @@ impl ViatorSet {
             .iter()
             .enumerate()
             .min_by_key(|(_, s)| s.len())
-            .unwrap();
+            .expect("sets is non-empty, checked above");
 
         let mut result: HashSet<Bytes> = sets[smallest_idx].inner.clone();
 
