@@ -34,12 +34,13 @@ impl From<FuzzFrame> for Frame {
 
 fuzz_target!(|frame: FuzzFrame| {
     let frame: Frame = frame.into();
-    
+
     // Serialize the frame
     let mut buffer = BytesMut::new();
     frame.serialize(&mut buffer);
-    
+
     // Try to parse it back - roundtrip should work
     let mut parser = RespParser::new();
-    let _ = parser.parse(&mut buffer);
+    parser.buffer_mut().unsplit(buffer);
+    let _ = parser.parse();
 });
