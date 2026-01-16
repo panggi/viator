@@ -6,15 +6,28 @@
 use std::process::Command;
 
 fn get_binary_path(name: &str) -> String {
-    // Use release build if available, otherwise debug
-    let release_path = format!("target/release/{}", name);
-    let debug_path = format!("target/debug/{}", name);
+    // Check multiple possible locations for the binary
+    // Priority: CARGO_TARGET_DIR env var, llvm-cov-target, release, debug
+    let target_dir = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string());
 
-    if std::path::Path::new(&release_path).exists() {
-        release_path
-    } else {
-        debug_path
+    let candidates = [
+        format!("{}/release/{}", target_dir, name),
+        format!("{}/debug/{}", target_dir, name),
+        // Fallback paths for when CARGO_TARGET_DIR isn't set but llvm-cov is used
+        format!("target/llvm-cov-target/release/{}", name),
+        format!("target/llvm-cov-target/debug/{}", name),
+        format!("target/release/{}", name),
+        format!("target/debug/{}", name),
+    ];
+
+    for path in &candidates {
+        if std::path::Path::new(path).exists() {
+            return path.clone();
+        }
     }
+
+    // Return the most likely path for better error messages
+    format!("{}/debug/{}", target_dir, name)
 }
 
 /// Test that viator binary responds to --help
