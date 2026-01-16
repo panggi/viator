@@ -5,7 +5,9 @@ After=network.target
 Wants=network-online.target
 
 [Service]
-Type=notify
+# Type=simple: Viator stays in foreground, systemd considers it started immediately.
+# Note: Type=notify would require sd_notify() integration which is not implemented.
+Type=simple
 ExecStart=/usr/local/bin/viator --config /etc/viator/viator.conf
 ExecStop=/bin/kill -SIGTERM $MAINPID
 ExecReload=/bin/kill -SIGHUP $MAINPID
