@@ -204,8 +204,14 @@ pub fn cmd_info(
             info.push_str("# CPU\r\n");
             info.push_str(&format!("used_cpu_sys:{:.6}\r\n", cpu.sys));
             info.push_str(&format!("used_cpu_user:{:.6}\r\n", cpu.user));
-            info.push_str(&format!("used_cpu_sys_children:{:.6}\r\n", cpu.sys_children));
-            info.push_str(&format!("used_cpu_user_children:{:.6}\r\n", cpu.user_children));
+            info.push_str(&format!(
+                "used_cpu_sys_children:{:.6}\r\n",
+                cpu.sys_children
+            ));
+            info.push_str(&format!(
+                "used_cpu_user_children:{:.6}\r\n",
+                cpu.user_children
+            ));
             info.push_str("\r\n");
         }
 

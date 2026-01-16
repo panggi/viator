@@ -18,7 +18,6 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-
 /// AOF fsync policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AofFsync {
@@ -261,11 +260,7 @@ impl AofWriter {
                             // Format: XADD key <id> field1 value1 field2 value2 ...
                             for (ms, seq, fields) in &stream_export.entries {
                                 let id_str = format!("{}-{}", ms, seq);
-                                let mut cmd = vec![
-                                    "XADD".to_string(),
-                                    key_str.to_string(),
-                                    id_str,
-                                ];
+                                let mut cmd = vec!["XADD".to_string(), key_str.to_string(), id_str];
                                 // Add field-value pairs
                                 for (field, value) in fields {
                                     cmd.push(String::from_utf8_lossy(field).to_string());
@@ -276,10 +271,8 @@ impl AofWriter {
                             }
                             // Set the last_id using XSETID to preserve ID generation state
                             // Format: XSETID key <last_id> [ENTRIESADDED entries_added]
-                            let last_id_str = format!(
-                                "{}-{}",
-                                stream_export.last_id.0, stream_export.last_id.1
-                            );
+                            let last_id_str =
+                                format!("{}-{}", stream_export.last_id.0, stream_export.last_id.1);
                             Self::write_command(
                                 &mut writer,
                                 &[

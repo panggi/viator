@@ -19,7 +19,6 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
-
 /// CRC64 polynomial (ECMA-182)
 const CRC64_POLY: u64 = 0xC96C5795D7870F42;
 
