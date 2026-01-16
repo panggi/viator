@@ -508,7 +508,9 @@ impl SearchIndex {
                         id: doc_id,
                         score,
                         fields,
-                        highlights: HashMap::new(), // TODO: implement highlighting
+                        // Note: Highlighting not yet implemented - returns empty map.
+                        // Redis 8.4.0 FT.SEARCH HIGHLIGHT option is a future enhancement.
+                        highlights: HashMap::new(),
                     }
                 })
             })

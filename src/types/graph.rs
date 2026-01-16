@@ -572,11 +572,13 @@ pub struct NodePattern {
 }
 
 /// Match pattern.
+///
+/// Note: Currently only supports node patterns. Redis 8.4.0 GRAPH.QUERY
+/// relationship patterns (e.g., `()-[:KNOWS]->()`) are a future enhancement.
 #[derive(Debug, Clone)]
 pub struct MatchPattern {
     /// Node pattern
     pub node_pattern: NodePattern,
-    // TODO: Add relationship patterns for more complex queries
 }
 
 /// Match result value.
