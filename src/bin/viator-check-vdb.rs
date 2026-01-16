@@ -60,6 +60,7 @@ const VDB_TYPE_SET_INTSET: u8 = 11;
 const VDB_TYPE_ZSET_ZIPLIST: u8 = 12;
 const VDB_TYPE_HASH_ZIPLIST: u8 = 13;
 const VDB_TYPE_VECTORSET: u8 = 20;
+const VDB_TYPE_STREAM: u8 = 21;
 
 /// Length encoding markers
 const VDB_6BITLEN: u8 = 0;
@@ -88,6 +89,8 @@ struct VdbChecker {
     set_keys: u64,
     zset_keys: u64,
     hash_keys: u64,
+    stream_keys: u64,
+    vectorset_keys: u64,
     other_keys: u64,
     expires: u64,
     databases: Vec<u16>,
@@ -108,6 +111,8 @@ impl VdbChecker {
             set_keys: 0,
             zset_keys: 0,
             hash_keys: 0,
+            stream_keys: 0,
+            vectorset_keys: 0,
             other_keys: 0,
             expires: 0,
             databases: Vec::new(),
@@ -277,6 +282,27 @@ impl VdbChecker {
                     }
                 }
             }
+            VDB_TYPE_STREAM => {
+                // Read last_id (ms, seq)
+                self.read_bytes(8)?; // last_id.ms (u64)
+                self.read_bytes(8)?; // last_id.seq (u64)
+                // Read entries_added
+                self.read_bytes(8)?; // entries_added (u64)
+                // Read number of entries
+                let num_entries = self.read_length()? as usize;
+                for _ in 0..num_entries {
+                    // Entry ID (ms, seq)
+                    self.read_bytes(8)?; // ms (u64)
+                    self.read_bytes(8)?; // seq (u64)
+                    // Number of fields
+                    let num_fields = self.read_length()? as usize;
+                    // Field-value pairs
+                    for _ in 0..num_fields {
+                        self.read_string()?; // field
+                        self.read_string()?; // value
+                    }
+                }
+            }
             _ => {
                 // Unknown type - try to read as string
                 self.read_string()?;
@@ -384,6 +410,8 @@ impl VdbChecker {
                         VDB_TYPE_HASH | VDB_TYPE_HASH_ZIPLIST | VDB_TYPE_HASH_ZIPMAP => {
                             self.hash_keys += 1;
                         }
+                        VDB_TYPE_STREAM => self.stream_keys += 1,
+                        VDB_TYPE_VECTORSET => self.vectorset_keys += 1,
                         _ => self.other_keys += 1,
                     }
 
@@ -438,6 +466,12 @@ impl VdbChecker {
         println!("  Sets:        {}", self.set_keys);
         println!("  Sorted Sets: {}", self.zset_keys);
         println!("  Hashes:      {}", self.hash_keys);
+        if self.stream_keys > 0 {
+            println!("  Streams:     {}", self.stream_keys);
+        }
+        if self.vectorset_keys > 0 {
+            println!("  VectorSets:  {}", self.vectorset_keys);
+        }
         if self.other_keys > 0 {
             println!("  Other:       {}", self.other_keys);
         }
