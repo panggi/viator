@@ -304,7 +304,7 @@ const LP_STR: u8 = 0x80;
 /// all elements in a single contiguous buffer. Much more cache-friendly
 /// than linked lists for small sizes.
 ///
-/// Format: Each entry is [type_byte][length?][data]
+/// Format: Each entry is `[type_byte][length?][data]`
 /// - Integers: type_byte=0x00, followed by varint encoding
 /// - Strings: type_byte=0x80, followed by length varint, then data
 #[derive(Debug, Clone)]
