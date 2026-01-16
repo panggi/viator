@@ -2,6 +2,8 @@
 //!
 //! Tests the core storage layer performance under various conditions.
 
+#![allow(missing_docs)]
+
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 
 // Note: Adjust imports based on your actual module structure

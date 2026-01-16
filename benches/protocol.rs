@@ -1,5 +1,7 @@
 //! Benchmark for RESP protocol parsing.
 
+#![allow(missing_docs)]
+
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 
 fn benchmark_parsing(c: &mut Criterion) {
