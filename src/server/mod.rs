@@ -250,19 +250,28 @@ impl Server {
         // Save final VDB snapshot before exiting (unless SHUTDOWN NOSAVE was used)
         let should_save = !self.config.save.is_empty() && self.database.should_save_on_shutdown();
         if should_save {
-            info!("Saving the final VDB snapshot before exiting");
+            info!("Saving the final VDB snapshot before exiting (do not interrupt!)");
             let vdb_path = std::path::Path::new(&self.config.dir).join(&self.config.dbfilename);
-            match VdbSaver::new(&vdb_path) {
-                Ok(saver) => match saver.save(&self.database) {
-                    Ok(()) => {
-                        info!("DB saved on disk");
-                    }
-                    Err(e) => {
-                        error!("Failed to save VDB on shutdown: {}", e);
-                    }
-                },
+
+            // Spawn blocking task to ensure save completes even if signals arrive
+            let db_clone = self.database.clone();
+            let save_result = tokio::task::spawn_blocking(move || {
+                match VdbSaver::new(&vdb_path) {
+                    Ok(saver) => saver.save(&db_clone),
+                    Err(e) => Err(e),
+                }
+            })
+            .await;
+
+            match save_result {
+                Ok(Ok(())) => {
+                    info!("DB saved on disk");
+                }
+                Ok(Err(e)) => {
+                    error!("Failed to save VDB on shutdown: {}", e);
+                }
                 Err(e) => {
-                    error!("Failed to create VDB file on shutdown: {}", e);
+                    error!("VDB save task panicked: {}", e);
                 }
             }
         } else if !self.config.save.is_empty() {

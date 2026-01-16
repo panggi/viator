@@ -137,15 +137,25 @@ async fn main() -> anyhow::Result<()> {
     // Create and run server
     let server = Arc::new(Server::new(config.clone()));
 
-    // Handle shutdown signals
+    // Handle shutdown signals - ignore additional Ctrl-C after first one
     let server_clone = server.clone();
     tokio::spawn(async move {
+        // Wait for first Ctrl-C
         if let Err(e) = tokio::signal::ctrl_c().await {
             error!("Failed to listen for Ctrl+C: {}", e);
             return;
         }
-        info!("Received shutdown signal");
+        info!("Received shutdown signal, saving data...");
         server_clone.shutdown();
+
+        // Ignore additional Ctrl-C signals during shutdown
+        // This prevents corruption from interrupting VDB save
+        loop {
+            if let Err(_) = tokio::signal::ctrl_c().await {
+                break;
+            }
+            warn!("Shutdown in progress, please wait for VDB save to complete");
+        }
     });
 
     // Handle SIGHUP for config reload (Unix only)
