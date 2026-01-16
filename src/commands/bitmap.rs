@@ -37,7 +37,7 @@ pub fn cmd_setbit(
         let current = db.get(&key);
         let mut data = match current {
             Some(v) if v.is_string() => {
-                v.as_string().expect("type verified before access").to_vec()
+                v.as_string().unwrap_or_else(|| unreachable!("type verified before access")).to_vec()
             }
             Some(_) => return Err(CommandError::WrongType.into()),
             None => Vec::new(),
@@ -78,7 +78,7 @@ pub fn cmd_getbit(
 
         let value = match db.get_typed(&key, ValueType::String)? {
             Some(v) => {
-                let data = v.as_string().expect("type verified before access");
+                let data = v.as_string().unwrap_or_else(|| unreachable!("type verified before access"));
                 if byte_offset >= data.len() {
                     0
                 } else {
@@ -106,7 +106,7 @@ pub fn cmd_bitcount(
             None => return Ok(Frame::Integer(0)),
         };
 
-        let data = value.as_string().expect("type verified before access");
+        let data = value.as_string().unwrap_or_else(|| unreachable!("type verified before access"));
         let len = data.len();
 
         if len == 0 {
@@ -187,7 +187,7 @@ pub fn cmd_bitop(
 
         for key in &keys {
             let data = match db.get_typed(key, ValueType::String)? {
-                Some(v) => v.as_string().expect("type verified before access").to_vec(),
+                Some(v) => v.as_string().unwrap_or_else(|| unreachable!("type verified before access")).to_vec(),
                 None => Vec::new(),
             };
             max_len = std::cmp::max(max_len, data.len());
@@ -352,7 +352,7 @@ pub fn cmd_bitpos(
             }
         };
 
-        let data = value.as_string().expect("type verified before access");
+        let data = value.as_string().unwrap_or_else(|| unreachable!("type verified before access"));
         let len = data.len();
 
         if len == 0 {
@@ -629,7 +629,7 @@ pub fn cmd_bitfield(
         let current = db.get(&key);
         let mut data = match current {
             Some(v) if v.is_string() => {
-                v.as_string().expect("type verified before access").to_vec()
+                v.as_string().unwrap_or_else(|| unreachable!("type verified before access")).to_vec()
             }
             Some(_) => return Err(CommandError::WrongType.into()),
             None => Vec::new(),
@@ -755,7 +755,7 @@ pub fn cmd_bitfield_ro(
         let key = Key::from(cmd.args[0].clone());
 
         let data = match db.get_typed(&key, ValueType::String)? {
-            Some(v) => v.as_string().expect("type verified before access").to_vec(),
+            Some(v) => v.as_string().unwrap_or_else(|| unreachable!("type verified before access")).to_vec(),
             None => Vec::new(),
         };
 

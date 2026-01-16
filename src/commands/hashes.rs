@@ -40,7 +40,7 @@ pub fn cmd_hset(
 
         let hash = value
             .as_hash()
-            .expect("type guaranteed by get_or_create_hash");
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_hash"));
         let mut hash = hash.write();
         let mut added = 0;
 
@@ -76,7 +76,7 @@ pub fn cmd_hget(
 
         let hash = value
             .as_hash()
-            .expect("type guaranteed by get_or_create_hash")
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_hash"))
             .read();
         match hash.get(field.as_ref()) {
             Some(v) => Ok(Frame::Bulk(v.clone())),
@@ -114,7 +114,7 @@ pub fn cmd_hmget(
                 Some(v) => {
                     let hash = v
                         .as_hash()
-                        .expect("type guaranteed by get_or_create_hash")
+                        .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_hash"))
                         .read();
                     match hash.get(field.as_ref()) {
                         Some(v) => Frame::Bulk(v.clone()),
@@ -145,7 +145,7 @@ pub fn cmd_hdel(
 
         let hash = value
             .as_hash()
-            .expect("type guaranteed by get_or_create_hash");
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_hash"));
         let mut hash_guard = hash.write();
         let deleted = cmd.args[1..]
             .iter()
@@ -176,7 +176,7 @@ pub fn cmd_hexists(
         let exists = match db.get_typed(&key, ValueType::Hash)? {
             Some(v) => v
                 .as_hash()
-                .expect("type guaranteed by get_or_create_hash")
+                .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_hash"))
                 .read()
                 .contains_key(field.as_ref()),
             None => false,
@@ -198,7 +198,7 @@ pub fn cmd_hlen(
         let len = match db.get_typed(&key, ValueType::Hash)? {
             Some(v) => v
                 .as_hash()
-                .expect("type guaranteed by get_or_create_hash")
+                .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_hash"))
                 .read()
                 .len(),
             None => 0,
@@ -271,7 +271,7 @@ pub fn cmd_hgetall(
             Some(v) => {
                 let hash = v
                     .as_hash()
-                    .expect("type guaranteed by get_or_create_hash")
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_hash"))
                     .read();
                 hash.iter()
                     .flat_map(|(k, v)| vec![Frame::Bulk(k.clone()), Frame::Bulk(v.clone())])
@@ -298,7 +298,7 @@ pub fn cmd_hincrby(
         let value = get_or_create_hash(&db, &key)?;
         let hash = value
             .as_hash()
-            .expect("type guaranteed by get_or_create_hash");
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_hash"));
         let mut hash = hash.write();
 
         let current = match hash.get(&field) {
@@ -335,7 +335,7 @@ pub fn cmd_hincrbyfloat(
         let value = get_or_create_hash(&db, &key)?;
         let hash = value
             .as_hash()
-            .expect("type guaranteed by get_or_create_hash");
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_hash"));
         let mut hash = hash.write();
 
         let current = match hash.get(&field) {
@@ -374,7 +374,7 @@ pub fn cmd_hsetnx(
         let value = get_or_create_hash(&db, &key)?;
         let hash = value
             .as_hash()
-            .expect("type guaranteed by get_or_create_hash");
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_hash"));
         let mut hash = hash.write();
 
         let inserted = if let std::collections::hash_map::Entry::Vacant(e) = hash.entry(field) {
@@ -465,7 +465,7 @@ pub fn cmd_hscan(
 
         let hash = value
             .as_hash()
-            .expect("type guaranteed by get_or_create_hash")
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_hash"))
             .read();
         let entries: Vec<(Bytes, Bytes)> =
             hash.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -537,7 +537,7 @@ pub fn cmd_hrandfield(
 
         let hash = value
             .as_hash()
-            .expect("type guaranteed by get_or_create_hash")
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_hash"))
             .read();
         let fields: Vec<Bytes> = hash.keys().cloned().collect();
 
@@ -612,7 +612,7 @@ pub fn cmd_hgetdel(
 
         let hash = value
             .as_hash()
-            .expect("type guaranteed by get_or_create_hash");
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_hash"));
         let mut hash_guard = hash.write();
         let results: Vec<Frame> = cmd.args[1..]
             .iter()
@@ -670,7 +670,7 @@ pub fn cmd_hgetex(
 
         let hash = value
             .as_hash()
-            .expect("type guaranteed by get_or_create_hash")
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_hash"))
             .read();
         let results: Vec<Frame> = cmd.args[i..]
             .iter()
@@ -739,7 +739,7 @@ pub fn cmd_hsetex(
 
         let hash = value
             .as_hash()
-            .expect("type guaranteed by get_or_create_hash");
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_hash"));
         let mut hash_guard = hash.write();
         let mut added = 0i64;
 

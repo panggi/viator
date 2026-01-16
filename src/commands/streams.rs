@@ -158,7 +158,7 @@ pub fn cmd_xadd(
         let value = get_or_create_stream(&db, &key)?;
         let stream = value
             .as_stream()
-            .expect("type guaranteed by get_or_create_stream");
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_stream"));
         let mut guard = stream.write();
 
         // Add the entry
@@ -197,7 +197,7 @@ pub fn cmd_xlen(
         let len = match db.get_typed(&key, ValueType::Stream)? {
             Some(v) => v
                 .as_stream()
-                .expect("type guaranteed by get_or_create_stream")
+                .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_stream"))
                 .read()
                 .len(),
             None => 0,
@@ -238,7 +238,7 @@ pub fn cmd_xrange(
             Some(v) => {
                 let stream = v
                     .as_stream()
-                    .expect("type guaranteed by get_or_create_stream");
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_stream"));
                 let guard = stream.read();
                 match count {
                     Some(n) => guard.range_count(start, end, n),
@@ -283,7 +283,7 @@ pub fn cmd_xrevrange(
             Some(v) => {
                 let stream = v
                     .as_stream()
-                    .expect("type guaranteed by get_or_create_stream");
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_stream"));
                 let guard = stream.read();
                 let mut entries = guard.rev_range(start, end);
                 if let Some(n) = count {
@@ -373,7 +373,7 @@ pub fn cmd_xread(
             if let Some(v) = db.get_typed(key, ValueType::Stream)? {
                 let stream = v
                     .as_stream()
-                    .expect("type guaranteed by get_or_create_stream");
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_stream"));
                 let guard = stream.read();
                 let entries = guard.read_after(*after_id, count);
 
@@ -462,7 +462,7 @@ pub fn cmd_xtrim(
             Some(v) => {
                 let stream = v
                     .as_stream()
-                    .expect("type guaranteed by get_or_create_stream");
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_stream"));
                 let mut guard = stream.write();
 
                 match strategy.as_str() {
@@ -520,7 +520,7 @@ pub fn cmd_xdel(
             Some(v) => {
                 let stream = v
                     .as_stream()
-                    .expect("type guaranteed by get_or_create_stream");
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_stream"));
                 let mut guard = stream.write();
                 guard.delete(&ids)
             }
@@ -551,7 +551,7 @@ pub fn cmd_xinfo(
 
                 let stream = value
                     .as_stream()
-                    .expect("type guaranteed by get_or_create_stream");
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_stream"));
                 let guard = stream.read();
 
                 let mut info = vec![
@@ -872,7 +872,7 @@ pub fn cmd_xreadgroup(
             if let Some(v) = db.get_typed(key, ValueType::Stream)? {
                 let stream = v
                     .as_stream()
-                    .expect("type guaranteed by get_or_create_stream");
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_stream"));
                 let guard = stream.read();
 
                 let mut stream_entries = Vec::new();
@@ -1007,7 +1007,7 @@ pub fn cmd_xdelex(
             Some(v) => {
                 let stream = v
                     .as_stream()
-                    .expect("type guaranteed by get_or_create_stream");
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_stream"));
                 let mut guard = stream.write();
 
                 // Find entries older than threshold and delete them
@@ -1099,7 +1099,7 @@ pub fn cmd_xackdel(
             Some(v) => {
                 let stream = v
                     .as_stream()
-                    .expect("type guaranteed by get_or_create_stream");
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_stream"));
                 let mut guard = stream.write();
                 // In a full implementation, we would also remove from pending entries list
                 // For now, just delete the entries
@@ -1164,7 +1164,7 @@ pub fn cmd_xsetid(
         let value = get_or_create_stream(&db, &key)?;
         let stream = value
             .as_stream()
-            .expect("type guaranteed by get_or_create_stream");
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_stream"));
         let mut guard = stream.write();
 
         // The new ID must be >= current last ID

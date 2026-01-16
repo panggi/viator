@@ -163,8 +163,13 @@ async fn main() -> anyhow::Result<()> {
     {
         let config_path = cli.config.clone();
         tokio::spawn(async move {
-            let mut signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
-                .expect("Failed to create SIGHUP handler");
+            let mut signal = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup()) {
+                Ok(s) => s,
+                Err(e) => {
+                    warn!("Failed to create SIGHUP handler: {} - config reload disabled", e);
+                    return;
+                }
+            };
 
             loop {
                 signal.recv().await;

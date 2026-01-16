@@ -31,7 +31,7 @@ pub fn cmd_sadd(
 
         let set = value
             .as_set()
-            .expect("type guaranteed by get_or_create_set");
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"));
         let mut set = set.write();
         let added = set.add_multi(cmd.args[1..].iter().cloned());
 
@@ -58,7 +58,7 @@ pub fn cmd_srem(
 
         let set = value
             .as_set()
-            .expect("type guaranteed by get_or_create_set");
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"));
         let mut set_guard = set.write();
         let removed = set_guard.remove_multi(cmd.args[1..].iter().map(|b| b.as_ref()));
         let is_empty = set_guard.is_empty();
@@ -111,7 +111,7 @@ pub fn cmd_sismember(
         let is_member = match db.get_typed(&key, ValueType::Set)? {
             Some(v) => v
                 .as_set()
-                .expect("type guaranteed by get_or_create_set")
+                .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"))
                 .read()
                 .contains(member),
             None => false,
@@ -133,7 +133,7 @@ pub fn cmd_scard(
         let len = match db.get_typed(&key, ValueType::Set)? {
             Some(v) => v
                 .as_set()
-                .expect("type guaranteed by get_or_create_set")
+                .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"))
                 .read()
                 .len(),
             None => 0,
@@ -164,7 +164,7 @@ pub fn cmd_spop(
 
         let set = value
             .as_set()
-            .expect("type guaranteed by get_or_create_set");
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"));
 
         let result = match count {
             Some(count) => {
@@ -233,7 +233,7 @@ pub fn cmd_srandmember(
 
         let set = value
             .as_set()
-            .expect("type guaranteed by get_or_create_set")
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"))
             .read();
 
         match count {
@@ -272,8 +272,8 @@ pub fn cmd_smove(
 
         let dst = get_or_create_set(&db, &dst_key)?;
 
-        let src_set = src.as_set().expect("type guaranteed by get_or_create_set");
-        let dst_set = dst.as_set().expect("type guaranteed by get_or_create_set");
+        let src_set = src.as_set().unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"));
+        let dst_set = dst.as_set().unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"));
 
         let moved = src_set.write().move_to(&mut dst_set.write(), member);
 
@@ -358,7 +358,7 @@ pub fn cmd_sinterstore(
             let dest_value = ViatorValue::new_set();
             let dest_set = dest_value
                 .as_set()
-                .expect("type guaranteed by get_or_create_set");
+                .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"));
             let mut guard = dest_set.write();
             for member in result {
                 guard.add(member);
@@ -393,7 +393,7 @@ pub fn cmd_sunionstore(
             let dest_value = ViatorValue::new_set();
             let dest_set = dest_value
                 .as_set()
-                .expect("type guaranteed by get_or_create_set");
+                .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"));
             let mut guard = dest_set.write();
             for member in result {
                 guard.add(member);
@@ -428,7 +428,7 @@ pub fn cmd_sdiffstore(
             let dest_value = ViatorValue::new_set();
             let dest_set = dest_value
                 .as_set()
-                .expect("type guaranteed by get_or_create_set");
+                .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"));
             let mut guard = dest_set.write();
             for member in result {
                 guard.add(member);
@@ -449,7 +449,7 @@ fn collect_sets(db: &Db, keys: &[bytes::Bytes]) -> Result<Vec<ViatorSet>> {
             match db.get_typed(&key, ValueType::Set)? {
                 Some(v) => Ok(v
                     .as_set()
-                    .expect("type guaranteed by get_or_create_set")
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"))
                     .read()
                     .clone()),
                 None => Ok(ViatorSet::new()),
@@ -476,7 +476,7 @@ pub fn cmd_smismember(
                     .as_ref()
                     .map(|v| {
                         v.as_set()
-                            .expect("type guaranteed by get_or_create_set")
+                            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"))
                             .read()
                             .contains(member)
                     })
@@ -534,7 +534,7 @@ pub fn cmd_sscan(
 
         let set = value
             .as_set()
-            .expect("type guaranteed by get_or_create_set")
+            .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_set"))
             .read();
         let members: Vec<bytes::Bytes> = set.members().into_iter().cloned().collect();
 
