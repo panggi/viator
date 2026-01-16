@@ -5,18 +5,18 @@
 //! replicas when masters fail.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
-use crate::Result;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
 /// Global sentinel state singleton.
@@ -291,8 +291,7 @@ fn current_time_ms() -> u64 {
 }
 
 /// Type alias for command handler future.
-pub type SentinelCmdFuture =
-    Pin<Box<dyn Future<Output = Result<Frame>> + Send + 'static>>;
+pub type SentinelCmdFuture = Pin<Box<dyn Future<Output = Result<Frame>> + Send + 'static>>;
 
 /// Handle SENTINEL command.
 pub fn handle_sentinel_command(
@@ -303,7 +302,9 @@ pub fn handle_sentinel_command(
 
     Box::pin(async move {
         if cmd.arg_count() < 1 {
-            return Ok(Frame::Error("ERR wrong number of arguments for 'sentinel' command".into()));
+            return Ok(Frame::Error(
+                "ERR wrong number of arguments for 'sentinel' command".into(),
+            ));
         }
 
         let subcommand = cmd.get_str(0)?.to_uppercase();
@@ -351,10 +352,15 @@ fn handle_masters(cmd: &ParsedCommand, state: &SentinelState) -> Result<Frame> {
         if let Some(master) = state.get_master(name) {
             Ok(master_to_frame(&master))
         } else {
-            Ok(Frame::Error(format!("ERR No such master with that name: {}", name)))
+            Ok(Frame::Error(format!(
+                "ERR No such master with that name: {}",
+                name
+            )))
         }
     } else {
-        Ok(Frame::Error("ERR wrong number of arguments for 'sentinel master' command".into()))
+        Ok(Frame::Error(
+            "ERR wrong number of arguments for 'sentinel master' command".into(),
+        ))
     }
 }
 
@@ -389,7 +395,9 @@ fn master_to_frame(master: &MonitoredMaster) -> Frame {
     fields.push(Frame::Integer(0));
 
     fields.push(Frame::Bulk("last-ok-ping-reply".into()));
-    let ping_ms = master.last_ping.read()
+    let ping_ms = master
+        .last_ping
+        .read()
         .map(|t| t.elapsed().as_millis() as i64)
         .unwrap_or(0);
     fields.push(Frame::Integer(ping_ms));
@@ -410,7 +418,9 @@ fn master_to_frame(master: &MonitoredMaster) -> Frame {
     fields.push(Frame::Integer(current_time_ms() as i64));
 
     fields.push(Frame::Bulk("config-epoch".into()));
-    fields.push(Frame::Integer(master.config_epoch.load(Ordering::Relaxed) as i64));
+    fields.push(Frame::Integer(
+        master.config_epoch.load(Ordering::Relaxed) as i64
+    ));
 
     fields.push(Frame::Bulk("num-slaves".into()));
     fields.push(Frame::Integer(master.replicas.len() as i64));
@@ -442,7 +452,10 @@ fn handle_replicas(cmd: &ParsedCommand, state: &SentinelState) -> Result<Frame> 
         }
         Ok(Frame::Array(result))
     } else {
-        Ok(Frame::Error(format!("ERR No such master with that name: {}", name)))
+        Ok(Frame::Error(format!(
+            "ERR No such master with that name: {}",
+            name
+        )))
     }
 }
 
@@ -450,7 +463,9 @@ fn replica_to_frame(replica: &ReplicaInfo, master_name: &str) -> Frame {
     let mut fields = Vec::new();
 
     fields.push(Frame::Bulk("name".into()));
-    fields.push(Frame::Bulk(format!("{}:{}", replica.addr.ip(), replica.addr.port()).into()));
+    fields.push(Frame::Bulk(
+        format!("{}:{}", replica.addr.ip(), replica.addr.port()).into(),
+    ));
 
     fields.push(Frame::Bulk("ip".into()));
     fields.push(Frame::Bulk(replica.addr.ip().to_string().into()));
@@ -512,7 +527,10 @@ fn handle_sentinels(cmd: &ParsedCommand, state: &SentinelState) -> Result<Frame>
         }
         Ok(Frame::Array(result))
     } else {
-        Ok(Frame::Error(format!("ERR No such master with that name: {}", name)))
+        Ok(Frame::Error(format!(
+            "ERR No such master with that name: {}",
+            name
+        )))
     }
 }
 
@@ -520,7 +538,9 @@ fn sentinel_to_frame(sentinel: &SentinelInfo) -> Frame {
     let mut fields = Vec::new();
 
     fields.push(Frame::Bulk("name".into()));
-    fields.push(Frame::Bulk(format!("{}:{}", sentinel.addr.ip(), sentinel.addr.port()).into()));
+    fields.push(Frame::Bulk(
+        format!("{}:{}", sentinel.addr.ip(), sentinel.addr.port()).into(),
+    ));
 
     fields.push(Frame::Bulk("ip".into()));
     fields.push(Frame::Bulk(sentinel.addr.ip().to_string().into()));
@@ -532,7 +552,11 @@ fn sentinel_to_frame(sentinel: &SentinelInfo) -> Frame {
     fields.push(Frame::Bulk(sentinel.id.clone().into()));
 
     fields.push(Frame::Bulk("flags".into()));
-    let flags = if sentinel.is_reachable { "sentinel" } else { "sentinel,s_down" };
+    let flags = if sentinel.is_reachable {
+        "sentinel"
+    } else {
+        "sentinel,s_down"
+    };
     fields.push(Frame::Bulk(flags.into()));
 
     fields.push(Frame::Bulk("link-pending-commands".into()));
@@ -545,7 +569,13 @@ fn sentinel_to_frame(sentinel: &SentinelInfo) -> Frame {
     fields.push(Frame::Integer(sentinel.last_hello_ms as i64));
 
     fields.push(Frame::Bulk("voted-leader".into()));
-    fields.push(Frame::Bulk(sentinel.voted_leader.clone().unwrap_or_else(|| "?".into()).into()));
+    fields.push(Frame::Bulk(
+        sentinel
+            .voted_leader
+            .clone()
+            .unwrap_or_else(|| "?".into())
+            .into(),
+    ));
 
     fields.push(Frame::Bulk("voted-leader-epoch".into()));
     fields.push(Frame::Integer(sentinel.voted_leader_epoch as i64));
@@ -588,7 +618,10 @@ fn handle_ckquorum(cmd: &ParsedCommand, state: &SentinelState) -> Result<Frame> 
             )))
         }
     } else {
-        Ok(Frame::Error(format!("ERR No such master with that name: {}", name)))
+        Ok(Frame::Error(format!(
+            "ERR No such master with that name: {}",
+            name
+        )))
     }
 }
 
@@ -605,7 +638,10 @@ fn handle_failover(cmd: &ParsedCommand, state: &SentinelState) -> Result<Frame> 
 
         Ok(Frame::Simple("OK".into()))
     } else {
-        Ok(Frame::Error(format!("ERR No such master with that name: {}", name)))
+        Ok(Frame::Error(format!(
+            "ERR No such master with that name: {}",
+            name
+        )))
     }
 }
 
@@ -643,7 +679,10 @@ fn handle_remove(cmd: &ParsedCommand, state: &SentinelState) -> Result<Frame> {
     if state.remove(name) {
         Ok(Frame::Simple("OK".into()))
     } else {
-        Ok(Frame::Error(format!("ERR No such master with that name: {}", name)))
+        Ok(Frame::Error(format!(
+            "ERR No such master with that name: {}",
+            name
+        )))
     }
 }
 
@@ -682,7 +721,10 @@ fn handle_set(cmd: &ParsedCommand, state: &SentinelState) -> Result<Frame> {
 
         Ok(Frame::Simple("OK".into()))
     } else {
-        Ok(Frame::Error(format!("ERR No such master with that name: {}", name)))
+        Ok(Frame::Error(format!(
+            "ERR No such master with that name: {}",
+            name
+        )))
     }
 }
 
@@ -691,7 +733,9 @@ fn handle_reset(cmd: &ParsedCommand, state: &SentinelState) -> Result<Frame> {
     let pattern = cmd.get_str(1)?;
 
     let mut count = 0;
-    let names: Vec<String> = state.masters.iter()
+    let names: Vec<String> = state
+        .masters
+        .iter()
         .filter(|e| matches_pattern(e.key(), pattern))
         .map(|e| e.key().clone())
         .collect();
@@ -762,7 +806,10 @@ fn handle_info_cache(cmd: &ParsedCommand, state: &SentinelState) -> Result<Frame
             ]),
         ]))
     } else {
-        Ok(Frame::Error(format!("ERR No such master with that name: {}", name)))
+        Ok(Frame::Error(format!(
+            "ERR No such master with that name: {}",
+            name
+        )))
     }
 }
 
@@ -771,31 +818,37 @@ fn handle_simulate_failure(cmd: &ParsedCommand, _state: &SentinelState) -> Resul
     let failure_type = cmd.get_str(1)?.to_uppercase();
 
     match failure_type.as_str() {
-        "CRASH-AFTER-ELECTION" | "CRASH-AFTER-PROMOTION" => {
-            Ok(Frame::Simple("OK".into()))
-        }
-        _ => {
-            Ok(Frame::Error(format!("ERR Unknown failure type: {}", failure_type)))
-        }
+        "CRASH-AFTER-ELECTION" | "CRASH-AFTER-PROMOTION" => Ok(Frame::Simple("OK".into())),
+        _ => Ok(Frame::Error(format!(
+            "ERR Unknown failure type: {}",
+            failure_type
+        ))),
     }
 }
 
 fn handle_debug(cmd: &ParsedCommand, _state: &SentinelState) -> Result<Frame> {
     if cmd.arg_count() < 2 {
-        return Ok(Frame::Error("ERR wrong number of arguments for 'sentinel debug' command".into()));
+        return Ok(Frame::Error(
+            "ERR wrong number of arguments for 'sentinel debug' command".into(),
+        ));
     }
 
     let subcommand = cmd.get_str(1)?.to_uppercase();
 
     match subcommand.as_str() {
         "PING" => Ok(Frame::Simple("PONG".into())),
-        _ => Ok(Frame::Error(format!("ERR Unknown debug subcommand: {}", subcommand))),
+        _ => Ok(Frame::Error(format!(
+            "ERR Unknown debug subcommand: {}",
+            subcommand
+        ))),
     }
 }
 
 fn handle_config(cmd: &ParsedCommand, state: &SentinelState) -> Result<Frame> {
     if cmd.arg_count() < 2 {
-        return Ok(Frame::Error("ERR wrong number of arguments for 'sentinel config' command".into()));
+        return Ok(Frame::Error(
+            "ERR wrong number of arguments for 'sentinel config' command".into(),
+        ));
     }
 
     let subcommand = cmd.get_str(1)?.to_uppercase();
@@ -806,18 +859,14 @@ fn handle_config(cmd: &ParsedCommand, state: &SentinelState) -> Result<Frame> {
             let param = cmd.get_str(2)?.to_lowercase();
 
             match param.as_str() {
-                "resolve-hostnames" => {
-                    Ok(Frame::Array(vec![
-                        Frame::Bulk("resolve-hostnames".into()),
-                        Frame::Bulk("no".into()),
-                    ]))
-                }
-                "announce-hostnames" => {
-                    Ok(Frame::Array(vec![
-                        Frame::Bulk("announce-hostnames".into()),
-                        Frame::Bulk("no".into()),
-                    ]))
-                }
+                "resolve-hostnames" => Ok(Frame::Array(vec![
+                    Frame::Bulk("resolve-hostnames".into()),
+                    Frame::Bulk("no".into()),
+                ])),
+                "announce-hostnames" => Ok(Frame::Array(vec![
+                    Frame::Bulk("announce-hostnames".into()),
+                    Frame::Bulk("no".into()),
+                ])),
                 _ => Ok(Frame::Array(vec![])),
             }
         }
@@ -839,7 +888,10 @@ fn handle_config(cmd: &ParsedCommand, state: &SentinelState) -> Result<Frame> {
                 _ => Ok(Frame::Simple("OK".into())),
             }
         }
-        _ => Ok(Frame::Error(format!("ERR Unknown config subcommand: {}", subcommand))),
+        _ => Ok(Frame::Error(format!(
+            "ERR Unknown config subcommand: {}",
+            subcommand
+        ))),
     }
 }
 

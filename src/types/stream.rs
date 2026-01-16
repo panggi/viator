@@ -27,7 +27,10 @@ impl StreamId {
 
     /// Maximum possible ID
     pub fn max() -> Self {
-        Self { ms: u64::MAX, seq: u64::MAX }
+        Self {
+            ms: u64::MAX,
+            seq: u64::MAX,
+        }
     }
 
     /// Parse a stream ID from string
@@ -259,11 +262,7 @@ impl ViatorStream {
             to_remove
         };
 
-        let ids_to_remove: Vec<StreamId> = self.entries
-            .keys()
-            .take(target)
-            .copied()
-            .collect();
+        let ids_to_remove: Vec<StreamId> = self.entries.keys().take(target).copied().collect();
 
         for id in ids_to_remove {
             self.entries.remove(&id);
@@ -278,10 +277,7 @@ impl ViatorStream {
 
     /// Trim entries with ID less than minid
     pub fn trim_minid(&mut self, minid: StreamId, approximate: bool) -> usize {
-        let ids_to_remove: Vec<StreamId> = self.entries
-            .range(..minid)
-            .map(|(id, _)| *id)
-            .collect();
+        let ids_to_remove: Vec<StreamId> = self.entries.range(..minid).map(|(id, _)| *id).collect();
 
         let mut removed = 0;
         let target = if approximate {
@@ -318,8 +314,12 @@ impl ViatorStream {
 
     /// Read entries after a given ID (exclusive)
     pub fn read_after(&self, after_id: StreamId, count: Option<usize>) -> Vec<StreamEntry> {
-        let iter = self.entries
-            .range((std::ops::Bound::Excluded(after_id), std::ops::Bound::Unbounded))
+        let iter = self
+            .entries
+            .range((
+                std::ops::Bound::Excluded(after_id),
+                std::ops::Bound::Unbounded,
+            ))
             .map(|(id, fields)| StreamEntry::new(*id, fields.clone()));
 
         match count {
@@ -336,11 +336,10 @@ impl ViatorStream {
     /// Estimate memory usage
     pub fn memory_usage(&self) -> usize {
         let base = size_of::<Self>();
-        let entries: usize = self.entries
+        let entries: usize = self
+            .entries
             .iter()
-            .map(|(_, fields)| {
-                16 + fields.iter().map(|(k, v)| k.len() + v.len()).sum::<usize>()
-            })
+            .map(|(_, fields)| 16 + fields.iter().map(|(k, v)| k.len() + v.len()).sum::<usize>())
             .sum();
         base + entries
     }
@@ -375,11 +374,17 @@ mod tests {
     fn test_stream_add() {
         let mut stream = ViatorStream::new();
 
-        let id = stream.add(StreamIdParsed::Auto, vec![(Bytes::from("field"), Bytes::from("value"))]);
+        let id = stream.add(
+            StreamIdParsed::Auto,
+            vec![(Bytes::from("field"), Bytes::from("value"))],
+        );
         assert!(id.is_some());
         assert_eq!(stream.len(), 1);
 
-        let id2 = stream.add(StreamIdParsed::Auto, vec![(Bytes::from("f2"), Bytes::from("v2"))]);
+        let id2 = stream.add(
+            StreamIdParsed::Auto,
+            vec![(Bytes::from("f2"), Bytes::from("v2"))],
+        );
         assert!(id2.is_some());
         assert!(id2.unwrap() > id.unwrap());
     }

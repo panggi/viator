@@ -2,7 +2,6 @@
 //!
 //! A space-efficient probabilistic data structure for membership testing.
 
-
 /// A Bloom filter for probabilistic membership testing.
 #[derive(Debug, Clone)]
 pub struct BloomFilter {
@@ -206,7 +205,8 @@ impl ScalingBloomFilter {
             let new_capacity = self.current_capacity() * self.expansion_rate as usize;
             // Reduce error rate for subsequent filters
             let new_error_rate = self.error_rate / (self.filters.len() as f64 + 1.0);
-            self.filters.push(BloomFilter::new(new_capacity, new_error_rate));
+            self.filters
+                .push(BloomFilter::new(new_capacity, new_error_rate));
         }
 
         // Add to the last filter

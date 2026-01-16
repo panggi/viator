@@ -3,12 +3,12 @@
 //! Commands that can block waiting for data to become available.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
 use crate::types::{Key, ViatorValue};
-use crate::Result;
 use bytes::Bytes;
 use std::future::Future;
 use std::pin::Pin;
@@ -49,7 +49,11 @@ pub fn cmd_blpop(
                             let key_bytes = Bytes::copy_from_slice(key.as_bytes());
                             drop(guard);
                             // Delete key if list is empty
-                            if value.as_list().map(|l| l.read().is_empty()).unwrap_or(false) {
+                            if value
+                                .as_list()
+                                .map(|l| l.read().is_empty())
+                                .unwrap_or(false)
+                            {
                                 db.delete(key);
                             }
                             return Ok(Frame::Array(vec![
@@ -111,7 +115,11 @@ pub fn cmd_brpop(
                         if let Some(elem) = guard.pop_back() {
                             let key_bytes = Bytes::copy_from_slice(key.as_bytes());
                             drop(guard);
-                            if value.as_list().map(|l| l.read().is_empty()).unwrap_or(false) {
+                            if value
+                                .as_list()
+                                .map(|l| l.read().is_empty())
+                                .unwrap_or(false)
+                            {
                                 db.delete(key);
                             }
                             return Ok(Frame::Array(vec![
@@ -177,7 +185,11 @@ pub fn cmd_brpoplpush(
                         }
 
                         // Delete source if empty
-                        if src_value.as_list().map(|l| l.read().is_empty()).unwrap_or(false) {
+                        if src_value
+                            .as_list()
+                            .map(|l| l.read().is_empty())
+                            .unwrap_or(false)
+                        {
                             db.delete(&src_key);
                         }
 
@@ -252,7 +264,11 @@ pub fn cmd_blmove(
                         }
 
                         // Delete source if empty
-                        if src_value.as_list().map(|l| l.read().is_empty()).unwrap_or(false) {
+                        if src_value
+                            .as_list()
+                            .map(|l| l.read().is_empty())
+                            .unwrap_or(false)
+                        {
                             db.delete(&src_key);
                         }
 
@@ -289,7 +305,10 @@ pub fn cmd_blmpop(
         let numkeys: usize = cmd.get_u64(1)? as usize;
 
         if cmd.args.len() < 3 + numkeys {
-            return Err(CommandError::WrongArity { command: "BLMPOP".to_string() }.into());
+            return Err(CommandError::WrongArity {
+                command: "BLMPOP".to_string(),
+            }
+            .into());
         }
 
         let keys: Vec<Key> = cmd.args[2..2 + numkeys]
@@ -339,7 +358,11 @@ pub fn cmd_blmpop(
                                 let key_bytes = Bytes::copy_from_slice(key.as_bytes());
                                 drop(guard);
 
-                                if value.as_list().map(|l| l.read().is_empty()).unwrap_or(false) {
+                                if value
+                                    .as_list()
+                                    .map(|l| l.read().is_empty())
+                                    .unwrap_or(false)
+                                {
                                     db.delete(key);
                                 }
 
@@ -402,7 +425,11 @@ pub fn cmd_bzpopmin(
                             let key_bytes = Bytes::copy_from_slice(key.as_bytes());
                             drop(guard);
 
-                            if value.as_zset().map(|z| z.read().len() == 0).unwrap_or(false) {
+                            if value
+                                .as_zset()
+                                .map(|z| z.read().len() == 0)
+                                .unwrap_or(false)
+                            {
                                 db.delete(key);
                             }
 
@@ -465,7 +492,11 @@ pub fn cmd_bzpopmax(
                             let key_bytes = Bytes::copy_from_slice(key.as_bytes());
                             drop(guard);
 
-                            if value.as_zset().map(|z| z.read().len() == 0).unwrap_or(false) {
+                            if value
+                                .as_zset()
+                                .map(|z| z.read().len() == 0)
+                                .unwrap_or(false)
+                            {
                                 db.delete(key);
                             }
 
@@ -507,7 +538,10 @@ pub fn cmd_bzmpop(
         let numkeys: usize = cmd.get_u64(1)? as usize;
 
         if cmd.args.len() < 3 + numkeys {
-            return Err(CommandError::WrongArity { command: "BZMPOP".to_string() }.into());
+            return Err(CommandError::WrongArity {
+                command: "BZMPOP".to_string(),
+            }
+            .into());
         }
 
         let keys: Vec<Key> = cmd.args[2..2 + numkeys]
@@ -548,16 +582,22 @@ pub fn cmd_bzmpop(
                             if !entries.is_empty() {
                                 let elements: Vec<Frame> = entries
                                     .into_iter()
-                                    .map(|entry| Frame::Array(vec![
-                                        Frame::Bulk(entry.member),
-                                        Frame::Bulk(Bytes::from(entry.score.to_string())),
-                                    ]))
+                                    .map(|entry| {
+                                        Frame::Array(vec![
+                                            Frame::Bulk(entry.member),
+                                            Frame::Bulk(Bytes::from(entry.score.to_string())),
+                                        ])
+                                    })
                                     .collect();
 
                                 let key_bytes = Bytes::copy_from_slice(key.as_bytes());
                                 drop(guard);
 
-                                if value.as_zset().map(|z| z.read().len() == 0).unwrap_or(false) {
+                                if value
+                                    .as_zset()
+                                    .map(|z| z.read().len() == 0)
+                                    .unwrap_or(false)
+                                {
                                     db.delete(key);
                                 }
 

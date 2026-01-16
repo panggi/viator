@@ -587,13 +587,7 @@ impl Acl {
     }
 
     /// Check if user can access key.
-    pub fn check_key(
-        &self,
-        username: &str,
-        key: &[u8],
-        write: bool,
-        client_info: &str,
-    ) -> bool {
+    pub fn check_key(&self, username: &str, key: &[u8], write: bool, client_info: &str) -> bool {
         if let Some(user) = self.get_user(username) {
             let user = user.read();
             if user.can_access_key(key, write) {
@@ -731,7 +725,8 @@ mod tests {
             read: true,
             write: true,
         });
-        user.key_patterns.push(KeyPattern::read_only("readonly:*".to_string()));
+        user.key_patterns
+            .push(KeyPattern::read_only("readonly:*".to_string()));
 
         assert!(user.can_access_key(b"cache:foo", false));
         assert!(user.can_access_key(b"cache:foo", true));

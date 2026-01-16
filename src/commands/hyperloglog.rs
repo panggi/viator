@@ -5,12 +5,12 @@
 //! of approximately 0.81%.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
-use crate::types::{Key, ViatorValue, ValueType};
-use crate::Result;
+use crate::types::{Key, ValueType, ViatorValue};
 use bytes::Bytes;
 use std::future::Future;
 use std::pin::Pin;
@@ -174,8 +174,7 @@ fn get_or_create_hll(db: &Db, key: &Key) -> Result<(ViatorValue, HyperLogLog)> {
     match db.get(key) {
         Some(v) if v.is_string() => {
             let data = v.as_string().unwrap();
-            let hll = HyperLogLog::from_bytes(data)
-                .unwrap_or_else(HyperLogLog::new);
+            let hll = HyperLogLog::from_bytes(data).unwrap_or_else(HyperLogLog::new);
             Ok((v, hll))
         }
         Some(_) => Err(CommandError::WrongType.into()),
@@ -224,8 +223,7 @@ pub fn cmd_pfcount(
             let count = match db.get_typed(&key, ValueType::String)? {
                 Some(v) => {
                     let data = v.as_string().unwrap();
-                    let hll = HyperLogLog::from_bytes(data)
-                        .unwrap_or_else(HyperLogLog::new);
+                    let hll = HyperLogLog::from_bytes(data).unwrap_or_else(HyperLogLog::new);
                     hll.count()
                 }
                 None => 0,
@@ -321,7 +319,9 @@ pub fn cmd_pfdebug(
                     None => HyperLogLog::new(),
                 };
 
-                let frames: Vec<Frame> = hll.registers.iter()
+                let frames: Vec<Frame> = hll
+                    .registers
+                    .iter()
                     .map(|&r| Frame::Integer(r as i64))
                     .collect();
                 Ok(Frame::Array(frames))

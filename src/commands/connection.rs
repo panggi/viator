@@ -1,12 +1,12 @@
 //! Connection command implementations.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::{CommandError, StorageError};
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
 use crate::types::MAX_DB_INDEX;
-use crate::Result;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -91,7 +91,9 @@ pub fn cmd_client(
                 };
                 match state.as_str() {
                     "ON" | "OFF" => Ok(Frame::ok()),
-                    _ => Ok(Frame::Error("ERR Syntax error, CLIENT NO-EVICT ON|OFF".into())),
+                    _ => Ok(Frame::Error(
+                        "ERR Syntax error, CLIENT NO-EVICT ON|OFF".into(),
+                    )),
                 }
             }
             "NO-TOUCH" => {
@@ -104,7 +106,9 @@ pub fn cmd_client(
                 };
                 match state.as_str() {
                     "ON" | "OFF" => Ok(Frame::ok()),
-                    _ => Ok(Frame::Error("ERR Syntax error, CLIENT NO-TOUCH ON|OFF".into())),
+                    _ => Ok(Frame::Error(
+                        "ERR Syntax error, CLIENT NO-TOUCH ON|OFF".into(),
+                    )),
                 }
             }
             "KILL" => {
@@ -115,9 +119,7 @@ pub fn cmd_client(
                 // CLIENT PAUSE timeout [WRITE|ALL]
                 Ok(Frame::ok())
             }
-            "UNPAUSE" => {
-                Ok(Frame::ok())
-            }
+            "UNPAUSE" => Ok(Frame::ok()),
             "GETREDIR" => {
                 // Return the client tracking redirection ID (-1 if not tracking)
                 Ok(Frame::Integer(-1))
@@ -139,10 +141,14 @@ pub fn cmd_client(
                     let state = cmd.get_str(1)?.to_uppercase();
                     match state.as_str() {
                         "YES" | "NO" => Ok(Frame::ok()),
-                        _ => Ok(Frame::Error("ERR Syntax error, CLIENT CACHING YES|NO".into())),
+                        _ => Ok(Frame::Error(
+                            "ERR Syntax error, CLIENT CACHING YES|NO".into(),
+                        )),
                     }
                 } else {
-                    Ok(Frame::Error("ERR wrong number of arguments for 'client caching' command".into()))
+                    Ok(Frame::Error(
+                        "ERR wrong number of arguments for 'client caching' command".into(),
+                    ))
                 }
             }
             "TRACKING" => {
@@ -151,10 +157,14 @@ pub fn cmd_client(
                     let state = cmd.get_str(1)?.to_uppercase();
                     match state.as_str() {
                         "ON" | "OFF" => Ok(Frame::ok()),
-                        _ => Ok(Frame::Error("ERR Syntax error, CLIENT TRACKING ON|OFF [options]".into())),
+                        _ => Ok(Frame::Error(
+                            "ERR Syntax error, CLIENT TRACKING ON|OFF [options]".into(),
+                        )),
                     }
                 } else {
-                    Ok(Frame::Error("ERR wrong number of arguments for 'client tracking' command".into()))
+                    Ok(Frame::Error(
+                        "ERR wrong number of arguments for 'client tracking' command".into(),
+                    ))
                 }
             }
             _ => Err(CommandError::InvalidArgument {

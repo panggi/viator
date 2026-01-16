@@ -1,12 +1,12 @@
 //! Hash command implementations.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
-use crate::types::{Key, ViatorValue, ValueType};
-use crate::Result;
+use crate::types::{Key, ValueType, ViatorValue};
 use bytes::Bytes;
 use std::future::Future;
 use std::pin::Pin;
@@ -437,7 +437,8 @@ pub fn cmd_hscan(
         };
 
         let hash = value.as_hash().unwrap().read();
-        let entries: Vec<(Bytes, Bytes)> = hash.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let entries: Vec<(Bytes, Bytes)> =
+            hash.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
         // Simple scan implementation - just paginate through entries
         let total = entries.len();
@@ -495,14 +496,24 @@ pub fn cmd_hrandfield(
 
         let value = match db.get_typed(&key, ValueType::Hash)? {
             Some(v) => v,
-            None => return Ok(if count.is_some() { Frame::Array(vec![]) } else { Frame::Null }),
+            None => {
+                return Ok(if count.is_some() {
+                    Frame::Array(vec![])
+                } else {
+                    Frame::Null
+                });
+            }
         };
 
         let hash = value.as_hash().unwrap().read();
         let fields: Vec<Bytes> = hash.keys().cloned().collect();
 
         if fields.is_empty() {
-            return Ok(if count.is_some() { Frame::Array(vec![]) } else { Frame::Null });
+            return Ok(if count.is_some() {
+                Frame::Array(vec![])
+            } else {
+                Frame::Null
+            });
         }
 
         let mut rng = rand::thread_rng();
@@ -535,15 +546,15 @@ pub fn cmd_hrandfield(
                     }
                     Ok(Frame::Array(result))
                 } else {
-                    Ok(Frame::Array(selected_fields.into_iter().map(Frame::Bulk).collect()))
+                    Ok(Frame::Array(
+                        selected_fields.into_iter().map(Frame::Bulk).collect(),
+                    ))
                 }
             }
-            None => {
-                match fields.choose(&mut rng) {
-                    Some(field) => Ok(Frame::Bulk(field.clone())),
-                    None => Ok(Frame::Null),
-                }
-            }
+            None => match fields.choose(&mut rng) {
+                Some(field) => Ok(Frame::Bulk(field.clone())),
+                None => Ok(Frame::Null),
+            },
         }
     })
 }
@@ -676,7 +687,10 @@ pub fn cmd_hsetex(
         // Remaining args are field-value pairs
         let pairs = &cmd.args[i..];
         if pairs.len() % 2 != 0 {
-            return Err(CommandError::WrongArity { command: "HSETEX".to_string() }.into());
+            return Err(CommandError::WrongArity {
+                command: "HSETEX".to_string(),
+            }
+            .into());
         }
 
         let value = match db.get(&key) {
@@ -733,7 +747,11 @@ pub fn cmd_hexpire(
         // Find FIELDS keyword and count fields
         let mut fields_idx = None;
         for (i, _arg) in cmd.args.iter().enumerate() {
-            if cmd.get_str(i).map(|s| s.to_uppercase() == "FIELDS").unwrap_or(false) {
+            if cmd
+                .get_str(i)
+                .map(|s| s.to_uppercase() == "FIELDS")
+                .unwrap_or(false)
+            {
                 fields_idx = Some(i);
                 break;
             }
@@ -780,7 +798,11 @@ pub fn cmd_hexpiretime(
         // Find FIELDS keyword
         let mut fields_idx = None;
         for (i, _) in cmd.args.iter().enumerate() {
-            if cmd.get_str(i).map(|s| s.to_uppercase() == "FIELDS").unwrap_or(false) {
+            if cmd
+                .get_str(i)
+                .map(|s| s.to_uppercase() == "FIELDS")
+                .unwrap_or(false)
+            {
                 fields_idx = Some(i);
                 break;
             }
@@ -863,7 +885,11 @@ pub fn cmd_hpersist(
         // Find FIELDS keyword
         let mut fields_idx = None;
         for (i, _) in cmd.args.iter().enumerate() {
-            if cmd.get_str(i).map(|s| s.to_uppercase() == "FIELDS").unwrap_or(false) {
+            if cmd
+                .get_str(i)
+                .map(|s| s.to_uppercase() == "FIELDS")
+                .unwrap_or(false)
+            {
                 fields_idx = Some(i);
                 break;
             }

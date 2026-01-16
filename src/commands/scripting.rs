@@ -4,12 +4,12 @@
 //! Scripts are executed atomically and can call Redis commands.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
 use crate::types::Key;
-use crate::Result;
 use bytes::Bytes;
 use mlua::{Lua, MultiValue, Value};
 use std::collections::HashMap;
@@ -26,7 +26,7 @@ static SCRIPT_CACHE: std::sync::LazyLock<RwLock<HashMap<String, String>>> =
 /// Redis uses SHA1 to identify cached scripts. Clients can pre-compute
 /// the SHA1 hash and use EVALSHA to call cached scripts efficiently.
 fn sha1_hash(script: &str) -> String {
-    use sha1::{Sha1, Digest};
+    use sha1::{Digest, Sha1};
 
     let mut hasher = Sha1::new();
     hasher.update(script.as_bytes());
@@ -194,7 +194,8 @@ fn execute_viator_command(db: &Arc<Db>, cmd_name: &str, args: &[Bytes]) -> Frame
                 let mut guard = h.write();
                 let mut added = 0i64;
                 for chunk in args[1..].chunks(2) {
-                    if chunk.len() == 2 && guard.insert(chunk[0].clone(), chunk[1].clone()).is_none()
+                    if chunk.len() == 2
+                        && guard.insert(chunk[0].clone(), chunk[1].clone()).is_none()
                     {
                         added += 1;
                     }
@@ -674,8 +675,9 @@ fn frame_to_lua_value(lua: &Lua, frame: Frame) -> mlua::Result<Value> {
 }
 
 /// Function library cache storing library_name -> (library_code, functions)
-static FUNCTION_CACHE: std::sync::LazyLock<RwLock<HashMap<String, (String, HashMap<String, String>)>>> =
-    std::sync::LazyLock::new(|| RwLock::new(HashMap::new()));
+static FUNCTION_CACHE: std::sync::LazyLock<
+    RwLock<HashMap<String, (String, HashMap<String, String>)>>,
+> = std::sync::LazyLock::new(|| RwLock::new(HashMap::new()));
 
 /// EVAL_RO script numkeys [key ...] [arg ...]
 /// Read-only variant of EVAL - safe to run on replicas
@@ -772,7 +774,11 @@ pub fn cmd_function(
                 cmd.require_args(2)?;
 
                 let mut idx = 1;
-                let _replace = if cmd.get_str(idx).map(|s| s.to_uppercase() == "REPLACE").unwrap_or(false) {
+                let _replace = if cmd
+                    .get_str(idx)
+                    .map(|s| s.to_uppercase() == "REPLACE")
+                    .unwrap_or(false)
+                {
                     idx += 1;
                     true
                 } else {
@@ -784,7 +790,10 @@ pub fn cmd_function(
                 // Parse the library code to extract function definitions
                 // For now, we use a simple parser that looks for function names
                 // Real Redis uses a special format with #!lua directives
-                let library_name = format!("lib_{}", sha1_hash(library_code).chars().take(8).collect::<String>());
+                let library_name = format!(
+                    "lib_{}",
+                    sha1_hash(library_code).chars().take(8).collect::<String>()
+                );
 
                 // Store the library
                 let mut functions = HashMap::new();
@@ -821,16 +830,19 @@ pub fn cmd_function(
                     lib_info.push(Frame::bulk("LUA"));
                     lib_info.push(Frame::bulk("functions"));
 
-                    let func_list: Vec<Frame> = functions.keys().map(|f| {
-                        Frame::Array(vec![
-                            Frame::bulk("name"),
-                            Frame::bulk(f.clone()),
-                            Frame::bulk("description"),
-                            Frame::Null,
-                            Frame::bulk("flags"),
-                            Frame::Array(vec![]),
-                        ])
-                    }).collect();
+                    let func_list: Vec<Frame> = functions
+                        .keys()
+                        .map(|f| {
+                            Frame::Array(vec![
+                                Frame::bulk("name"),
+                                Frame::bulk(f.clone()),
+                                Frame::bulk("description"),
+                                Frame::Null,
+                                Frame::bulk("flags"),
+                                Frame::Array(vec![]),
+                            ])
+                        })
+                        .collect();
 
                     lib_info.push(Frame::Array(func_list));
                     lib_info.push(Frame::bulk("library_code"));
@@ -858,16 +870,14 @@ pub fn cmd_function(
                 // Return function statistics
                 let cache = FUNCTION_CACHE.read().unwrap();
                 let running_scripts = 0i64;
-                let engines = vec![
-                    Frame::Array(vec![
-                        Frame::bulk("engine_name"),
-                        Frame::bulk("LUA"),
-                        Frame::bulk("libraries_count"),
-                        Frame::Integer(cache.len() as i64),
-                        Frame::bulk("functions_count"),
-                        Frame::Integer(cache.values().map(|(_, f)| f.len()).sum::<usize>() as i64),
-                    ])
-                ];
+                let engines = vec![Frame::Array(vec![
+                    Frame::bulk("engine_name"),
+                    Frame::bulk("LUA"),
+                    Frame::bulk("libraries_count"),
+                    Frame::Integer(cache.len() as i64),
+                    Frame::bulk("functions_count"),
+                    Frame::Integer(cache.values().map(|(_, f)| f.len()).sum::<usize>() as i64),
+                ])];
 
                 Ok(Frame::Array(vec![
                     Frame::bulk("running_scripts"),
@@ -880,18 +890,16 @@ pub fn cmd_function(
                 // Kill running function (stub)
                 Ok(Frame::ok())
             }
-            "HELP" => {
-                Ok(Frame::Array(vec![
-                    Frame::bulk("FUNCTION LOAD [REPLACE] library_code"),
-                    Frame::bulk("FUNCTION DELETE library_name"),
-                    Frame::bulk("FUNCTION LIST [LIBRARYNAME pattern] [WITHCODE]"),
-                    Frame::bulk("FUNCTION FLUSH [ASYNC|SYNC]"),
-                    Frame::bulk("FUNCTION DUMP"),
-                    Frame::bulk("FUNCTION RESTORE serialized_value [FLUSH|APPEND|REPLACE]"),
-                    Frame::bulk("FUNCTION STATS"),
-                    Frame::bulk("FUNCTION KILL"),
-                ]))
-            }
+            "HELP" => Ok(Frame::Array(vec![
+                Frame::bulk("FUNCTION LOAD [REPLACE] library_code"),
+                Frame::bulk("FUNCTION DELETE library_name"),
+                Frame::bulk("FUNCTION LIST [LIBRARYNAME pattern] [WITHCODE]"),
+                Frame::bulk("FUNCTION FLUSH [ASYNC|SYNC]"),
+                Frame::bulk("FUNCTION DUMP"),
+                Frame::bulk("FUNCTION RESTORE serialized_value [FLUSH|APPEND|REPLACE]"),
+                Frame::bulk("FUNCTION STATS"),
+                Frame::bulk("FUNCTION KILL"),
+            ])),
             _ => Err(CommandError::SyntaxError.into()),
         }
     })

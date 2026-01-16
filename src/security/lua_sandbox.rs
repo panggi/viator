@@ -67,23 +67,9 @@ pub const FORBIDDEN_GLOBALS: &[&str] = &[
 /// Safe globals that are allowed in the sandbox.
 pub const SAFE_GLOBALS: &[&str] = &[
     // Basic functions
-    "assert",
-    "error",
-    "ipairs",
-    "pairs",
-    "next",
-    "pcall",
-    "xpcall",
-    "select",
-    "tonumber",
-    "tostring",
-    "type",
-    "unpack",
-    // Safe modules
-    "string",
-    "table",
-    "math",
-    // Constants
+    "assert", "error", "ipairs", "pairs", "next", "pcall", "xpcall", "select", "tonumber",
+    "tostring", "type", "unpack", // Safe modules
+    "string", "table", "math", // Constants
     "_VERSION",
 ];
 
@@ -94,14 +80,42 @@ pub const SAFE_STRING_FUNCS: &[&str] = &[
 ];
 
 /// Safe table library functions.
-pub const SAFE_TABLE_FUNCS: &[&str] =
-    &["concat", "insert", "remove", "sort", "maxn", "pack", "unpack"];
+pub const SAFE_TABLE_FUNCS: &[&str] = &[
+    "concat", "insert", "remove", "sort", "maxn", "pack", "unpack",
+];
 
 /// Safe math library functions.
 pub const SAFE_MATH_FUNCS: &[&str] = &[
-    "abs", "acos", "asin", "atan", "atan2", "ceil", "cos", "cosh", "deg", "exp", "floor", "fmod",
-    "frexp", "huge", "ldexp", "log", "log10", "max", "min", "modf", "pi", "pow", "rad", "random",
-    "randomseed", "sin", "sinh", "sqrt", "tan", "tanh",
+    "abs",
+    "acos",
+    "asin",
+    "atan",
+    "atan2",
+    "ceil",
+    "cos",
+    "cosh",
+    "deg",
+    "exp",
+    "floor",
+    "fmod",
+    "frexp",
+    "huge",
+    "ldexp",
+    "log",
+    "log10",
+    "max",
+    "min",
+    "modf",
+    "pi",
+    "pow",
+    "rad",
+    "random",
+    "randomseed",
+    "sin",
+    "sinh",
+    "sqrt",
+    "tan",
+    "tanh",
 ];
 
 /// Configuration for the Lua sandbox.
@@ -203,10 +217,7 @@ impl std::fmt::Display for SandboxError {
                 write!(f, "script time limit exceeded: {elapsed:?} > {limit:?}")
             }
             Self::InstructionLimitExceeded { executed, limit } => {
-                write!(
-                    f,
-                    "script instruction limit exceeded: {executed} > {limit}"
-                )
+                write!(f, "script instruction limit exceeded: {executed} > {limit}")
             }
             Self::ForbiddenFunction { name } => {
                 write!(f, "forbidden function: {name}")
@@ -548,8 +559,7 @@ impl ResourceTracker {
 
     /// Add memory allocation.
     pub fn add_memory(&self, bytes: usize) {
-        self.memory_used
-            .fetch_add(bytes as u64, Ordering::Relaxed);
+        self.memory_used.fetch_add(bytes as u64, Ordering::Relaxed);
     }
 
     /// Remove memory allocation.

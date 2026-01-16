@@ -7,17 +7,17 @@ use crate::error::{CommandError, Error, Result, StorageError};
 use crate::server::config::MaxMemoryPolicy;
 use crate::server::metrics::get_memory_usage;
 use crate::server::pubsub::{PubSubHub, SharedPubSubHub};
-use crate::types::{
-    current_timestamp_ms, DbIndex, Expiry, Key, ViatorValue,
-    StoredValue, Timestamp, ValueType, MAX_DB_INDEX,
-};
 use crate::types::search::SearchManager;
+use crate::types::{
+    DbIndex, Expiry, Key, MAX_DB_INDEX, StoredValue, Timestamp, ValueType, ViatorValue,
+    current_timestamp_ms,
+};
 use bytes::Bytes;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use rand::Rng;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 /// Shared server authentication configuration.
 /// This is shared across all databases and accessible by commands.
@@ -270,7 +270,8 @@ impl Db {
         }
 
         // Update LRU access time
-        self.access_times.insert(key.clone(), current_timestamp_ms() as u64);
+        self.access_times
+            .insert(key.clone(), current_timestamp_ms() as u64);
 
         self.stats.hits.fetch_add(1, Ordering::Relaxed);
         Some(entry.value.clone())
@@ -317,9 +318,11 @@ impl Db {
         }
 
         // Update LRU access time
-        self.access_times.insert(key.clone(), current_timestamp_ms() as u64);
+        self.access_times
+            .insert(key.clone(), current_timestamp_ms() as u64);
 
-        self.data.insert(key, StoredValue::with_expiry(value, expiry));
+        self.data
+            .insert(key, StoredValue::with_expiry(value, expiry));
     }
 
     /// Set only if key doesn't exist (SETNX).
@@ -687,7 +690,13 @@ impl Db {
         let target = rng.gen_range(0..len);
 
         // Iterate to find the key at that position
-        if let Some(key) = self.data.iter().skip(target).next().map(|r| r.key().clone()) {
+        if let Some(key) = self
+            .data
+            .iter()
+            .skip(target)
+            .next()
+            .map(|r| r.key().clone())
+        {
             self.data.remove(&key);
             self.expires.remove(&key);
             self.access_times.remove(&key);
@@ -709,7 +718,13 @@ impl Db {
         let mut rng = rand::thread_rng();
         let target = rng.gen_range(0..len);
 
-        if let Some(key) = self.expires.iter().skip(target).next().map(|r| r.key().clone()) {
+        if let Some(key) = self
+            .expires
+            .iter()
+            .skip(target)
+            .next()
+            .map(|r| r.key().clone())
+        {
             self.data.remove(&key);
             self.expires.remove(&key);
             self.access_times.remove(&key);
@@ -1089,7 +1104,10 @@ impl Database {
 
     /// Run expiration on all databases.
     pub fn expire_all(&self, max_keys_per_db: usize) -> usize {
-        self.dbs.iter().map(|db| db.expire_keys(max_keys_per_db)).sum()
+        self.dbs
+            .iter()
+            .map(|db| db.expire_keys(max_keys_per_db))
+            .sum()
     }
 
     /// Get statistics for all databases.
@@ -1193,42 +1211,27 @@ impl Database {
                 ViatorValue::List(list) => {
                     let guard = list.read();
                     // Get all items from the list by using range
-                    entry.list_value = Some(
-                        guard.range(0, -1).into_iter().cloned().collect(),
-                    );
+                    entry.list_value = Some(guard.range(0, -1).into_iter().cloned().collect());
                 }
                 ViatorValue::Set(set) => {
                     let guard = set.read();
-                    entry.set_value = Some(
-                        guard.members().into_iter().cloned().collect(),
-                    );
+                    entry.set_value = Some(guard.members().into_iter().cloned().collect());
                 }
                 ViatorValue::ZSet(zset) => {
                     let guard = zset.read();
-                    entry.zset_value = Some(
-                        guard
-                            .iter()
-                            .map(|e| (e.member.clone(), e.score))
-                            .collect(),
-                    );
+                    entry.zset_value =
+                        Some(guard.iter().map(|e| (e.member.clone(), e.score)).collect());
                 }
                 ViatorValue::Hash(hash) => {
                     let guard = hash.read();
-                    entry.hash_value = Some(
-                        guard
-                            .iter()
-                            .map(|(k, v)| (k.clone(), v.clone()))
-                            .collect(),
-                    );
+                    entry.hash_value =
+                        Some(guard.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
                 }
                 ViatorValue::Stream(stream) => {
                     let guard = stream.read();
                     entry.stream_value = Some(
                         guard
-                            .range(
-                                crate::types::StreamId::min(),
-                                crate::types::StreamId::max(),
-                            )
+                            .range(crate::types::StreamId::min(), crate::types::StreamId::max())
                             .into_iter()
                             .map(|e| (e.id.to_string(), e.fields))
                             .collect(),

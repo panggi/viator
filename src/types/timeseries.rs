@@ -235,10 +235,9 @@ impl TimeSeries {
     /// Get sample at specific timestamp.
     #[must_use]
     pub fn get_at(&self, timestamp: u64) -> Option<Sample> {
-        self.samples.get(&timestamp).map(|&value| Sample {
-            timestamp,
-            value,
-        })
+        self.samples
+            .get(&timestamp)
+            .map(|&value| Sample { timestamp, value })
     }
 
     /// Get samples in a range.
@@ -246,7 +245,10 @@ impl TimeSeries {
     pub fn range(&self, from: u64, to: u64, count: Option<usize>) -> Vec<Sample> {
         let iter = self.samples.range(from..=to);
         let samples: Vec<_> = iter
-            .map(|(&ts, &value)| Sample { timestamp: ts, value })
+            .map(|(&ts, &value)| Sample {
+                timestamp: ts,
+                value,
+            })
             .collect();
 
         if let Some(c) = count {
@@ -261,7 +263,10 @@ impl TimeSeries {
     pub fn rev_range(&self, from: u64, to: u64, count: Option<usize>) -> Vec<Sample> {
         let iter = self.samples.range(from..=to).rev();
         let samples: Vec<_> = iter
-            .map(|(&ts, &value)| Sample { timestamp: ts, value })
+            .map(|(&ts, &value)| Sample {
+                timestamp: ts,
+                value,
+            })
             .collect();
 
         if let Some(c) = count {
@@ -288,9 +293,13 @@ impl TimeSeries {
 
         while bucket_start <= to {
             let bucket_end = (bucket_start + bucket_duration - 1).min(to);
-            let samples: Vec<_> = self.samples
+            let samples: Vec<_> = self
+                .samples
                 .range(bucket_start..=bucket_end)
-                .map(|(&ts, &value)| Sample { timestamp: ts, value })
+                .map(|(&ts, &value)| Sample {
+                    timestamp: ts,
+                    value,
+                })
                 .collect();
 
             if !samples.is_empty() {
@@ -319,11 +328,23 @@ impl TimeSeries {
                 sum / samples.len() as f64
             }
             Aggregation::Sum => samples.iter().map(|s| s.value).sum(),
-            Aggregation::Min => samples.iter().map(|s| s.value).fold(f64::INFINITY, f64::min),
-            Aggregation::Max => samples.iter().map(|s| s.value).fold(f64::NEG_INFINITY, f64::max),
+            Aggregation::Min => samples
+                .iter()
+                .map(|s| s.value)
+                .fold(f64::INFINITY, f64::min),
+            Aggregation::Max => samples
+                .iter()
+                .map(|s| s.value)
+                .fold(f64::NEG_INFINITY, f64::max),
             Aggregation::Range => {
-                let min = samples.iter().map(|s| s.value).fold(f64::INFINITY, f64::min);
-                let max = samples.iter().map(|s| s.value).fold(f64::NEG_INFINITY, f64::max);
+                let min = samples
+                    .iter()
+                    .map(|s| s.value)
+                    .fold(f64::INFINITY, f64::min);
+                let max = samples
+                    .iter()
+                    .map(|s| s.value)
+                    .fold(f64::NEG_INFINITY, f64::max);
                 max - min
             }
             Aggregation::Count => samples.len() as f64,
@@ -335,10 +356,15 @@ impl TimeSeries {
                     return 0.0;
                 }
                 let mean: f64 = samples.iter().map(|s| s.value).sum::<f64>() / n;
-                let variance: f64 = samples.iter()
+                let variance: f64 = samples
+                    .iter()
                     .map(|s| (s.value - mean).powi(2))
                     .sum::<f64>();
-                let divisor = if matches!(aggregation, Aggregation::StdP) { n } else { n - 1.0 };
+                let divisor = if matches!(aggregation, Aggregation::StdP) {
+                    n
+                } else {
+                    n - 1.0
+                };
                 (variance / divisor).sqrt()
             }
             Aggregation::VarP | Aggregation::VarS => {
@@ -347,10 +373,15 @@ impl TimeSeries {
                     return 0.0;
                 }
                 let mean: f64 = samples.iter().map(|s| s.value).sum::<f64>() / n;
-                let variance: f64 = samples.iter()
+                let variance: f64 = samples
+                    .iter()
                     .map(|s| (s.value - mean).powi(2))
                     .sum::<f64>();
-                let divisor = if matches!(aggregation, Aggregation::VarP) { n } else { n - 1.0 };
+                let divisor = if matches!(aggregation, Aggregation::VarP) {
+                    n
+                } else {
+                    n - 1.0
+                };
                 variance / divisor
             }
             Aggregation::Twa => {
@@ -382,7 +413,12 @@ impl TimeSeries {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
-        let current = self.samples.iter().next_back().map(|(_, &v)| v).unwrap_or(0.0);
+        let current = self
+            .samples
+            .iter()
+            .next_back()
+            .map(|(_, &v)| v)
+            .unwrap_or(0.0);
         self.samples.insert(ts, current + value);
         self.last_timestamp = ts;
         self.total_samples += 1;

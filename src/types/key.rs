@@ -30,7 +30,10 @@ pub struct Key {
 #[derive(Clone)]
 enum KeyInner {
     /// Small keys stored inline (no heap allocation)
-    Inline { data: [u8; INLINE_CAPACITY], len: u8 },
+    Inline {
+        data: [u8; INLINE_CAPACITY],
+        len: u8,
+    },
     /// Larger keys stored as Bytes
     Heap(Bytes),
 }

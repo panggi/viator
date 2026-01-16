@@ -372,10 +372,7 @@ impl Error {
     /// Returns true if this is a server error (5xx equivalent).
     #[inline]
     pub fn is_server_error(&self) -> bool {
-        matches!(
-            self,
-            Error::Storage(_) | Error::Internal(_) | Error::Io(_)
-        )
+        matches!(self, Error::Storage(_) | Error::Internal(_) | Error::Io(_))
     }
 
     /// Converts the error to a Redis error response string.

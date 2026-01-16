@@ -1,12 +1,12 @@
 //! Key command implementations.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
 use crate::types::{Expiry, Key, ValueType, ViatorValue};
-use crate::Result;
 use bytes::Bytes;
 use std::future::Future;
 use std::pin::Pin;
@@ -61,10 +61,7 @@ pub fn cmd_type(
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
         let key = Key::from(cmd.args[0].clone());
-        let type_name = db
-            .key_type(&key)
-            .map(|t| t.as_str())
-            .unwrap_or("none");
+        let type_name = db.key_type(&key).map(|t| t.as_str()).unwrap_or("none");
         Ok(Frame::Simple(type_name.to_string()))
     })
 }
@@ -322,14 +319,12 @@ pub fn cmd_scan(
             i += 1;
         }
 
-        let (next_cursor, keys) = db.scan(
-            cursor,
-            pattern.as_deref(),
-            count,
-            type_filter,
-        );
+        let (next_cursor, keys) = db.scan(cursor, pattern.as_deref(), count, type_filter);
 
-        let key_frames: Vec<Frame> = keys.into_iter().map(|k| Frame::Bulk(k.to_bytes())).collect();
+        let key_frames: Vec<Frame> = keys
+            .into_iter()
+            .map(|k| Frame::Bulk(k.to_bytes()))
+            .collect();
 
         Ok(Frame::Array(vec![
             Frame::Bulk(Bytes::from(next_cursor.to_string())),
@@ -358,9 +353,7 @@ pub fn cmd_dbsize(
     db: Arc<Db>,
     _client: Arc<ClientState>,
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
-    Box::pin(async move {
-        Ok(Frame::Integer(db.len() as i64))
-    })
+    Box::pin(async move { Ok(Frame::Integer(db.len() as i64)) })
 }
 
 /// EXPIRETIME key
@@ -386,7 +379,10 @@ pub fn cmd_pexpiretime(
         let key = Key::from(cmd.args[0].clone());
         // Get expiretime returns seconds, we need to return milliseconds
         // For now, just return expiretime * 1000
-        let time = db.expiretime(&key).map(|t| if t > 0 { t * 1000 } else { t }).unwrap_or(-2);
+        let time = db
+            .expiretime(&key)
+            .map(|t| if t > 0 { t * 1000 } else { t })
+            .unwrap_or(-2);
         Ok(Frame::Integer(time))
     })
 }
@@ -504,13 +500,21 @@ pub fn cmd_object(
             "HELP" => {
                 let help = vec![
                     Frame::Bulk(Bytes::from("OBJECT ENCODING <key>")),
-                    Frame::Bulk(Bytes::from("    Return the encoding of the object stored at <key>.")),
+                    Frame::Bulk(Bytes::from(
+                        "    Return the encoding of the object stored at <key>.",
+                    )),
                     Frame::Bulk(Bytes::from("OBJECT FREQ <key>")),
-                    Frame::Bulk(Bytes::from("    Return the access frequency of the object stored at <key>.")),
+                    Frame::Bulk(Bytes::from(
+                        "    Return the access frequency of the object stored at <key>.",
+                    )),
                     Frame::Bulk(Bytes::from("OBJECT IDLETIME <key>")),
-                    Frame::Bulk(Bytes::from("    Return the idle time of the object stored at <key>.")),
+                    Frame::Bulk(Bytes::from(
+                        "    Return the idle time of the object stored at <key>.",
+                    )),
                     Frame::Bulk(Bytes::from("OBJECT REFCOUNT <key>")),
-                    Frame::Bulk(Bytes::from("    Return the reference count of the object stored at <key>.")),
+                    Frame::Bulk(Bytes::from(
+                        "    Return the reference count of the object stored at <key>.",
+                    )),
                 ];
                 Ok(Frame::Array(help))
             }
@@ -578,7 +582,9 @@ pub fn cmd_sort(
                 }
                 "STORE" => {
                     i += 1;
-                    store_key = Some(Key::from(cmd.args.get(i).cloned().ok_or(CommandError::SyntaxError)?));
+                    store_key = Some(Key::from(
+                        cmd.args.get(i).cloned().ok_or(CommandError::SyntaxError)?,
+                    ));
                 }
                 "BY" | "GET" => {
                     // BY and GET patterns not fully implemented
@@ -622,8 +628,14 @@ pub fn cmd_sort(
         } else {
             // Numeric sort
             elements.sort_by(|a, b| {
-                let na: f64 = std::str::from_utf8(a).ok().and_then(|s| s.parse().ok()).unwrap_or(0.0);
-                let nb: f64 = std::str::from_utf8(b).ok().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+                let na: f64 = std::str::from_utf8(a)
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0.0);
+                let nb: f64 = std::str::from_utf8(b)
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0.0);
                 if desc {
                     nb.partial_cmp(&na).unwrap_or(std::cmp::Ordering::Equal)
                 } else {
@@ -634,7 +646,11 @@ pub fn cmd_sort(
 
         // Apply limit
         let elements: Vec<Bytes> = if let Some(count) = limit_count {
-            elements.into_iter().skip(limit_offset).take(count).collect()
+            elements
+                .into_iter()
+                .skip(limit_offset)
+                .take(count)
+                .collect()
         } else {
             elements.into_iter().skip(limit_offset).collect()
         };
@@ -652,7 +668,9 @@ pub fn cmd_sort(
             db.set(dest, new_list);
             Ok(Frame::Integer(count))
         } else {
-            Ok(Frame::Array(elements.into_iter().map(Frame::Bulk).collect()))
+            Ok(Frame::Array(
+                elements.into_iter().map(Frame::Bulk).collect(),
+            ))
         }
     })
 }
@@ -740,16 +758,20 @@ pub fn cmd_migrate(
         let addr = format!("{}:{}", host, port);
         let timeout = std::time::Duration::from_millis(timeout_ms);
 
-        let stream = match tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&addr)).await {
-            Ok(Ok(s)) => s,
-            Ok(Err(e)) => return Ok(Frame::Error(format!("ERR IO error: {}", e))),
-            Err(_) => return Ok(Frame::Error("ERR timeout connecting to target".to_string())),
-        };
+        let stream =
+            match tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&addr)).await {
+                Ok(Ok(s)) => s,
+                Ok(Err(e)) => return Ok(Frame::Error(format!("ERR IO error: {}", e))),
+                Err(_) => return Ok(Frame::Error("ERR timeout connecting to target".to_string())),
+            };
 
         let (mut reader, mut writer) = stream.into_split();
 
         // Helper to send RESP command
-        async fn send_command(writer: &mut tokio::net::tcp::OwnedWriteHalf, args: &[&[u8]]) -> std::io::Result<()> {
+        async fn send_command(
+            writer: &mut tokio::net::tcp::OwnedWriteHalf,
+            args: &[&[u8]],
+        ) -> std::io::Result<()> {
             use tokio::io::AsyncWriteExt;
             // Build RESP array
             let mut buf = format!("*{}\r\n", args.len()).into_bytes();
@@ -762,7 +784,9 @@ pub fn cmd_migrate(
         }
 
         // Helper to read response
-        async fn read_response(reader: &mut tokio::net::tcp::OwnedReadHalf) -> std::io::Result<String> {
+        async fn read_response(
+            reader: &mut tokio::net::tcp::OwnedReadHalf,
+        ) -> std::io::Result<String> {
             use tokio::io::AsyncBufReadExt;
             let mut buf_reader = tokio::io::BufReader::new(reader);
             let mut line = String::new();
@@ -819,10 +843,20 @@ pub fn cmd_migrate(
 
             // Build RESTORE command
             let key_bytes = key.as_ref();
-            let _replace_flag = if replace { b"REPLACE".as_slice() } else { b"".as_slice() };
+            let _replace_flag = if replace {
+                b"REPLACE".as_slice()
+            } else {
+                b"".as_slice()
+            };
 
             let restore_args: Vec<&[u8]> = if replace {
-                vec![b"RESTORE", key_bytes, ttl_str.as_bytes(), &serialized, b"REPLACE"]
+                vec![
+                    b"RESTORE",
+                    key_bytes,
+                    ttl_str.as_bytes(),
+                    &serialized,
+                    b"REPLACE",
+                ]
             } else {
                 vec![b"RESTORE", key_bytes, ttl_str.as_bytes(), &serialized]
             };

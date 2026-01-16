@@ -3,12 +3,12 @@
 //! Redis Stack compatible CF.* commands.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
 use crate::types::CuckooFilter;
-use crate::Result;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -32,7 +32,9 @@ pub fn cmd_cf_add(
         let item = &cmd.args[1];
 
         let mut filters = CUCKOO_FILTERS.write();
-        let filter = filters.entry(key).or_insert_with(|| CuckooFilter::new(1000));
+        let filter = filters
+            .entry(key)
+            .or_insert_with(|| CuckooFilter::new(1000));
 
         let added = filter.add(item);
         Ok(Frame::Integer(if added { 1 } else { 0 }))
@@ -52,7 +54,9 @@ pub fn cmd_cf_addnx(
         let item = &cmd.args[1];
 
         let mut filters = CUCKOO_FILTERS.write();
-        let filter = filters.entry(key).or_insert_with(|| CuckooFilter::new(1000));
+        let filter = filters
+            .entry(key)
+            .or_insert_with(|| CuckooFilter::new(1000));
 
         let added = filter.add_nx(item);
         Ok(Frame::Integer(if added { 1 } else { 0 }))

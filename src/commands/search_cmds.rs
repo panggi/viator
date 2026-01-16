@@ -3,15 +3,15 @@
 //! Full-text and vector search commands.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
 use crate::types::search::{
-    parse_query, FieldDefinition, FieldType, FieldValue, IndexOptions, IndexSchema,
-    SearchManager, SearchQuery,
+    FieldDefinition, FieldType, FieldValue, IndexOptions, IndexSchema, SearchManager, SearchQuery,
+    parse_query,
 };
-use crate::Result;
 use bytes::Bytes;
 use std::collections::HashMap;
 use std::future::Future;
@@ -136,7 +136,10 @@ pub fn cmd_ft_create(
                             // Check if it's a new field name by looking ahead
                             if idx + 1 < cmd.args.len() {
                                 let next = cmd.get_str(idx + 1)?.to_uppercase();
-                                if matches!(next.as_str(), "TEXT" | "NUMERIC" | "TAG" | "GEO" | "VECTOR") {
+                                if matches!(
+                                    next.as_str(),
+                                    "TEXT" | "NUMERIC" | "TAG" | "GEO" | "VECTOR"
+                                ) {
                                     break;
                                 }
                             }
@@ -230,7 +233,8 @@ pub fn cmd_ft_add(
                         FieldValue::Numeric(n)
                     }
                     FieldType::Tag => {
-                        let tags: Vec<String> = value.split(',').map(|s| s.trim().to_string()).collect();
+                        let tags: Vec<String> =
+                            value.split(',').map(|s| s.trim().to_string()).collect();
                         FieldValue::Tag(tags)
                     }
                     FieldType::Geo => {
@@ -445,10 +449,20 @@ pub fn cmd_ft_hybrid(
 
         // Combine method: RRF or LINEAR
         enum CombineMethod {
-            Rrf { constant: f64, window: usize },
-            Linear { alpha: f64, beta: f64, window: usize },
+            Rrf {
+                constant: f64,
+                window: usize,
+            },
+            Linear {
+                alpha: f64,
+                beta: f64,
+                window: usize,
+            },
         }
-        let mut combine = CombineMethod::Rrf { constant: 60.0, window: 20 };
+        let mut combine = CombineMethod::Rrf {
+            constant: 60.0,
+            window: 20,
+        };
 
         // Parse options
         let mut idx = 1;
@@ -500,7 +514,9 @@ pub fn cmd_ft_hybrid(
                                 idx += 1;
                                 let _count = cmd.get_u64(idx)? as usize;
                                 idx += 1;
-                                if idx < cmd.args.len() && cmd.get_str(idx)?.to_uppercase() == "RADIUS" {
+                                if idx < cmd.args.len()
+                                    && cmd.get_str(idx)?.to_uppercase() == "RADIUS"
+                                {
                                     idx += 1;
                                     _range_radius = Some(cmd.get_f64(idx)?);
                                     idx += 1;
@@ -564,7 +580,11 @@ pub fn cmd_ft_hybrid(
                                     _ => break,
                                 }
                             }
-                            combine = CombineMethod::Linear { alpha, beta, window };
+                            combine = CombineMethod::Linear {
+                                alpha,
+                                beta,
+                                window,
+                            };
                         }
                         _ => {}
                     }
@@ -639,12 +659,16 @@ pub fn cmd_ft_hybrid(
                 if blob.len() % 4 == 0 {
                     Some(
                         blob.chunks(4)
-                            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-                            .collect()
+                            .map(|chunk| {
+                                f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])
+                            })
+                            .collect(),
                     )
                 } else {
                     // Try parsing as comma-separated string
-                    std::str::from_utf8(blob).ok().map(|s| parse_vector_query(s))
+                    std::str::from_utf8(blob)
+                        .ok()
+                        .map(|s| parse_vector_query(s))
                 }
             })
         });
@@ -698,13 +722,27 @@ pub fn cmd_ft_hybrid(
                     *combined_scores.entry(doc_id.clone()).or_insert(0.0) += rrf_score;
                 }
             }
-            CombineMethod::Linear { alpha, beta, window } => {
+            CombineMethod::Linear {
+                alpha,
+                beta,
+                window,
+            } => {
                 // Linear combination: score = alpha * text_score + beta * vector_score
-                let max_text = text_results.iter().map(|(_, s, _)| *s).fold(0.0f64, f64::max);
-                let max_vec = vector_results.iter().map(|(_, s, _)| *s).fold(0.0f64, f64::max);
+                let max_text = text_results
+                    .iter()
+                    .map(|(_, s, _)| *s)
+                    .fold(0.0f64, f64::max);
+                let max_vec = vector_results
+                    .iter()
+                    .map(|(_, s, _)| *s)
+                    .fold(0.0f64, f64::max);
 
                 for (doc_id, score, _) in text_results.iter().take(window) {
-                    let norm_score = if max_text > 0.0 { score / max_text } else { 0.0 };
+                    let norm_score = if max_text > 0.0 {
+                        score / max_text
+                    } else {
+                        0.0
+                    };
                     *combined_scores.entry(doc_id.clone()).or_insert(0.0) += alpha * norm_score;
                 }
                 for (doc_id, score, _) in vector_results.iter().take(window) {
@@ -720,7 +758,11 @@ pub fn cmd_ft_hybrid(
 
         // Apply limit
         let (offset, count) = limit;
-        let results: Vec<_> = results.into_iter().skip(offset).take(count.min(knn_k)).collect();
+        let results: Vec<_> = results
+            .into_iter()
+            .skip(offset)
+            .take(count.min(knn_k))
+            .collect();
 
         // Build response
         let mut response = vec![Frame::Integer(results.len() as i64)];

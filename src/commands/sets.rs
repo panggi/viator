@@ -1,12 +1,12 @@
 //! Set command implementations.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
-use crate::types::{Key, ViatorSet, ViatorValue, ValueType};
-use crate::Result;
+use crate::types::{Key, ValueType, ViatorSet, ViatorValue};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -208,7 +208,13 @@ pub fn cmd_srandmember(
 
         let value = match db.get_typed(&key, ValueType::Set)? {
             Some(v) => v,
-            None => return Ok(if count.is_some() { Frame::Array(vec![]) } else { Frame::Null }),
+            None => {
+                return Ok(if count.is_some() {
+                    Frame::Array(vec![])
+                } else {
+                    Frame::Null
+                });
+            }
         };
 
         let set = value.as_set().unwrap().read();
@@ -216,7 +222,12 @@ pub fn cmd_srandmember(
         match count {
             Some(count) => {
                 let members = set.random_members(count);
-                Ok(Frame::Array(members.into_iter().map(|m| Frame::Bulk(m.clone())).collect()))
+                Ok(Frame::Array(
+                    members
+                        .into_iter()
+                        .map(|m| Frame::Bulk(m.clone()))
+                        .collect(),
+                ))
             }
             None => match set.random_member() {
                 Some(v) => Ok(Frame::Bulk(v.clone())),

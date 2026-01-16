@@ -401,12 +401,7 @@ impl AuditLog {
     }
 
     /// Log command authorization denial.
-    pub fn log_authz_denied_command(
-        &self,
-        username: &str,
-        client_addr: SocketAddr,
-        command: &str,
-    ) {
+    pub fn log_authz_denied_command(&self, username: &str, client_addr: SocketAddr, command: &str) {
         self.log(
             AuditEvent::new(AuditEventType::AuthzDeniedCommand, AuditSeverity::Warning)
                 .with_username(username)

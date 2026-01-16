@@ -1,10 +1,10 @@
 //! Command registry for looking up and managing Redis commands.
 
 use super::{CommandFlags, ParsedCommand};
+use crate::Result;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
-use crate::Result;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;

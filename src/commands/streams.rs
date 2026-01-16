@@ -4,12 +4,12 @@
 //! They provide pub/sub with persistence and consumer groups.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
-use crate::types::{Key, ViatorValue, StreamId, StreamIdParsed, ValueType};
-use crate::Result;
+use crate::types::{Key, StreamId, StreamIdParsed, ValueType, ViatorValue};
 use bytes::Bytes;
 use std::future::Future;
 use std::pin::Pin;
@@ -40,7 +40,7 @@ pub fn cmd_xadd(
         let mut maxlen: Option<(usize, bool)> = None; // (threshold, approximate)
         let mut minid: Option<(StreamId, bool)> = None;
         let mut _keep_ref = false; // Redis 8.2+ KEEPREF option
-        let mut _del_ref = true;   // Redis 8.2+ DELREF is default
+        let mut _del_ref = true; // Redis 8.2+ DELREF is default
         let mut _acked_only = false; // Redis 8.2+ ACKED option
 
         // Parse options
@@ -162,7 +162,9 @@ pub fn cmd_xadd(
         let mut guard = stream.write();
 
         // Add the entry
-        let new_id = guard.add(id, fields).ok_or(CommandError::StreamIdTooSmall)?;
+        let new_id = guard
+            .add(id, fields)
+            .ok_or(CommandError::StreamIdTooSmall)?;
 
         // Apply trimming if specified
         if let Some((threshold, approximate)) = maxlen {
@@ -397,7 +399,7 @@ pub fn cmd_xtrim(
 
         let mut idx = 2;
         let mut _keep_ref = false; // Redis 8.2+ KEEPREF option
-        let mut _del_ref = true;   // Redis 8.2+ DELREF is default
+        let mut _del_ref = true; // Redis 8.2+ DELREF is default
         let mut _acked_only = false; // Redis 8.2+ ACKED option
 
         let approximate = if idx < cmd.args.len() {
@@ -612,7 +614,10 @@ fn stream_entry_to_frame(entry: &crate::types::StreamEntry) -> Frame {
         .flat_map(|(k, v)| vec![Frame::Bulk(k.clone()), Frame::Bulk(v.clone())])
         .collect();
 
-    Frame::Array(vec![Frame::bulk(entry.id.to_string()), Frame::Array(fields)])
+    Frame::Array(vec![
+        Frame::bulk(entry.id.to_string()),
+        Frame::Array(fields),
+    ])
 }
 
 /// XGROUP CREATE|CREATECONSUMER|DELCONSUMER|DESTROY|SETID key groupname [consumer] [id|$] [MKSTREAM]
@@ -623,7 +628,9 @@ pub fn cmd_xgroup(
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
         if cmd.args.is_empty() {
-            return Ok(Frame::Error("ERR wrong number of arguments for 'xgroup' command".to_string()));
+            return Ok(Frame::Error(
+                "ERR wrong number of arguments for 'xgroup' command".to_string(),
+            ));
         }
 
         let subcommand = cmd.get_str(0)?.to_uppercase();
@@ -653,16 +660,17 @@ pub fn cmd_xgroup(
                 cmd.require_args(3)?;
                 Ok(Frame::ok())
             }
-            "HELP" => {
-                Ok(Frame::Array(vec![
-                    Frame::bulk("XGROUP CREATE key groupname id|$ [MKSTREAM]"),
-                    Frame::bulk("XGROUP CREATECONSUMER key groupname consumername"),
-                    Frame::bulk("XGROUP DELCONSUMER key groupname consumername"),
-                    Frame::bulk("XGROUP DESTROY key groupname"),
-                    Frame::bulk("XGROUP SETID key groupname id|$"),
-                ]))
-            }
-            _ => Ok(Frame::Error(format!("ERR Unknown subcommand or wrong number of arguments for '{}'", subcommand))),
+            "HELP" => Ok(Frame::Array(vec![
+                Frame::bulk("XGROUP CREATE key groupname id|$ [MKSTREAM]"),
+                Frame::bulk("XGROUP CREATECONSUMER key groupname consumername"),
+                Frame::bulk("XGROUP DELCONSUMER key groupname consumername"),
+                Frame::bulk("XGROUP DESTROY key groupname"),
+                Frame::bulk("XGROUP SETID key groupname id|$"),
+            ])),
+            _ => Ok(Frame::Error(format!(
+                "ERR Unknown subcommand or wrong number of arguments for '{}'",
+                subcommand
+            ))),
         }
     })
 }
@@ -824,7 +832,7 @@ pub fn cmd_xreadgroup(
             .iter()
             .map(|s| {
                 match *s {
-                    ">" => StreamId::max(), // Read new messages only
+                    ">" => StreamId::max(),         // Read new messages only
                     "0" | "0-0" => StreamId::min(), // Read all pending
                     _ => match StreamId::parse(s) {
                         Some(StreamIdParsed::Exact(id)) => id,
@@ -920,7 +928,7 @@ pub fn cmd_xdelex(
         let mut idle_ms: Option<u64> = None;
         let mut time_ms: Option<u64> = None;
         let mut _keep_ref = false; // KEEPREF option
-        let mut _del_ref = true;   // DELREF is default
+        let mut _del_ref = true; // DELREF is default
         let mut _acked_only = false; // ACKED option
 
         // Parse options
@@ -987,7 +995,11 @@ pub fn cmd_xdelex(
                 let old_entries = guard.range(StreamId::min(), threshold_id);
 
                 let ids_to_delete: Vec<StreamId> = if let Some(max_count) = count {
-                    old_entries.into_iter().take(max_count).map(|e| e.id).collect()
+                    old_entries
+                        .into_iter()
+                        .take(max_count)
+                        .map(|e| e.id)
+                        .collect()
                 } else {
                     old_entries.into_iter().map(|e| e.id).collect()
                 };

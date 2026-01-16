@@ -14,8 +14,8 @@
 use crate::types::Key;
 use dashmap::DashMap;
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Global watch registry for tracking watched keys across all clients.
 pub struct WatchRegistry {
@@ -95,7 +95,9 @@ impl WatchRegistry {
             .insert(key);
 
         self.stats.watch_count.fetch_add(1, Ordering::Relaxed);
-        self.stats.watched_keys_count.fetch_add(1, Ordering::Relaxed);
+        self.stats
+            .watched_keys_count
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     /// Remove a WATCH on a key for a client.
@@ -118,7 +120,9 @@ impl WatchRegistry {
             }
         }
 
-        self.stats.watched_keys_count.fetch_sub(1, Ordering::Relaxed);
+        self.stats
+            .watched_keys_count
+            .fetch_sub(1, Ordering::Relaxed);
     }
 
     /// Remove all WATCHes for a client.
@@ -160,7 +164,9 @@ impl WatchRegistry {
                 if let Some(callback) = self.invalidation_callbacks.get(&client_id) {
                     callback();
                     notified += 1;
-                    self.stats.invalidation_count.fetch_add(1, Ordering::Relaxed);
+                    self.stats
+                        .invalidation_count
+                        .fetch_add(1, Ordering::Relaxed);
                 }
             }
         }
@@ -192,7 +198,9 @@ impl WatchRegistry {
                         if let Some(callback) = self.invalidation_callbacks.get(&client_id) {
                             callback();
                             notified += 1;
-                            self.stats.invalidation_count.fetch_add(1, Ordering::Relaxed);
+                            self.stats
+                                .invalidation_count
+                                .fetch_add(1, Ordering::Relaxed);
                         }
                     }
                 }
@@ -217,10 +225,7 @@ impl WatchRegistry {
     /// Get the number of clients watching a key.
     #[must_use]
     pub fn watcher_count(&self, key: &Key) -> usize {
-        self.watched_keys
-            .get(key)
-            .map(|s| s.len())
-            .unwrap_or(0)
+        self.watched_keys.get(key).map(|s| s.len()).unwrap_or(0)
     }
 
     /// Get all keys being watched by a client.
@@ -320,9 +325,12 @@ mod tests {
         let notified = Arc::new(AtomicBool::new(false));
         let notified_clone = notified.clone();
 
-        registry.register_client(1, Arc::new(move || {
-            notified_clone.store(true, Ordering::SeqCst);
-        }));
+        registry.register_client(
+            1,
+            Arc::new(move || {
+                notified_clone.store(true, Ordering::SeqCst);
+            }),
+        );
 
         registry.watch(1, key.clone());
 
@@ -341,9 +349,12 @@ mod tests {
         let notified = Arc::new(AtomicBool::new(false));
         let notified_clone = notified.clone();
 
-        registry.register_client(1, Arc::new(move || {
-            notified_clone.store(true, Ordering::SeqCst);
-        }));
+        registry.register_client(
+            1,
+            Arc::new(move || {
+                notified_clone.store(true, Ordering::SeqCst);
+            }),
+        );
 
         registry.watch(1, key.clone());
 
@@ -365,12 +376,18 @@ mod tests {
         let n1 = notified1.clone();
         let n2 = notified2.clone();
 
-        registry.register_client(1, Arc::new(move || {
-            n1.store(true, Ordering::SeqCst);
-        }));
-        registry.register_client(2, Arc::new(move || {
-            n2.store(true, Ordering::SeqCst);
-        }));
+        registry.register_client(
+            1,
+            Arc::new(move || {
+                n1.store(true, Ordering::SeqCst);
+            }),
+        );
+        registry.register_client(
+            2,
+            Arc::new(move || {
+                n2.store(true, Ordering::SeqCst);
+            }),
+        );
 
         registry.watch(1, key.clone());
         registry.watch(2, key.clone());

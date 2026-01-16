@@ -1,12 +1,12 @@
 //! String command implementations.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
 use crate::types::{Expiry, Key, ViatorValue};
-use crate::Result;
 use bytes::Bytes;
 use std::future::Future;
 use std::pin::Pin;
@@ -122,7 +122,7 @@ pub fn cmd_set(
                         command: "SET".to_string(),
                         arg: opt,
                     }
-                    .into())
+                    .into());
                 }
             }
             i += 1;
@@ -258,7 +258,11 @@ pub fn cmd_setex(
             return Err(CommandError::InvalidExpireTime.into());
         }
 
-        db.set_with_expiry(key, ViatorValue::string(value), Expiry::from_seconds(seconds));
+        db.set_with_expiry(
+            key,
+            ViatorValue::string(value),
+            Expiry::from_seconds(seconds),
+        );
         Ok(Frame::ok())
     })
 }
@@ -369,9 +373,7 @@ pub fn cmd_incr(
     db: Arc<Db>,
     _client: Arc<ClientState>,
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
-    Box::pin(async move {
-        incr_by(&db, &Key::from(cmd.args[0].clone()), 1)
-    })
+    Box::pin(async move { incr_by(&db, &Key::from(cmd.args[0].clone()), 1) })
 }
 
 /// INCRBY key increment
@@ -423,9 +425,7 @@ pub fn cmd_decr(
     db: Arc<Db>,
     _client: Arc<ClientState>,
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
-    Box::pin(async move {
-        incr_by(&db, &Key::from(cmd.args[0].clone()), -1)
-    })
+    Box::pin(async move { incr_by(&db, &Key::from(cmd.args[0].clone()), -1) })
 }
 
 /// DECRBY key decrement
@@ -650,7 +650,7 @@ pub fn cmd_getex(
                         command: "GETEX".to_string(),
                         arg: opt,
                     }
-                    .into())
+                    .into());
                 }
             }
         }
@@ -776,7 +776,11 @@ pub fn cmd_lcs(
 }
 
 /// Compute LCS and return (length, lcs_string, matches)
-fn compute_lcs(s1: &[u8], s2: &[u8], min_match_len: usize) -> (usize, Bytes, Vec<(usize, usize, usize, usize, usize)>) {
+fn compute_lcs(
+    s1: &[u8],
+    s2: &[u8],
+    min_match_len: usize,
+) -> (usize, Bytes, Vec<(usize, usize, usize, usize, usize)>) {
     let m = s1.len();
     let n = s2.len();
 
@@ -1001,8 +1005,8 @@ pub fn cmd_delex(
             None,
             IfEq(Bytes),
             IfNe(Bytes),
-            IfDeq(u64),  // XXH3 digest
-            IfDne(u64),  // XXH3 digest
+            IfDeq(u64), // XXH3 digest
+            IfDne(u64), // XXH3 digest
         }
 
         let condition = if cmd.args.len() >= 3 {
@@ -1041,54 +1045,46 @@ pub fn cmd_delex(
                     Ok(Frame::Integer(0))
                 }
             }
-            DelexCondition::IfEq(expected) => {
-                match db.get_string(&key)? {
-                    Some(current) if current.as_ref() == expected.as_ref() => {
+            DelexCondition::IfEq(expected) => match db.get_string(&key)? {
+                Some(current) if current.as_ref() == expected.as_ref() => {
+                    db.delete(&key);
+                    Ok(Frame::Integer(1))
+                }
+                Some(_) => Ok(Frame::Integer(0)),
+                None => Ok(Frame::Integer(0)),
+            },
+            DelexCondition::IfNe(not_expected) => match db.get_string(&key)? {
+                Some(current) if current.as_ref() != not_expected.as_ref() => {
+                    db.delete(&key);
+                    Ok(Frame::Integer(1))
+                }
+                Some(_) => Ok(Frame::Integer(0)),
+                None => Ok(Frame::Integer(0)),
+            },
+            DelexCondition::IfDeq(expected_digest) => match db.get_string(&key)? {
+                Some(current) => {
+                    let current_digest = xxhash_rust::xxh3::xxh3_64(&current);
+                    if current_digest == expected_digest {
                         db.delete(&key);
                         Ok(Frame::Integer(1))
+                    } else {
+                        Ok(Frame::Integer(0))
                     }
-                    Some(_) => Ok(Frame::Integer(0)),
-                    None => Ok(Frame::Integer(0)),
                 }
-            }
-            DelexCondition::IfNe(not_expected) => {
-                match db.get_string(&key)? {
-                    Some(current) if current.as_ref() != not_expected.as_ref() => {
+                None => Ok(Frame::Integer(0)),
+            },
+            DelexCondition::IfDne(not_expected_digest) => match db.get_string(&key)? {
+                Some(current) => {
+                    let current_digest = xxhash_rust::xxh3::xxh3_64(&current);
+                    if current_digest != not_expected_digest {
                         db.delete(&key);
                         Ok(Frame::Integer(1))
+                    } else {
+                        Ok(Frame::Integer(0))
                     }
-                    Some(_) => Ok(Frame::Integer(0)),
-                    None => Ok(Frame::Integer(0)),
                 }
-            }
-            DelexCondition::IfDeq(expected_digest) => {
-                match db.get_string(&key)? {
-                    Some(current) => {
-                        let current_digest = xxhash_rust::xxh3::xxh3_64(&current);
-                        if current_digest == expected_digest {
-                            db.delete(&key);
-                            Ok(Frame::Integer(1))
-                        } else {
-                            Ok(Frame::Integer(0))
-                        }
-                    }
-                    None => Ok(Frame::Integer(0)),
-                }
-            }
-            DelexCondition::IfDne(not_expected_digest) => {
-                match db.get_string(&key)? {
-                    Some(current) => {
-                        let current_digest = xxhash_rust::xxh3::xxh3_64(&current);
-                        if current_digest != not_expected_digest {
-                            db.delete(&key);
-                            Ok(Frame::Integer(1))
-                        } else {
-                            Ok(Frame::Integer(0))
-                        }
-                    }
-                    None => Ok(Frame::Integer(0)),
-                }
-            }
+                None => Ok(Frame::Integer(0)),
+            },
         }
     })
 }

@@ -15,8 +15,8 @@
 
 use dashmap::DashMap;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A graph database.
 #[derive(Debug)]
@@ -179,7 +179,11 @@ impl Graph {
     }
 
     /// Create a node.
-    pub fn create_node(&self, labels: Vec<String>, properties: HashMap<String, PropertyValue>) -> u64 {
+    pub fn create_node(
+        &self,
+        labels: Vec<String>,
+        properties: HashMap<String, PropertyValue>,
+    ) -> u64 {
         let id = self.next_node_id.fetch_add(1, Ordering::Relaxed);
 
         // Add to label index
@@ -429,7 +433,14 @@ impl Graph {
         let mut visited = HashSet::new();
         visited.insert(src);
 
-        self.dfs_paths(src, dst, max_depth, &mut current_path, &mut visited, &mut paths);
+        self.dfs_paths(
+            src,
+            dst,
+            max_depth,
+            &mut current_path,
+            &mut visited,
+            &mut paths,
+        );
 
         paths
     }
@@ -659,7 +670,10 @@ mod tests {
         let graph = Graph::new("test".to_string());
 
         let mut props = HashMap::new();
-        props.insert("name".to_string(), PropertyValue::String("Alice".to_string()));
+        props.insert(
+            "name".to_string(),
+            PropertyValue::String("Alice".to_string()),
+        );
 
         let id = graph.create_node(vec!["Person".to_string()], props);
 
@@ -678,7 +692,9 @@ mod tests {
         let alice = graph.create_node(vec!["Person".to_string()], HashMap::new());
         let bob = graph.create_node(vec!["Person".to_string()], HashMap::new());
 
-        let edge_id = graph.create_edge(alice, bob, "KNOWS".to_string(), HashMap::new()).unwrap();
+        let edge_id = graph
+            .create_edge(alice, bob, "KNOWS".to_string(), HashMap::new())
+            .unwrap();
 
         let edge = graph.get_edge(edge_id).unwrap();
         assert_eq!(edge.src, alice);

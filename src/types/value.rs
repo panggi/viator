@@ -3,7 +3,9 @@
 //! This module provides the polymorphic value type that represents
 //! all Redis data types.
 
-use super::{Expiry, ViatorHash, ViatorList, ViatorSet, ViatorStream, SortedSet, ValueType, VectorSet};
+use super::{
+    Expiry, SortedSet, ValueType, VectorSet, ViatorHash, ViatorList, ViatorSet, ViatorStream,
+};
 use bytes::Bytes;
 use std::sync::Arc;
 

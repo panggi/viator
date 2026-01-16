@@ -2,11 +2,11 @@
 //!
 //! This is the main entry point for the Viator server.
 
-use viator::{Config, Server, VERSION};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{error, info, warn};
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
+use viator::{Config, Server, VERSION};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -97,8 +97,7 @@ async fn main() -> anyhow::Result<()> {
         viator::server::config::LogLevel::Warning => "warn",
     };
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(log_level));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level));
 
     if let Some(ref logfile) = config.logfile {
         // Log to file
@@ -128,7 +127,10 @@ async fn main() -> anyhow::Result<()> {
         print_banner();
     }
 
-    info!("Viator {} starting on {}:{}", VERSION, config.bind, config.port);
+    info!(
+        "Viator {} starting on {}:{}",
+        VERSION, config.bind, config.port
+    );
 
     // Create and run server
     let server = Arc::new(Server::new(config.clone()));
@@ -149,9 +151,8 @@ async fn main() -> anyhow::Result<()> {
     {
         let config_path = cli.config.clone();
         tokio::spawn(async move {
-            let mut signal = tokio::signal::unix::signal(
-                tokio::signal::unix::SignalKind::hangup()
-            ).expect("Failed to create SIGHUP handler");
+            let mut signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+                .expect("Failed to create SIGHUP handler");
 
             loop {
                 signal.recv().await;

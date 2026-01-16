@@ -3,12 +3,12 @@
 //! Commands for vector similarity search operations.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
 use crate::types::{Key, ViatorValue};
-use crate::Result;
 use bytes::Bytes;
 use std::future::Future;
 use std::pin::Pin;
@@ -138,7 +138,8 @@ pub fn cmd_vadd(
             // Check for option keywords that end element parsing
             if let Ok(maybe_keyword) = cmd.get_str(i) {
                 let upper = maybe_keyword.to_uppercase();
-                if matches!(upper.as_str(),
+                if matches!(
+                    upper.as_str(),
                     "SETATTR" | "CAS" | "NOCREATE" | "NOQUANT" | "Q8" | "BIN" | "EF" | "M"
                 ) {
                     break;
@@ -160,7 +161,11 @@ pub fn cmd_vadd(
                         return Err(CommandError::SyntaxError.into());
                     }
                     let val_str = cmd.get_str(i + 1 + j)?;
-                    vals.push(val_str.parse::<f32>().map_err(|_| CommandError::SyntaxError)?);
+                    vals.push(
+                        val_str
+                            .parse::<f32>()
+                            .map_err(|_| CommandError::SyntaxError)?,
+                    );
                 }
                 i += num_values - 1; // Adjust for extra args consumed
                 if let Some(dim) = reduce_dim {
@@ -181,7 +186,10 @@ pub fn cmd_vadd(
                 continue;
             }
 
-            if guard.add(element_name.clone(), vector).map_err(|_| CommandError::SyntaxError)? {
+            if guard
+                .add(element_name.clone(), vector)
+                .map_err(|_| CommandError::SyntaxError)?
+            {
                 added += 1;
             }
 
@@ -293,10 +301,8 @@ pub fn cmd_vemb(
                         Some(vec) => {
                             if raw {
                                 // Return as binary blob
-                                let bytes: Vec<u8> = vec
-                                    .iter()
-                                    .flat_map(|f| f.to_le_bytes())
-                                    .collect();
+                                let bytes: Vec<u8> =
+                                    vec.iter().flat_map(|f| f.to_le_bytes()).collect();
                                 Ok(Frame::Bulk(Bytes::from(bytes)))
                             } else {
                                 // Return as array of bulk strings
@@ -451,7 +457,11 @@ pub fn cmd_vsim(
                         return Err(CommandError::SyntaxError.into());
                     }
                     let val_str = cmd.get_str(i)?;
-                    vals.push(val_str.parse::<f32>().map_err(|_| CommandError::SyntaxError)?);
+                    vals.push(
+                        val_str
+                            .parse::<f32>()
+                            .map_err(|_| CommandError::SyntaxError)?,
+                    );
                     i += 1;
                 }
                 query_vector = Some(vals);
@@ -484,7 +494,11 @@ pub fn cmd_vsim(
                         i += 1;
                         if i < cmd.args.len() {
                             let eps_str = cmd.get_str(i)?;
-                            _epsilon = Some(eps_str.parse::<f32>().map_err(|_| CommandError::SyntaxError)?);
+                            _epsilon = Some(
+                                eps_str
+                                    .parse::<f32>()
+                                    .map_err(|_| CommandError::SyntaxError)?,
+                            );
                         }
                     }
                     "WITHSCORES" => with_scores = true,
@@ -512,53 +526,49 @@ pub fn cmd_vsim(
                     // Apply filter if present
                     let filtered_results: Vec<(Bytes, f32)> = match &filter {
                         VsimFilter::None => results.into_iter().take(count).collect(),
-                        VsimFilter::In { attr, values } => {
-                            results
-                                .into_iter()
-                                .filter(|(name, _)| {
-                                    if let Some(val) = guard.get_attr(name, &Bytes::from(attr.clone())) {
-                                        values.iter().any(|v| v == val)
-                                    } else {
-                                        false
-                                    }
-                                })
-                                .take(count)
-                                .collect()
-                        }
-                        VsimFilter::NotIn { attr, values } => {
-                            results
-                                .into_iter()
-                                .filter(|(name, _)| {
-                                    if let Some(val) = guard.get_attr(name, &Bytes::from(attr.clone())) {
-                                        !values.iter().any(|v| v == val)
-                                    } else {
-                                        true
-                                    }
-                                })
-                                .take(count)
-                                .collect()
-                        }
-                        VsimFilter::Eq { attr, value } => {
-                            results
-                                .into_iter()
-                                .filter(|(name, _)| {
-                                    guard.get_attr(name, &Bytes::from(attr.clone()))
-                                        .is_some_and(|v| v == value)
-                                })
-                                .take(count)
-                                .collect()
-                        }
-                        VsimFilter::Ne { attr, value } => {
-                            results
-                                .into_iter()
-                                .filter(|(name, _)| {
-                                    guard.get_attr(name, &Bytes::from(attr.clone()))
-                                        .map(|v| v != value)
-                                        .unwrap_or(true)
-                                })
-                                .take(count)
-                                .collect()
-                        }
+                        VsimFilter::In { attr, values } => results
+                            .into_iter()
+                            .filter(|(name, _)| {
+                                if let Some(val) = guard.get_attr(name, &Bytes::from(attr.clone()))
+                                {
+                                    values.iter().any(|v| v == val)
+                                } else {
+                                    false
+                                }
+                            })
+                            .take(count)
+                            .collect(),
+                        VsimFilter::NotIn { attr, values } => results
+                            .into_iter()
+                            .filter(|(name, _)| {
+                                if let Some(val) = guard.get_attr(name, &Bytes::from(attr.clone()))
+                                {
+                                    !values.iter().any(|v| v == val)
+                                } else {
+                                    true
+                                }
+                            })
+                            .take(count)
+                            .collect(),
+                        VsimFilter::Eq { attr, value } => results
+                            .into_iter()
+                            .filter(|(name, _)| {
+                                guard
+                                    .get_attr(name, &Bytes::from(attr.clone()))
+                                    .is_some_and(|v| v == value)
+                            })
+                            .take(count)
+                            .collect(),
+                        VsimFilter::Ne { attr, value } => results
+                            .into_iter()
+                            .filter(|(name, _)| {
+                                guard
+                                    .get_attr(name, &Bytes::from(attr.clone()))
+                                    .map(|v| v != value)
+                                    .unwrap_or(true)
+                            })
+                            .take(count)
+                            .collect(),
                     };
 
                     // Build response based on options
@@ -573,7 +583,8 @@ pub fn cmd_vsim(
                                 }
                                 // Get all attributes as JSON object
                                 let attrs = guard.get_all_attrs(&name);
-                                let attrs_json = serde_json::to_string(&attrs).unwrap_or_else(|_| "{}".to_string());
+                                let attrs_json = serde_json::to_string(&attrs)
+                                    .unwrap_or_else(|_| "{}".to_string());
                                 result.push(Frame::Bulk(Bytes::from(attrs_json)));
                                 result
                             })
@@ -680,7 +691,8 @@ pub fn cmd_vgetattr(
                     } else {
                         // Get all attributes as JSON
                         let attrs = guard.get_all_attrs(&element);
-                        let json = serde_json::to_string(&attrs).unwrap_or_else(|_| "{}".to_string());
+                        let json =
+                            serde_json::to_string(&attrs).unwrap_or_else(|_| "{}".to_string());
                         Ok(Frame::Bulk(Bytes::from(json)))
                     }
                 } else {
@@ -710,8 +722,8 @@ pub fn cmd_vsetattr(
         let json_str = cmd.get_str(2)?;
 
         // Parse JSON object
-        let parsed: serde_json::Value = serde_json::from_str(json_str)
-            .map_err(|_| CommandError::SyntaxError)?;
+        let parsed: serde_json::Value =
+            serde_json::from_str(json_str).map_err(|_| CommandError::SyntaxError)?;
 
         let obj = parsed.as_object().ok_or(CommandError::SyntaxError)?;
 
@@ -797,7 +809,9 @@ pub fn cmd_vlinks(
         let key = Key::from(cmd.args[0].clone());
         let element = cmd.args[1].clone();
         let with_scores = cmd.args.len() > 2
-            && cmd.get_str(2).is_ok_and(|s| s.to_uppercase() == "WITHSCORES");
+            && cmd
+                .get_str(2)
+                .is_ok_and(|s| s.to_uppercase() == "WITHSCORES");
 
         match db.get(&key) {
             Some(v) => {
@@ -876,10 +890,7 @@ pub fn cmd_vrandmember(
                             Ok(Frame::Null)
                         }
                     } else {
-                        let frames: Vec<Frame> = members
-                            .into_iter()
-                            .map(Frame::Bulk)
-                            .collect();
+                        let frames: Vec<Frame> = members.into_iter().map(Frame::Bulk).collect();
                         Ok(Frame::Array(frames))
                     }
                 } else {

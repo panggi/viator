@@ -3,12 +3,12 @@
 //! Redis bitmaps are stored as strings but provide bit-level operations.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
-use crate::types::{Key, ViatorValue, ValueType};
-use crate::Result;
+use crate::types::{Key, ValueType, ViatorValue};
 use bytes::Bytes;
 use std::future::Future;
 use std::pin::Pin;
@@ -601,9 +601,7 @@ fn apply_overflow(value: i64, bits: u8, signed: bool, behavior: OverflowBehavior
                 Some((value as u64 & mask) as i64)
             }
         }
-        OverflowBehavior::Sat => {
-            Some(value.clamp(min, max))
-        }
+        OverflowBehavior::Sat => Some(value.clamp(min, max)),
         OverflowBehavior::Fail => {
             if value < min || value > max {
                 None
@@ -650,10 +648,10 @@ pub fn cmd_bitfield(
                     let type_str = cmd.get_str(i + 1)?;
                     let offset_str = cmd.get_str(i + 2)?;
 
-                    let (signed, bits) = parse_int_type(type_str)
-                        .ok_or(CommandError::SyntaxError)?;
-                    let offset = parse_bitfield_offset(offset_str, bits)
-                        .ok_or(CommandError::SyntaxError)?;
+                    let (signed, bits) =
+                        parse_int_type(type_str).ok_or(CommandError::SyntaxError)?;
+                    let offset =
+                        parse_bitfield_offset(offset_str, bits).ok_or(CommandError::SyntaxError)?;
 
                     let value = get_int_from_bits(&data, offset, bits, signed);
                     results.push(Frame::Integer(value));
@@ -669,10 +667,10 @@ pub fn cmd_bitfield(
                     let offset_str = cmd.get_str(i + 2)?;
                     let value = cmd.get_i64(i + 3)?;
 
-                    let (signed, bits) = parse_int_type(type_str)
-                        .ok_or(CommandError::SyntaxError)?;
-                    let offset = parse_bitfield_offset(offset_str, bits)
-                        .ok_or(CommandError::SyntaxError)?;
+                    let (signed, bits) =
+                        parse_int_type(type_str).ok_or(CommandError::SyntaxError)?;
+                    let offset =
+                        parse_bitfield_offset(offset_str, bits).ok_or(CommandError::SyntaxError)?;
 
                     // Get old value first
                     let old_value = get_int_from_bits(&data, offset, bits, signed);
@@ -695,10 +693,10 @@ pub fn cmd_bitfield(
                     let offset_str = cmd.get_str(i + 2)?;
                     let increment = cmd.get_i64(i + 3)?;
 
-                    let (signed, bits) = parse_int_type(type_str)
-                        .ok_or(CommandError::SyntaxError)?;
-                    let offset = parse_bitfield_offset(offset_str, bits)
-                        .ok_or(CommandError::SyntaxError)?;
+                    let (signed, bits) =
+                        parse_int_type(type_str).ok_or(CommandError::SyntaxError)?;
+                    let offset =
+                        parse_bitfield_offset(offset_str, bits).ok_or(CommandError::SyntaxError)?;
 
                     let old_value = get_int_from_bits(&data, offset, bits, signed);
                     let new_value = old_value.wrapping_add(increment);
@@ -772,10 +770,10 @@ pub fn cmd_bitfield_ro(
                     let type_str = cmd.get_str(i + 1)?;
                     let offset_str = cmd.get_str(i + 2)?;
 
-                    let (signed, bits) = parse_int_type(type_str)
-                        .ok_or(CommandError::SyntaxError)?;
-                    let offset = parse_bitfield_offset(offset_str, bits)
-                        .ok_or(CommandError::SyntaxError)?;
+                    let (signed, bits) =
+                        parse_int_type(type_str).ok_or(CommandError::SyntaxError)?;
+                    let offset =
+                        parse_bitfield_offset(offset_str, bits).ok_or(CommandError::SyntaxError)?;
 
                     let value = get_int_from_bits(&data, offset, bits, signed);
                     results.push(Frame::Integer(value));

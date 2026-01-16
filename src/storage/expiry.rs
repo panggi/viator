@@ -4,8 +4,8 @@
 //! expiration (background task) to manage key TTLs efficiently.
 
 use super::Database;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::Notify;
 use tokio::time;
@@ -145,8 +145,7 @@ impl ExpiryManager {
                             && iterations < 10
                             && self.running.load(Ordering::SeqCst)
                         {
-                            aggressive_expired =
-                                db.expire_keys(self.config.aggressive_keys_limit);
+                            aggressive_expired = db.expire_keys(self.config.aggressive_keys_limit);
                             total_expired += aggressive_expired;
                             iterations += 1;
 
@@ -161,8 +160,7 @@ impl ExpiryManager {
         if total_expired > 0 {
             trace!(
                 "Expiry cycle: removed {} keys (sampled {})",
-                total_expired,
-                total_sampled
+                total_expired, total_sampled
             );
         }
     }

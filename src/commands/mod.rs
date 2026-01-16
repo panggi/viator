@@ -2,37 +2,37 @@
 //!
 //! This module provides the command parsing, routing, and execution layer.
 
-mod executor;
-mod registry;
-mod strings;
-mod keys;
-mod lists;
-mod hashes;
-mod sets;
-mod sorted_sets;
-mod server_cmds;
-mod connection;
-mod transactions;
 mod bitmap;
-mod hyperloglog;
-mod streams;
-mod scripting;
-mod pubsub;
-mod geo;
 mod blocking;
 mod cluster;
+mod connection;
+mod executor;
+mod geo;
+mod hashes;
+mod hyperloglog;
+mod keys;
+mod lists;
+mod pubsub;
+mod registry;
+mod scripting;
 pub mod sentinel;
+mod server_cmds;
+mod sets;
+mod sorted_sets;
+mod streams;
+mod strings;
+mod transactions;
 
 // Redis Stack module commands
 mod bloom_cmds;
-mod cuckoo_cmds;
 mod cms_cmds;
-mod topk_cmds;
-mod tdigest_cmds;
-mod ts_cmds;
+mod cuckoo_cmds;
 mod json_cmds;
-mod vectorset_cmds;
 mod search_cmds;
+mod tdigest_cmds;
+mod topk_cmds;
+mod ts_cmds;
+mod vectorset_cmds;
 
 pub use executor::CommandExecutor;
 pub use registry::{Command, CommandRegistry};
@@ -68,9 +68,7 @@ impl ParsedCommand {
             .to_uppercase();
 
         // Rest are arguments
-        let args: Vec<Bytes> = iter
-            .map(|f| f.to_bytes().unwrap_or_default())
-            .collect();
+        let args: Vec<Bytes> = iter.map(|f| f.to_bytes().unwrap_or_default()).collect();
 
         Ok(Self { name, args })
     }
@@ -89,9 +87,12 @@ impl ParsedCommand {
 
     /// Get an argument as a string.
     pub fn get_str(&self, index: usize) -> Result<&str> {
-        let bytes = self.args.get(index).ok_or_else(|| CommandError::WrongArity {
-            command: self.name.clone(),
-        })?;
+        let bytes = self
+            .args
+            .get(index)
+            .ok_or_else(|| CommandError::WrongArity {
+                command: self.name.clone(),
+            })?;
         std::str::from_utf8(bytes).map_err(|_| CommandError::SyntaxError.into())
     }
 

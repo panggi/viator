@@ -7,20 +7,20 @@
 //! - Failover support
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
-use crate::Result;
 use bytes::Bytes;
+use dashmap::DashMap;
+use parking_lot::RwLock;
 use std::future::Future;
+use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
-use parking_lot::RwLock;
-use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
-use dashmap::DashMap;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Total number of hash slots in Redis Cluster.
 pub const CLUSTER_SLOTS: u16 = 16384;
@@ -51,24 +51,51 @@ pub struct NodeFlags {
 
 impl NodeFlags {
     fn myself_master() -> Self {
-        Self { myself: true, master: true, ..Default::default() }
+        Self {
+            myself: true,
+            master: true,
+            ..Default::default()
+        }
     }
 
     fn handshaking() -> Self {
-        Self { handshake: true, ..Default::default() }
+        Self {
+            handshake: true,
+            ..Default::default()
+        }
     }
 
     fn to_string(&self) -> String {
         let mut parts = Vec::new();
-        if self.myself { parts.push("myself"); }
-        if self.master { parts.push("master"); }
-        if self.slave { parts.push("slave"); }
-        if self.pfail { parts.push("fail?"); }
-        if self.fail { parts.push("fail"); }
-        if self.handshake { parts.push("handshake"); }
-        if self.noaddr { parts.push("noaddr"); }
-        if self.nofailover { parts.push("nofailover"); }
-        if parts.is_empty() { "noflags".to_string() } else { parts.join(",") }
+        if self.myself {
+            parts.push("myself");
+        }
+        if self.master {
+            parts.push("master");
+        }
+        if self.slave {
+            parts.push("slave");
+        }
+        if self.pfail {
+            parts.push("fail?");
+        }
+        if self.fail {
+            parts.push("fail");
+        }
+        if self.handshake {
+            parts.push("handshake");
+        }
+        if self.noaddr {
+            parts.push("noaddr");
+        }
+        if self.nofailover {
+            parts.push("nofailover");
+        }
+        if parts.is_empty() {
+            "noflags".to_string()
+        } else {
+            parts.join(",")
+        }
     }
 }
 
@@ -214,19 +241,29 @@ impl ClusterState {
         Ok(())
     }
 
-    pub fn set_slot_importing(&self, slot: u16, node_id: NodeId) -> std::result::Result<(), String> {
+    pub fn set_slot_importing(
+        &self,
+        slot: u16,
+        node_id: NodeId,
+    ) -> std::result::Result<(), String> {
         if slot >= CLUSTER_SLOTS {
             return Err(format!("Invalid slot {}", slot));
         }
-        self.slot_states.insert(slot, SlotMigrationState::Importing(node_id));
+        self.slot_states
+            .insert(slot, SlotMigrationState::Importing(node_id));
         Ok(())
     }
 
-    pub fn set_slot_migrating(&self, slot: u16, node_id: NodeId) -> std::result::Result<(), String> {
+    pub fn set_slot_migrating(
+        &self,
+        slot: u16,
+        node_id: NodeId,
+    ) -> std::result::Result<(), String> {
         if slot >= CLUSTER_SLOTS {
             return Err(format!("Invalid slot {}", slot));
         }
-        self.slot_states.insert(slot, SlotMigrationState::Migrating(node_id));
+        self.slot_states
+            .insert(slot, SlotMigrationState::Migrating(node_id));
         Ok(())
     }
 
@@ -304,7 +341,9 @@ impl ClusterState {
 
     pub fn failover(&self, force: bool) -> std::result::Result<(), String> {
         let my_id = self.my_id();
-        let node = self.nodes.get(&my_id)
+        let node = self
+            .nodes
+            .get(&my_id)
             .ok_or_else(|| "Node not found".to_string())?;
 
         if !node.flags.slave && !force {
@@ -528,7 +567,10 @@ impl ClusterState {
 
     /// Record CPU time for a slot operation
     pub fn record_slot_cpu_time(&self, slot: u16, usec: u64) {
-        self.slot_cpu_usec.entry(slot).and_modify(|v| *v += usec).or_insert(usec);
+        self.slot_cpu_usec
+            .entry(slot)
+            .and_modify(|v| *v += usec)
+            .or_insert(usec);
     }
 
     // Redis 8.4+ CLUSTER MIGRATION support methods
@@ -626,8 +668,15 @@ fn get_node_slot_ranges(slots: &[Option<NodeId>], node_id: &str) -> Vec<(u16, u1
 }
 
 fn format_slot_ranges(ranges: &[(u16, u16)]) -> String {
-    ranges.iter()
-        .map(|(s, e)| if s == e { format!("{}", s) } else { format!("{}-{}", s, e) })
+    ranges
+        .iter()
+        .map(|(s, e)| {
+            if s == e {
+                format!("{}", s)
+            } else {
+                format!("{}-{}", s, e)
+            }
+        })
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -636,9 +685,17 @@ fn format_slot_ranges(ranges: &[(u16, u16)]) -> String {
 pub fn crc16_slot(key: &[u8]) -> u16 {
     let key_to_hash = if let Some(start) = key.iter().position(|&b| b == b'{') {
         if let Some(end) = key[start + 1..].iter().position(|&b| b == b'}') {
-            if end > 0 { &key[start + 1..start + 1 + end] } else { key }
-        } else { key }
-    } else { key };
+            if end > 0 {
+                &key[start + 1..start + 1 + end]
+            } else {
+                key
+            }
+        } else {
+            key
+        }
+    } else {
+        key
+    };
 
     let mut crc: u16 = 0;
     for &byte in key_to_hash {
@@ -648,38 +705,28 @@ pub fn crc16_slot(key: &[u8]) -> u16 {
 }
 
 const CRC16_TABLE: [u16; 256] = [
-    0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
-    0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef,
-    0x1231, 0x0210, 0x3273, 0x2252, 0x52b5, 0x4294, 0x72f7, 0x62d6,
-    0x9339, 0x8318, 0xb37b, 0xa35a, 0xd3bd, 0xc39c, 0xf3ff, 0xe3de,
-    0x2462, 0x3443, 0x0420, 0x1401, 0x64e6, 0x74c7, 0x44a4, 0x5485,
-    0xa56a, 0xb54b, 0x8528, 0x9509, 0xe5ee, 0xf5cf, 0xc5ac, 0xd58d,
-    0x3653, 0x2672, 0x1611, 0x0630, 0x76d7, 0x66f6, 0x5695, 0x46b4,
-    0xb75b, 0xa77a, 0x9719, 0x8738, 0xf7df, 0xe7fe, 0xd79d, 0xc7bc,
-    0x48c4, 0x58e5, 0x6886, 0x78a7, 0x0840, 0x1861, 0x2802, 0x3823,
-    0xc9cc, 0xd9ed, 0xe98e, 0xf9af, 0x8948, 0x9969, 0xa90a, 0xb92b,
-    0x5af5, 0x4ad4, 0x7ab7, 0x6a96, 0x1a71, 0x0a50, 0x3a33, 0x2a12,
-    0xdbfd, 0xcbdc, 0xfbbf, 0xeb9e, 0x9b79, 0x8b58, 0xbb3b, 0xab1a,
-    0x6ca6, 0x7c87, 0x4ce4, 0x5cc5, 0x2c22, 0x3c03, 0x0c60, 0x1c41,
-    0xedae, 0xfd8f, 0xcdec, 0xddcd, 0xad2a, 0xbd0b, 0x8d68, 0x9d49,
-    0x7e97, 0x6eb6, 0x5ed5, 0x4ef4, 0x3e13, 0x2e32, 0x1e51, 0x0e70,
-    0xff9f, 0xefbe, 0xdfdd, 0xcffc, 0xbf1b, 0xaf3a, 0x9f59, 0x8f78,
-    0x9188, 0x81a9, 0xb1ca, 0xa1eb, 0xd10c, 0xc12d, 0xf14e, 0xe16f,
-    0x1080, 0x00a1, 0x30c2, 0x20e3, 0x5004, 0x4025, 0x7046, 0x6067,
-    0x83b9, 0x9398, 0xa3fb, 0xb3da, 0xc33d, 0xd31c, 0xe37f, 0xf35e,
-    0x02b1, 0x1290, 0x22f3, 0x32d2, 0x4235, 0x5214, 0x6277, 0x7256,
-    0xb5ea, 0xa5cb, 0x95a8, 0x8589, 0xf56e, 0xe54f, 0xd52c, 0xc50d,
-    0x34e2, 0x24c3, 0x14a0, 0x0481, 0x7466, 0x6447, 0x5424, 0x4405,
-    0xa7db, 0xb7fa, 0x8799, 0x97b8, 0xe75f, 0xf77e, 0xc71d, 0xd73c,
-    0x26d3, 0x36f2, 0x0691, 0x16b0, 0x6657, 0x7676, 0x4615, 0x5634,
-    0xd94c, 0xc96d, 0xf90e, 0xe92f, 0x99c8, 0x89e9, 0xb98a, 0xa9ab,
-    0x5844, 0x4865, 0x7806, 0x6827, 0x18c0, 0x08e1, 0x3882, 0x28a3,
-    0xcb7d, 0xdb5c, 0xeb3f, 0xfb1e, 0x8bf9, 0x9bd8, 0xabbb, 0xbb9a,
-    0x4a75, 0x5a54, 0x6a37, 0x7a16, 0x0af1, 0x1ad0, 0x2ab3, 0x3a92,
-    0xfd2e, 0xed0f, 0xdd6c, 0xcd4d, 0xbdaa, 0xad8b, 0x9de8, 0x8dc9,
-    0x7c26, 0x6c07, 0x5c64, 0x4c45, 0x3ca2, 0x2c83, 0x1ce0, 0x0cc1,
-    0xef1f, 0xff3e, 0xcf5d, 0xdf7c, 0xaf9b, 0xbfba, 0x8fd9, 0x9ff8,
-    0x6e17, 0x7e36, 0x4e55, 0x5e74, 0x2e93, 0x3eb2, 0x0ed1, 0x1ef0,
+    0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7, 0x8108, 0x9129, 0xa14a, 0xb16b,
+    0xc18c, 0xd1ad, 0xe1ce, 0xf1ef, 0x1231, 0x0210, 0x3273, 0x2252, 0x52b5, 0x4294, 0x72f7, 0x62d6,
+    0x9339, 0x8318, 0xb37b, 0xa35a, 0xd3bd, 0xc39c, 0xf3ff, 0xe3de, 0x2462, 0x3443, 0x0420, 0x1401,
+    0x64e6, 0x74c7, 0x44a4, 0x5485, 0xa56a, 0xb54b, 0x8528, 0x9509, 0xe5ee, 0xf5cf, 0xc5ac, 0xd58d,
+    0x3653, 0x2672, 0x1611, 0x0630, 0x76d7, 0x66f6, 0x5695, 0x46b4, 0xb75b, 0xa77a, 0x9719, 0x8738,
+    0xf7df, 0xe7fe, 0xd79d, 0xc7bc, 0x48c4, 0x58e5, 0x6886, 0x78a7, 0x0840, 0x1861, 0x2802, 0x3823,
+    0xc9cc, 0xd9ed, 0xe98e, 0xf9af, 0x8948, 0x9969, 0xa90a, 0xb92b, 0x5af5, 0x4ad4, 0x7ab7, 0x6a96,
+    0x1a71, 0x0a50, 0x3a33, 0x2a12, 0xdbfd, 0xcbdc, 0xfbbf, 0xeb9e, 0x9b79, 0x8b58, 0xbb3b, 0xab1a,
+    0x6ca6, 0x7c87, 0x4ce4, 0x5cc5, 0x2c22, 0x3c03, 0x0c60, 0x1c41, 0xedae, 0xfd8f, 0xcdec, 0xddcd,
+    0xad2a, 0xbd0b, 0x8d68, 0x9d49, 0x7e97, 0x6eb6, 0x5ed5, 0x4ef4, 0x3e13, 0x2e32, 0x1e51, 0x0e70,
+    0xff9f, 0xefbe, 0xdfdd, 0xcffc, 0xbf1b, 0xaf3a, 0x9f59, 0x8f78, 0x9188, 0x81a9, 0xb1ca, 0xa1eb,
+    0xd10c, 0xc12d, 0xf14e, 0xe16f, 0x1080, 0x00a1, 0x30c2, 0x20e3, 0x5004, 0x4025, 0x7046, 0x6067,
+    0x83b9, 0x9398, 0xa3fb, 0xb3da, 0xc33d, 0xd31c, 0xe37f, 0xf35e, 0x02b1, 0x1290, 0x22f3, 0x32d2,
+    0x4235, 0x5214, 0x6277, 0x7256, 0xb5ea, 0xa5cb, 0x95a8, 0x8589, 0xf56e, 0xe54f, 0xd52c, 0xc50d,
+    0x34e2, 0x24c3, 0x14a0, 0x0481, 0x7466, 0x6447, 0x5424, 0x4405, 0xa7db, 0xb7fa, 0x8799, 0x97b8,
+    0xe75f, 0xf77e, 0xc71d, 0xd73c, 0x26d3, 0x36f2, 0x0691, 0x16b0, 0x6657, 0x7676, 0x4615, 0x5634,
+    0xd94c, 0xc96d, 0xf90e, 0xe92f, 0x99c8, 0x89e9, 0xb98a, 0xa9ab, 0x5844, 0x4865, 0x7806, 0x6827,
+    0x18c0, 0x08e1, 0x3882, 0x28a3, 0xcb7d, 0xdb5c, 0xeb3f, 0xfb1e, 0x8bf9, 0x9bd8, 0xabbb, 0xbb9a,
+    0x4a75, 0x5a54, 0x6a37, 0x7a16, 0x0af1, 0x1ad0, 0x2ab3, 0x3a92, 0xfd2e, 0xed0f, 0xdd6c, 0xcd4d,
+    0xbdaa, 0xad8b, 0x9de8, 0x8dc9, 0x7c26, 0x6c07, 0x5c64, 0x4c45, 0x3ca2, 0x2c83, 0x1ce0, 0x0cc1,
+    0xef1f, 0xff3e, 0xcf5d, 0xdf7c, 0xaf9b, 0xbfba, 0x8fd9, 0x9ff8, 0x6e17, 0x7e36, 0x4e55, 0x5e74,
+    0x2e93, 0x3eb2, 0x0ed1, 0x1ef0,
 ];
 
 // =============================================================================
@@ -694,7 +741,9 @@ pub fn cmd_cluster(
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
         if cmd.args.is_empty() {
-            return Ok(Frame::Error("ERR wrong number of arguments for 'cluster' command".to_string()));
+            return Ok(Frame::Error(
+                "ERR wrong number of arguments for 'cluster' command".to_string(),
+            ));
         }
 
         let subcommand = cmd.get_str(0)?.to_uppercase();
@@ -714,7 +763,9 @@ pub fn cmd_cluster(
 
             "KEYSLOT" => {
                 if cmd.args.len() < 2 {
-                    return Ok(Frame::Error("ERR wrong number of arguments for 'cluster keyslot' command".to_string()));
+                    return Ok(Frame::Error(
+                        "ERR wrong number of arguments for 'cluster keyslot' command".to_string(),
+                    ));
                 }
                 let slot = crc16_slot(&cmd.args[1]);
                 Ok(Frame::Integer(slot as i64))
@@ -726,7 +777,9 @@ pub fn cmd_cluster(
 
             "ADDSLOTS" => {
                 if cmd.args.len() < 2 {
-                    return Ok(Frame::Error("ERR wrong number of arguments for 'cluster addslots' command".to_string()));
+                    return Ok(Frame::Error(
+                        "ERR wrong number of arguments for 'cluster addslots' command".to_string(),
+                    ));
                 }
 
                 let mut slots = Vec::new();
@@ -745,7 +798,10 @@ pub fn cmd_cluster(
 
             "ADDSLOTSRANGE" => {
                 if cmd.args.len() < 3 || (cmd.args.len() - 1) % 2 != 0 {
-                    return Ok(Frame::Error("ERR wrong number of arguments for 'cluster addslotsrange' command".to_string()));
+                    return Ok(Frame::Error(
+                        "ERR wrong number of arguments for 'cluster addslotsrange' command"
+                            .to_string(),
+                    ));
                 }
 
                 let mut slots = Vec::new();
@@ -773,7 +829,9 @@ pub fn cmd_cluster(
 
             "DELSLOTS" => {
                 if cmd.args.len() < 2 {
-                    return Ok(Frame::Error("ERR wrong number of arguments for 'cluster delslots' command".to_string()));
+                    return Ok(Frame::Error(
+                        "ERR wrong number of arguments for 'cluster delslots' command".to_string(),
+                    ));
                 }
 
                 let mut slots = Vec::new();
@@ -792,7 +850,10 @@ pub fn cmd_cluster(
 
             "DELSLOTSRANGE" => {
                 if cmd.args.len() < 3 || (cmd.args.len() - 1) % 2 != 0 {
-                    return Ok(Frame::Error("ERR wrong number of arguments for 'cluster delslotsrange' command".to_string()));
+                    return Ok(Frame::Error(
+                        "ERR wrong number of arguments for 'cluster delslotsrange' command"
+                            .to_string(),
+                    ));
                 }
 
                 let mut slots = Vec::new();
@@ -820,7 +881,9 @@ pub fn cmd_cluster(
 
             "SETSLOT" => {
                 if cmd.args.len() < 3 {
-                    return Ok(Frame::Error("ERR wrong number of arguments for 'cluster setslot' command".to_string()));
+                    return Ok(Frame::Error(
+                        "ERR wrong number of arguments for 'cluster setslot' command".to_string(),
+                    ));
                 }
 
                 let slot: u16 = match String::from_utf8_lossy(&cmd.args[1]).parse() {
@@ -852,7 +915,12 @@ pub fn cmd_cluster(
                         }
                         state.set_slot_node(slot, cmd.get_str(3)?.to_string())
                     }
-                    _ => return Ok(Frame::Error(format!("ERR Unknown SETSLOT subcommand '{}'", state_cmd))),
+                    _ => {
+                        return Ok(Frame::Error(format!(
+                            "ERR Unknown SETSLOT subcommand '{}'",
+                            state_cmd
+                        )));
+                    }
                 };
 
                 match result {
@@ -863,7 +931,9 @@ pub fn cmd_cluster(
 
             "MEET" => {
                 if cmd.args.len() < 3 {
-                    return Ok(Frame::Error("ERR wrong number of arguments for 'cluster meet' command".to_string()));
+                    return Ok(Frame::Error(
+                        "ERR wrong number of arguments for 'cluster meet' command".to_string(),
+                    ));
                 }
 
                 let ip = cmd.get_str(1)?;
@@ -883,7 +953,9 @@ pub fn cmd_cluster(
 
             "FORGET" => {
                 if cmd.args.len() < 2 {
-                    return Ok(Frame::Error("ERR wrong number of arguments for 'cluster forget' command".to_string()));
+                    return Ok(Frame::Error(
+                        "ERR wrong number of arguments for 'cluster forget' command".to_string(),
+                    ));
                 }
 
                 match state.forget(cmd.get_str(1)?) {
@@ -894,7 +966,9 @@ pub fn cmd_cluster(
 
             "REPLICATE" => {
                 if cmd.args.len() < 2 {
-                    return Ok(Frame::Error("ERR wrong number of arguments for 'cluster replicate' command".to_string()));
+                    return Ok(Frame::Error(
+                        "ERR wrong number of arguments for 'cluster replicate' command".to_string(),
+                    ));
                 }
 
                 match state.replicate(cmd.get_str(1)?) {
@@ -904,7 +978,9 @@ pub fn cmd_cluster(
             }
 
             "FAILOVER" => {
-                let force = cmd.args.get(1)
+                let force = cmd
+                    .args
+                    .get(1)
                     .map(|a| String::from_utf8_lossy(a).to_uppercase() == "FORCE")
                     .unwrap_or(false);
 
@@ -915,7 +991,9 @@ pub fn cmd_cluster(
             }
 
             "RESET" => {
-                let hard = cmd.args.get(1)
+                let hard = cmd
+                    .args
+                    .get(1)
                     .map(|a| String::from_utf8_lossy(a).to_uppercase() == "HARD")
                     .unwrap_or(false);
 
@@ -989,16 +1067,15 @@ pub fn cmd_cluster(
             "LINKS" => Ok(Frame::Array(vec![])),
 
             // Redis 8.2+ CLUSTER SLOT-STATS command
-            "SLOT-STATS" => {
-                handle_slot_stats(&cmd, &state)
-            }
+            "SLOT-STATS" => handle_slot_stats(&cmd, &state),
 
             // Redis 8.4+ CLUSTER MIGRATION command for atomic slot migration
-            "MIGRATION" => {
-                handle_migration(&cmd, &state)
-            }
+            "MIGRATION" => handle_migration(&cmd, &state),
 
-            _ => Ok(Frame::Error(format!("ERR Unknown subcommand or wrong number of arguments for '{}'", subcommand))),
+            _ => Ok(Frame::Error(format!(
+                "ERR Unknown subcommand or wrong number of arguments for '{}'",
+                subcommand
+            ))),
         }
     })
 }
@@ -1046,7 +1123,10 @@ pub fn cmd_asking(
 /// Syntax: CLUSTER SLOT-STATS <SLOTSRANGE start end | ORDERBY metric [LIMIT n] [ASC|DESC]>
 fn handle_slot_stats(cmd: &ParsedCommand, state: &ClusterState) -> Result<Frame> {
     if cmd.arg_count() < 2 {
-        return Err(CommandError::WrongArity { command: "CLUSTER SLOT-STATS".to_string() }.into());
+        return Err(CommandError::WrongArity {
+            command: "CLUSTER SLOT-STATS".to_string(),
+        }
+        .into());
     }
 
     let subarg = cmd.get_str(1)?.to_uppercase();
@@ -1055,7 +1135,10 @@ fn handle_slot_stats(cmd: &ParsedCommand, state: &ClusterState) -> Result<Frame>
     match subarg.as_str() {
         "SLOTSRANGE" => {
             if cmd.arg_count() < 4 {
-                return Err(CommandError::WrongArity { command: "CLUSTER SLOT-STATS".to_string() }.into());
+                return Err(CommandError::WrongArity {
+                    command: "CLUSTER SLOT-STATS".to_string(),
+                }
+                .into());
             }
             let start = cmd.get_u64(2)? as u16;
             let end = cmd.get_u64(3)? as u16;
@@ -1074,7 +1157,10 @@ fn handle_slot_stats(cmd: &ParsedCommand, state: &ClusterState) -> Result<Frame>
         }
         "ORDERBY" => {
             if cmd.arg_count() < 3 {
-                return Err(CommandError::WrongArity { command: "CLUSTER SLOT-STATS".to_string() }.into());
+                return Err(CommandError::WrongArity {
+                    command: "CLUSTER SLOT-STATS".to_string(),
+                }
+                .into());
             }
             let metric = cmd.get_str(2)?.to_uppercase();
             let limit = if cmd.arg_count() >= 5 && cmd.get_str(3)?.to_uppercase() == "LIMIT" {
@@ -1083,7 +1169,9 @@ fn handle_slot_stats(cmd: &ParsedCommand, state: &ClusterState) -> Result<Frame>
                 usize::MAX
             };
             let desc = cmd.args.iter().any(|a| {
-                std::str::from_utf8(a).map(|s| s.to_uppercase() == "DESC").unwrap_or(false)
+                std::str::from_utf8(a)
+                    .map(|s| s.to_uppercase() == "DESC")
+                    .unwrap_or(false)
             });
 
             // Collect all owned slots with their stats
@@ -1108,14 +1196,17 @@ fn handle_slot_stats(cmd: &ParsedCommand, state: &ClusterState) -> Result<Frame>
             }
 
             // Apply limit and build response
-            let results: Vec<Frame> = slot_data.into_iter()
+            let results: Vec<Frame> = slot_data
+                .into_iter()
                 .take(limit)
                 .map(|(slot, _)| slot_stats_entry(slot, state))
                 .collect();
 
             Ok(Frame::Array(results))
         }
-        _ => Ok(Frame::Error("ERR Syntax error, expected SLOTSRANGE or ORDERBY".to_string())),
+        _ => Ok(Frame::Error(
+            "ERR Syntax error, expected SLOTSRANGE or ORDERBY".to_string(),
+        )),
     }
 }
 
@@ -1141,7 +1232,10 @@ fn slot_stats_entry(slot: u16, state: &ClusterState) -> Frame {
 /// Syntax: CLUSTER MIGRATION <IMPORT ranges | STATUS [ID id | ALL] | CANCEL <ID id | ALL>>
 fn handle_migration(cmd: &ParsedCommand, state: &ClusterState) -> Result<Frame> {
     if cmd.arg_count() < 2 {
-        return Err(CommandError::WrongArity { command: "CLUSTER MIGRATION".to_string() }.into());
+        return Err(CommandError::WrongArity {
+            command: "CLUSTER MIGRATION".to_string(),
+        }
+        .into());
     }
 
     let subarg = cmd.get_str(1)?.to_uppercase();
@@ -1150,7 +1244,10 @@ fn handle_migration(cmd: &ParsedCommand, state: &ClusterState) -> Result<Frame> 
         "IMPORT" => {
             // CLUSTER MIGRATION IMPORT <start-slot> <end-slot> [<start-slot> <end-slot> ...]
             if cmd.arg_count() < 4 || (cmd.arg_count() - 2) % 2 != 0 {
-                return Err(CommandError::WrongArity { command: "CLUSTER MIGRATION IMPORT".to_string() }.into());
+                return Err(CommandError::WrongArity {
+                    command: "CLUSTER MIGRATION IMPORT".to_string(),
+                }
+                .into());
             }
 
             let mut ranges = Vec::new();
@@ -1159,7 +1256,10 @@ fn handle_migration(cmd: &ParsedCommand, state: &ClusterState) -> Result<Frame> 
                 let start = cmd.get_u64(i)? as u16;
                 let end = cmd.get_u64(i + 1)? as u16;
                 if start > end || end >= CLUSTER_SLOTS {
-                    return Ok(Frame::Error(format!("ERR Invalid slot range {}-{}", start, end)));
+                    return Ok(Frame::Error(format!(
+                        "ERR Invalid slot range {}-{}",
+                        start, end
+                    )));
                 }
                 ranges.push((start, end));
                 i += 2;
@@ -1189,7 +1289,10 @@ fn handle_migration(cmd: &ParsedCommand, state: &ClusterState) -> Result<Frame> 
         "CANCEL" => {
             // CLUSTER MIGRATION CANCEL <ID <task-id> | ALL>
             if cmd.arg_count() < 3 {
-                return Err(CommandError::WrongArity { command: "CLUSTER MIGRATION CANCEL".to_string() }.into());
+                return Err(CommandError::WrongArity {
+                    command: "CLUSTER MIGRATION CANCEL".to_string(),
+                }
+                .into());
             }
 
             let cancel_arg = cmd.get_str(2)?.to_uppercase();
@@ -1201,13 +1304,20 @@ fn handle_migration(cmd: &ParsedCommand, state: &ClusterState) -> Result<Frame> 
                 if state.cancel_migration(task_id) {
                     Ok(Frame::ok())
                 } else {
-                    Ok(Frame::Error(format!("ERR Migration task {} not found", task_id)))
+                    Ok(Frame::Error(format!(
+                        "ERR Migration task {} not found",
+                        task_id
+                    )))
                 }
             } else {
-                Ok(Frame::Error("ERR Syntax error, expected ID <task-id> or ALL".to_string()))
+                Ok(Frame::Error(
+                    "ERR Syntax error, expected ID <task-id> or ALL".to_string(),
+                ))
             }
         }
-        _ => Ok(Frame::Error("ERR Unknown CLUSTER MIGRATION subcommand".to_string())),
+        _ => Ok(Frame::Error(
+            "ERR Unknown CLUSTER MIGRATION subcommand".to_string(),
+        )),
     }
 }
 
@@ -1229,13 +1339,21 @@ fn migration_task_to_frame(task: &MigrationTask) -> Frame {
         Frame::Bulk(Bytes::from("state")),
         Frame::Bulk(Bytes::from(task.state.clone())),
         Frame::Bulk(Bytes::from("slot-ranges")),
-        Frame::Array(task.slot_ranges.iter().map(|(s, e)| {
-            Frame::Array(vec![Frame::Integer(*s as i64), Frame::Integer(*e as i64)])
-        }).collect()),
+        Frame::Array(
+            task.slot_ranges
+                .iter()
+                .map(|(s, e)| {
+                    Frame::Array(vec![Frame::Integer(*s as i64), Frame::Integer(*e as i64)])
+                })
+                .collect(),
+        ),
         Frame::Bulk(Bytes::from("progress")),
         Frame::Integer(task.progress as i64),
         Frame::Bulk(Bytes::from("last-error")),
-        task.last_error.as_ref().map(|e| Frame::Bulk(Bytes::from(e.clone()))).unwrap_or(Frame::Null),
+        task.last_error
+            .as_ref()
+            .map(|e| Frame::Bulk(Bytes::from(e.clone())))
+            .unwrap_or(Frame::Null),
     ])
 }
 

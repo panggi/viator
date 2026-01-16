@@ -90,7 +90,9 @@ fn lzf_decompress(compressed: &[u8], expected_len: usize) -> Result<Vec<u8>, &'s
                 let actual_len = (next as usize) + 9;
                 let offset = off_high | off_low;
                 // Copy with calculated length
-                let start = output.len().checked_sub(offset + 1)
+                let start = output
+                    .len()
+                    .checked_sub(offset + 1)
                     .ok_or("LZF: invalid back-reference offset")?;
                 for j in 0..actual_len {
                     let byte = output[start + (j % (offset + 1))];
@@ -105,7 +107,9 @@ fn lzf_decompress(compressed: &[u8], expected_len: usize) -> Result<Vec<u8>, &'s
             };
 
             // Copy len bytes from output at offset
-            let start = output.len().checked_sub(offset + 1)
+            let start = output
+                .len()
+                .checked_sub(offset + 1)
                 .ok_or("LZF: invalid back-reference offset")?;
             for j in 0..len {
                 let byte = output[start + (j % (offset + 1))];
@@ -307,7 +311,9 @@ impl VdbSaver {
         // Write CRC64 checksum
         let crc = self.crc64;
         // Write without updating CRC
-        self.writer.write_all(&crc.to_le_bytes()).map_err(StorageError::Io)?;
+        self.writer
+            .write_all(&crc.to_le_bytes())
+            .map_err(StorageError::Io)?;
         self.writer.flush().map_err(StorageError::Io)?;
 
         Ok(())
@@ -424,14 +430,20 @@ impl VdbLoader {
     pub fn load_into(mut self, db: &Database) -> Result<(), StorageError> {
         // Read and verify header (include in CRC64 checksum)
         let mut magic = [0u8; 5];
-        self.reader.read_exact(&mut magic).map_err(StorageError::Io)?;
+        self.reader
+            .read_exact(&mut magic)
+            .map_err(StorageError::Io)?;
         self.crc64 = crc64_update(self.crc64, &magic);
         if &magic != VDB_MAGIC {
-            return Err(StorageError::Corrupted("Invalid dump file magic (expected VIATR)".to_string()));
+            return Err(StorageError::Corrupted(
+                "Invalid dump file magic (expected VIATR)".to_string(),
+            ));
         }
 
         let mut version_str = [0u8; 4];
-        self.reader.read_exact(&mut version_str).map_err(StorageError::Io)?;
+        self.reader
+            .read_exact(&mut version_str)
+            .map_err(StorageError::Io)?;
         self.crc64 = crc64_update(self.crc64, &version_str);
         let version: u32 = std::str::from_utf8(&version_str)
             .map_err(|_| StorageError::Corrupted("Invalid version string".to_string()))?
@@ -472,7 +484,9 @@ impl VdbLoader {
                     // End of file - verify CRC64 checksum
                     let expected_crc = self.crc64;
                     let mut stored_crc_bytes = [0u8; 8];
-                    self.reader.read_exact(&mut stored_crc_bytes).map_err(StorageError::Io)?;
+                    self.reader
+                        .read_exact(&mut stored_crc_bytes)
+                        .map_err(StorageError::Io)?;
                     let stored_crc = u64::from_le_bytes(stored_crc_bytes);
 
                     if stored_crc != 0 && stored_crc != expected_crc {
@@ -644,7 +658,9 @@ impl VdbLoader {
             }
             VDB_ENCVAL => {
                 // Special encoding - return as-is
-                Err(StorageError::Corrupted("Unexpected ENCVAL in length".to_string()))
+                Err(StorageError::Corrupted(
+                    "Unexpected ENCVAL in length".to_string(),
+                ))
             }
             _ => {
                 // 32-bit or 64-bit
@@ -653,9 +669,14 @@ impl VdbLoader {
                     Ok(u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as u64)
                 } else if first == VDB_64BITLEN {
                     let buf = self.read_bytes(8)?;
-                    Ok(u64::from_be_bytes([buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]]))
+                    Ok(u64::from_be_bytes([
+                        buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
+                    ]))
                 } else {
-                    Err(StorageError::Corrupted(format!("Unknown length encoding: {}", first)))
+                    Err(StorageError::Corrupted(format!(
+                        "Unknown length encoding: {}",
+                        first
+                    )))
                 }
             }
         }
@@ -690,8 +711,9 @@ impl VdbLoader {
                     let compressed = self.read_bytes(compressed_len)?;
 
                     // Decompress using LZF algorithm
-                    let decompressed = lzf_decompress(&compressed, original_len)
-                        .map_err(|e| StorageError::Corrupted(format!("LZF decompression failed: {}", e)))?;
+                    let decompressed = lzf_decompress(&compressed, original_len).map_err(|e| {
+                        StorageError::Corrupted(format!("LZF decompression failed: {}", e))
+                    })?;
                     Ok(decompressed)
                 }
                 _ => Err(StorageError::Corrupted(format!(
@@ -713,7 +735,9 @@ impl VdbLoader {
                         u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as u64
                     } else if first == VDB_64BITLEN {
                         let buf = self.read_bytes(8)?;
-                        u64::from_be_bytes([buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]])
+                        u64::from_be_bytes([
+                            buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
+                        ])
                     } else {
                         return Err(StorageError::Corrupted(format!(
                             "Unknown string length: {}",

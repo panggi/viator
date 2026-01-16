@@ -33,33 +33,93 @@ pub const DANGEROUS_COMMANDS: &[&str] = &[
     "CLUSTER",
     "MIGRATE",
     "RESTORE",
-    "SORT",      // Can be slow with STORE
-    "KEYS",      // Can be slow on large databases
-    "EVAL",      // Arbitrary Lua execution
+    "SORT", // Can be slow with STORE
+    "KEYS", // Can be slow on large databases
+    "EVAL", // Arbitrary Lua execution
     "EVALSHA",
     "SCRIPT",
     "MODULE",
-    "ACL",       // Security configuration
+    "ACL", // Security configuration
 ];
 
 /// Commands that modify data (for read-only mode).
 pub const WRITE_COMMANDS: &[&str] = &[
-    "SET", "SETNX", "SETEX", "PSETEX", "MSET", "MSETNX", "SETRANGE", "APPEND",
-    "INCR", "INCRBY", "INCRBYFLOAT", "DECR", "DECRBY",
-    "DEL", "UNLINK", "RENAME", "RENAMENX", "COPY", "MOVE",
-    "EXPIRE", "EXPIREAT", "PEXPIRE", "PEXPIREAT", "PERSIST",
-    "LPUSH", "RPUSH", "LPUSHX", "RPUSHX", "LPOP", "RPOP", "LSET", "LINSERT", "LREM", "LTRIM",
-    "SADD", "SREM", "SPOP", "SMOVE", "SINTERSTORE", "SUNIONSTORE", "SDIFFSTORE",
-    "ZADD", "ZREM", "ZINCRBY", "ZPOPMIN", "ZPOPMAX", "ZRANGESTORE", "ZUNIONSTORE", "ZINTERSTORE",
-    "HSET", "HSETNX", "HMSET", "HDEL", "HINCRBY", "HINCRBYFLOAT",
-    "XADD", "XDEL", "XTRIM", "XSETID", "XACK", "XCLAIM",
-    "PFADD", "PFMERGE",
-    "GEOADD", "GEORADIUS", "GEORADIUSBYMEMBER",
-    "SETBIT", "BITOP", "BITFIELD",
+    "SET",
+    "SETNX",
+    "SETEX",
+    "PSETEX",
+    "MSET",
+    "MSETNX",
+    "SETRANGE",
+    "APPEND",
+    "INCR",
+    "INCRBY",
+    "INCRBYFLOAT",
+    "DECR",
+    "DECRBY",
+    "DEL",
+    "UNLINK",
+    "RENAME",
+    "RENAMENX",
+    "COPY",
+    "MOVE",
+    "EXPIRE",
+    "EXPIREAT",
+    "PEXPIRE",
+    "PEXPIREAT",
+    "PERSIST",
+    "LPUSH",
+    "RPUSH",
+    "LPUSHX",
+    "RPUSHX",
+    "LPOP",
+    "RPOP",
+    "LSET",
+    "LINSERT",
+    "LREM",
+    "LTRIM",
+    "SADD",
+    "SREM",
+    "SPOP",
+    "SMOVE",
+    "SINTERSTORE",
+    "SUNIONSTORE",
+    "SDIFFSTORE",
+    "ZADD",
+    "ZREM",
+    "ZINCRBY",
+    "ZPOPMIN",
+    "ZPOPMAX",
+    "ZRANGESTORE",
+    "ZUNIONSTORE",
+    "ZINTERSTORE",
+    "HSET",
+    "HSETNX",
+    "HMSET",
+    "HDEL",
+    "HINCRBY",
+    "HINCRBYFLOAT",
+    "XADD",
+    "XDEL",
+    "XTRIM",
+    "XSETID",
+    "XACK",
+    "XCLAIM",
+    "PFADD",
+    "PFMERGE",
+    "GEOADD",
+    "GEORADIUS",
+    "GEORADIUSBYMEMBER",
+    "SETBIT",
+    "BITOP",
+    "BITFIELD",
     "PUBLISH",
-    "FLUSHDB", "FLUSHALL",
-    "RESTORE", "MIGRATE",
-    "EVAL", "EVALSHA",
+    "FLUSHDB",
+    "FLUSHALL",
+    "RESTORE",
+    "MIGRATE",
+    "EVAL",
+    "EVALSHA",
 ];
 
 /// Configuration for command protection.
@@ -95,7 +155,7 @@ impl Default for CommandProtectionConfig {
             default_timeout_ms: 0, // 0 = no timeout
             command_timeouts: DashMap::new(),
             max_arguments: 1_000_000,
-            max_key_size: 512 * 1024 * 1024, // 512 MB
+            max_key_size: 512 * 1024 * 1024,   // 512 MB
             max_value_size: 512 * 1024 * 1024, // 512 MB
         }
     }
@@ -227,12 +287,18 @@ impl CommandProtection {
 
     /// Block a command.
     pub fn block_command(&self, command: &str) {
-        self.config.write().blocked_commands.insert(command.to_uppercase());
+        self.config
+            .write()
+            .blocked_commands
+            .insert(command.to_uppercase());
     }
 
     /// Unblock a command.
     pub fn unblock_command(&self, command: &str) {
-        self.config.write().blocked_commands.remove(&command.to_uppercase());
+        self.config
+            .write()
+            .blocked_commands
+            .remove(&command.to_uppercase());
     }
 
     /// Rename a command.
@@ -283,7 +349,11 @@ pub enum CommandBlockReason {
     /// Too many arguments
     TooManyArguments { count: usize, max: usize },
     /// Argument too large
-    ArgumentTooLarge { index: usize, size: usize, max: usize },
+    ArgumentTooLarge {
+        index: usize,
+        size: usize,
+        max: usize,
+    },
     /// Command timed out
     TimedOut { elapsed: Duration, limit: Duration },
 }

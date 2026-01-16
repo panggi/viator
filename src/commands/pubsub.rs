@@ -3,10 +3,10 @@
 //! Commands for subscribing to channels and patterns.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
-use crate::Result;
 use bytes::Bytes;
 use std::future::Future;
 use std::pin::Pin;

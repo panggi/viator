@@ -4,12 +4,12 @@
 //! Internally, geo data is stored as sorted sets with geohash scores.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
 use crate::types::{Key, ViatorValue};
-use crate::Result;
 use bytes::Bytes;
 use std::f64::consts::PI;
 use std::future::Future;
@@ -70,7 +70,8 @@ fn haversine_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let dlat = lat2_rad - lat1_rad;
     let dlon = lon2_rad - lon1_rad;
 
-    let a = (dlat / 2.0).sin().powi(2) + lat1_rad.cos() * lat2_rad.cos() * (dlon / 2.0).sin().powi(2);
+    let a =
+        (dlat / 2.0).sin().powi(2) + lat1_rad.cos() * lat2_rad.cos() * (dlon / 2.0).sin().powi(2);
     let c = 2.0 * a.sqrt().asin();
 
     EARTH_RADIUS_M * c
@@ -120,16 +121,28 @@ pub fn cmd_geoadd(
         while idx < cmd.args.len() {
             let arg = cmd.get_str(idx)?.to_uppercase();
             match arg.as_str() {
-                "NX" => { nx = true; idx += 1; }
-                "XX" => { xx = true; idx += 1; }
-                "CH" => { ch = true; idx += 1; }
+                "NX" => {
+                    nx = true;
+                    idx += 1;
+                }
+                "XX" => {
+                    xx = true;
+                    idx += 1;
+                }
+                "CH" => {
+                    ch = true;
+                    idx += 1;
+                }
                 _ => break,
             }
         }
 
         // Remaining args should be longitude, latitude, member triplets
         if (cmd.args.len() - idx) % 3 != 0 || cmd.args.len() - idx < 3 {
-            return Err(CommandError::WrongArity { command: "GEOADD".to_string() }.into());
+            return Err(CommandError::WrongArity {
+                command: "GEOADD".to_string(),
+            }
+            .into());
         }
 
         let value = db.get(&key).unwrap_or_else(ViatorValue::new_zset);
@@ -149,7 +162,8 @@ pub fn cmd_geoadd(
                 return Err(CommandError::InvalidArgument {
                     command: "GEOADD".to_string(),
                     arg: format!("{},{}", lon, lat),
-                }.into());
+                }
+                .into());
             }
 
             let score = geohash_encode(lat, lon);
@@ -239,7 +253,7 @@ pub fn cmd_geohash(
             Some(v) => v,
             None => {
                 return Ok(Frame::Array(
-                    cmd.args[1..].iter().map(|_| Frame::Null).collect()
+                    cmd.args[1..].iter().map(|_| Frame::Null).collect(),
                 ));
             }
         };
@@ -249,11 +263,9 @@ pub fn cmd_geohash(
 
         let results: Vec<Frame> = cmd.args[1..]
             .iter()
-            .map(|member| {
-                match guard.score(member) {
-                    Some(score) => Frame::Bulk(Bytes::from(geohash_to_string(score))),
-                    None => Frame::Null,
-                }
+            .map(|member| match guard.score(member) {
+                Some(score) => Frame::Bulk(Bytes::from(geohash_to_string(score))),
+                None => Frame::Null,
             })
             .collect();
 
@@ -276,7 +288,7 @@ pub fn cmd_geopos(
             Some(v) => v,
             None => {
                 return Ok(Frame::Array(
-                    cmd.args[1..].iter().map(|_| Frame::Null).collect()
+                    cmd.args[1..].iter().map(|_| Frame::Null).collect(),
                 ));
             }
         };
@@ -286,17 +298,15 @@ pub fn cmd_geopos(
 
         let results: Vec<Frame> = cmd.args[1..]
             .iter()
-            .map(|member| {
-                match guard.score(member) {
-                    Some(score) => {
-                        let (lat, lon) = geohash_decode(score);
-                        Frame::Array(vec![
-                            Frame::Bulk(Bytes::from(format!("{:.6}", lon))),
-                            Frame::Bulk(Bytes::from(format!("{:.6}", lat))),
-                        ])
-                    }
-                    None => Frame::Null,
+            .map(|member| match guard.score(member) {
+                Some(score) => {
+                    let (lat, lon) = geohash_decode(score);
+                    Frame::Array(vec![
+                        Frame::Bulk(Bytes::from(format!("{:.6}", lon))),
+                        Frame::Bulk(Bytes::from(format!("{:.6}", lat))),
+                    ])
                 }
+                None => Frame::Null,
             })
             .collect();
 
@@ -393,7 +403,10 @@ pub fn cmd_georadius(
                 } else {
                     let mut arr = vec![Frame::Bulk(member)];
                     if withdist {
-                        arr.push(Frame::Bulk(Bytes::from(format!("{:.4}", convert_distance(dist, unit)))));
+                        arr.push(Frame::Bulk(Bytes::from(format!(
+                            "{:.4}",
+                            convert_distance(dist, unit)
+                        ))));
                     }
                     if withhash {
                         arr.push(Frame::Integer(score as i64));
@@ -442,7 +455,12 @@ pub fn cmd_geosearch(
             match arg.as_str() {
                 "FROMMEMBER" => {
                     idx += 1;
-                    from_member = Some(cmd.args.get(idx).cloned().ok_or(CommandError::SyntaxError)?);
+                    from_member = Some(
+                        cmd.args
+                            .get(idx)
+                            .cloned()
+                            .ok_or(CommandError::SyntaxError)?,
+                    );
                 }
                 "FROMLONLAT" => {
                     idx += 1;
@@ -556,7 +574,9 @@ pub fn cmd_geosearch(
         }
 
         // Determine unit for output
-        let unit = by_radius.as_ref().map(|(_, u)| u.as_str())
+        let unit = by_radius
+            .as_ref()
+            .map(|(_, u)| u.as_str())
             .or(by_box.as_ref().map(|(_, _, u)| u.as_str()))
             .unwrap_or("m");
 
@@ -569,7 +589,10 @@ pub fn cmd_geosearch(
                 } else {
                     let mut arr = vec![Frame::Bulk(member)];
                     if withdist {
-                        arr.push(Frame::Bulk(Bytes::from(format!("{:.4}", convert_distance(dist, unit)))));
+                        arr.push(Frame::Bulk(Bytes::from(format!(
+                            "{:.4}",
+                            convert_distance(dist, unit)
+                        ))));
                     }
                     if withhash {
                         arr.push(Frame::Integer(score as i64));
@@ -682,7 +705,10 @@ pub fn cmd_georadiusbymember(
                 } else {
                     let mut arr = vec![Frame::Bulk(member)];
                     if withdist {
-                        arr.push(Frame::Bulk(Bytes::from(format!("{:.4}", convert_distance(dist, unit)))));
+                        arr.push(Frame::Bulk(Bytes::from(format!(
+                            "{:.4}",
+                            convert_distance(dist, unit)
+                        ))));
                     }
                     if withhash {
                         arr.push(Frame::Integer(score as i64));
@@ -730,7 +756,12 @@ pub fn cmd_geosearchstore(
             match arg.as_str() {
                 "FROMMEMBER" => {
                     idx += 1;
-                    from_member = Some(cmd.args.get(idx).cloned().ok_or(CommandError::SyntaxError)?);
+                    from_member = Some(
+                        cmd.args
+                            .get(idx)
+                            .cloned()
+                            .ok_or(CommandError::SyntaxError)?,
+                    );
                 }
                 "FROMLONLAT" => {
                     idx += 1;

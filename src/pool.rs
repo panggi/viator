@@ -6,8 +6,8 @@
 
 use bytes::BytesMut;
 use crossbeam_queue::ArrayQueue;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Default buffer size for pooled buffers.
 const DEFAULT_BUFFER_SIZE: usize = 4096;

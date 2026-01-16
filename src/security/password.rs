@@ -11,8 +11,8 @@
 //! for stronger security but support SHA256 hashes for compatibility.
 
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
     Argon2, PasswordHash as Argon2PasswordHash, PasswordVerifier as Argon2Verifier,
+    password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
 };
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
@@ -229,7 +229,10 @@ mod tests {
 
         // Both should take similar time
         assert!(!PasswordVerifier::verify("wrong1", &hash));
-        assert!(!PasswordVerifier::verify("completely_different_password", &hash));
+        assert!(!PasswordVerifier::verify(
+            "completely_different_password",
+            &hash
+        ));
         assert!(PasswordVerifier::verify("correct", &hash));
     }
 }

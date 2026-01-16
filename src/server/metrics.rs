@@ -47,8 +47,8 @@ pub fn format_bytes(bytes: usize) -> String {
     }
 }
 
-use std::time::{Duration, Instant};
 use parking_lot::Mutex;
+use std::time::{Duration, Instant};
 
 /// Lightweight histogram for latency tracking.
 /// Uses fixed buckets for O(1) insertion.
@@ -73,7 +73,7 @@ impl LatencyHistogram {
     #[inline]
     pub fn record(&self, duration: Duration) {
         let us = duration.as_micros() as u64;
-        
+
         let bucket = match us {
             0..=99 => 0,
             100..=499 => 1,
@@ -84,7 +84,7 @@ impl LatencyHistogram {
             50000..=99999 => 6,
             _ => 7,
         };
-        
+
         self.buckets[bucket].fetch_add(1, Ordering::Relaxed);
         self.total_count.fetch_add(1, Ordering::Relaxed);
         self.total_sum_us.fetch_add(us, Ordering::Relaxed);
@@ -101,7 +101,7 @@ impl LatencyHistogram {
         let mut cumulative = 0u64;
 
         let bucket_maxes = [100, 500, 1000, 5000, 10000, 50000, 100000, 1_000_000];
-        
+
         for (i, &max_us) in bucket_maxes.iter().enumerate() {
             cumulative += self.buckets[i].load(Ordering::Relaxed);
             if cumulative >= target {
@@ -201,8 +201,8 @@ impl ServerMetrics {
         if elapsed < 0.001 {
             return 0.0;
         }
-        let bytes = self.bytes_received.load(Ordering::Relaxed)
-            + self.bytes_sent.load(Ordering::Relaxed);
+        let bytes =
+            self.bytes_received.load(Ordering::Relaxed) + self.bytes_sent.load(Ordering::Relaxed);
         (bytes as f64 / 1_000_000.0) / elapsed
     }
 
@@ -243,7 +243,7 @@ impl ServerMetrics {
     /// Generate INFO-style stats string (Redis compatible).
     pub fn to_info_string(&self) -> String {
         let uptime = self.uptime();
-        
+
         format!(
             "# Server\n\
              uptime_in_seconds:{}\n\
@@ -323,7 +323,8 @@ impl<'a> CommandTimer<'a> {
     }
 
     pub fn finish(self, bytes_out: u64) {
-        self.metrics.record_command(self.start.elapsed(), self.bytes_in, bytes_out);
+        self.metrics
+            .record_command(self.start.elapsed(), self.bytes_in, bytes_out);
     }
 }
 
@@ -334,13 +335,13 @@ mod tests {
     #[test]
     fn test_histogram_basic() {
         let hist = LatencyHistogram::new();
-        
+
         hist.record(Duration::from_micros(50));
         hist.record(Duration::from_micros(150));
         hist.record(Duration::from_micros(800));
         hist.record(Duration::from_millis(2));
         hist.record(Duration::from_millis(50));
-        
+
         assert!(hist.percentile(50.0) <= Duration::from_millis(1));
         assert!(hist.percentile(99.0) <= Duration::from_millis(100));
     }
@@ -348,11 +349,11 @@ mod tests {
     #[test]
     fn test_metrics_ops_per_second() {
         let metrics = ServerMetrics::new();
-        
+
         for _ in 0..1000 {
             metrics.record_command(Duration::from_micros(100), 10, 20);
         }
-        
+
         // Should have some ops/sec (depends on timing)
         assert!(metrics.commands_processed.load(Ordering::Relaxed) == 1000);
     }
@@ -362,7 +363,7 @@ mod tests {
         let metrics = ServerMetrics::new();
         metrics.connection_opened();
         metrics.record_command(Duration::from_micros(100), 50, 100);
-        
+
         let info = metrics.to_info_string();
         assert!(info.contains("connected_clients:1"));
         assert!(info.contains("total_commands_processed:1"));

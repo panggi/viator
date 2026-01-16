@@ -3,38 +3,38 @@
 //! This module provides the async TCP server, connection handling,
 //! and configuration.
 
+pub mod cluster;
+pub mod cluster_bus;
 pub mod config;
 mod connection;
 pub mod metrics;
 pub mod pubsub;
 pub mod rate_limit;
 pub mod replication;
-pub mod cluster;
-pub mod cluster_bus;
 pub mod sentinel;
 mod state;
 pub mod watch;
 
+pub use cluster::{ClusterManager, ClusterState, SharedClusterManager, Slot, SlotRange};
+pub use cluster_bus::{ClusterBus, ClusterBusConfig, SharedClusterBus};
 pub use config::{Config, ConfigError, LogLevel};
 pub use connection::Connection;
 pub use metrics::ServerMetrics;
 pub use pubsub::{PubSubHub, SharedPubSubHub};
 pub use rate_limit::{ConnectionRateLimiter, RateLimitConfig, RateLimitStats};
 pub use replication::{ReplicationManager, ReplicationRole, SharedReplicationManager};
-pub use cluster::{ClusterManager, ClusterState, SharedClusterManager, Slot, SlotRange};
-pub use cluster_bus::{ClusterBus, ClusterBusConfig, SharedClusterBus};
 pub use sentinel::SentinelMonitor;
 pub use state::ClientState;
 pub use watch::{SharedWatchRegistry, WatchRegistry};
 
+use crate::Result;
 use crate::commands::CommandExecutor;
 use crate::persistence::VdbSaver;
 use crate::pool::BufferPool;
 use crate::storage::{Database, ExpiryManager};
-use crate::Result;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::Notify;
@@ -80,7 +80,10 @@ impl Server {
             config.maxmemory_policy,
         ));
         let pubsub = Arc::new(PubSubHub::new());
-        let executor = Arc::new(CommandExecutor::with_pubsub(database.clone(), pubsub.clone()));
+        let executor = Arc::new(CommandExecutor::with_pubsub(
+            database.clone(),
+            pubsub.clone(),
+        ));
         let expiry_manager = Arc::new(ExpiryManager::new(database.clone()));
         let metrics = Arc::new(ServerMetrics::new());
         let rate_limiter = ConnectionRateLimiter::new(RateLimitConfig::default());
@@ -203,15 +206,19 @@ impl Server {
         }
 
         // Graceful shutdown: wait for connections with timeout
-        info!("Waiting for {} active connections to close...",
-              self.connection_count.load(Ordering::Relaxed));
+        info!(
+            "Waiting for {} active connections to close...",
+            self.connection_count.load(Ordering::Relaxed)
+        );
 
         let shutdown_timeout = Duration::from_secs(30);
         let start = std::time::Instant::now();
         while self.connection_count.load(Ordering::Relaxed) > 0 {
             if start.elapsed() > shutdown_timeout {
-                warn!("Shutdown timeout reached, {} connections still active",
-                      self.connection_count.load(Ordering::Relaxed));
+                warn!(
+                    "Shutdown timeout reached, {} connections still active",
+                    self.connection_count.load(Ordering::Relaxed)
+                );
                 break;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -228,16 +235,14 @@ impl Server {
             info!("Saving the final VDB snapshot before exiting");
             let vdb_path = std::path::Path::new(&self.config.dir).join(&self.config.dbfilename);
             match VdbSaver::new(&vdb_path) {
-                Ok(saver) => {
-                    match saver.save(&self.database) {
-                        Ok(()) => {
-                            info!("DB saved on disk");
-                        }
-                        Err(e) => {
-                            error!("Failed to save VDB on shutdown: {}", e);
-                        }
+                Ok(saver) => match saver.save(&self.database) {
+                    Ok(()) => {
+                        info!("DB saved on disk");
                     }
-                }
+                    Err(e) => {
+                        error!("Failed to save VDB on shutdown: {}", e);
+                    }
+                },
                 Err(e) => {
                     error!("Failed to create VDB file on shutdown: {}", e);
                 }

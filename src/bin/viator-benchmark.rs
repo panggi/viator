@@ -6,8 +6,8 @@
 use bytes::{Buf, BytesMut};
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 /// Benchmark configuration
@@ -76,21 +76,46 @@ impl Stats {
             Duration::ZERO
         };
 
-        let p50 = latencies.get(latencies.len() / 2).copied().unwrap_or(Duration::ZERO);
-        let p95 = latencies.get(latencies.len() * 95 / 100).copied().unwrap_or(Duration::ZERO);
-        let p99 = latencies.get(latencies.len() * 99 / 100).copied().unwrap_or(Duration::ZERO);
+        let p50 = latencies
+            .get(latencies.len() / 2)
+            .copied()
+            .unwrap_or(Duration::ZERO);
+        let p95 = latencies
+            .get(latencies.len() * 95 / 100)
+            .copied()
+            .unwrap_or(Duration::ZERO);
+        let p99 = latencies
+            .get(latencies.len() * 99 / 100)
+            .copied()
+            .unwrap_or(Duration::ZERO);
 
         println!("====== {} ======", test_name);
-        println!("  {} requests completed in {:.2} seconds", completed, total_time.as_secs_f64());
+        println!(
+            "  {} requests completed in {:.2} seconds",
+            completed,
+            total_time.as_secs_f64()
+        );
         if errors > 0 {
             println!("  {} errors", errors);
         }
         println!("  {:.2} requests per second\n", rps);
         println!("Latency by percentile distribution:");
-        println!("  50.000% <= {:.3} milliseconds", p50.as_secs_f64() * 1000.0);
-        println!("  95.000% <= {:.3} milliseconds", p95.as_secs_f64() * 1000.0);
-        println!("  99.000% <= {:.3} milliseconds", p99.as_secs_f64() * 1000.0);
-        println!("  avg     =  {:.3} milliseconds\n", avg.as_secs_f64() * 1000.0);
+        println!(
+            "  50.000% <= {:.3} milliseconds",
+            p50.as_secs_f64() * 1000.0
+        );
+        println!(
+            "  95.000% <= {:.3} milliseconds",
+            p95.as_secs_f64() * 1000.0
+        );
+        println!(
+            "  99.000% <= {:.3} milliseconds",
+            p99.as_secs_f64() * 1000.0
+        );
+        println!(
+            "  avg     =  {:.3} milliseconds\n",
+            avg.as_secs_f64() * 1000.0
+        );
     }
 }
 
@@ -118,7 +143,10 @@ fn read_response(stream: &mut TcpStream, buf: &mut BytesMut) -> Result<(), std::
 
         let n = stream.read(&mut temp)?;
         if n == 0 {
-            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "connection closed"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "connection closed",
+            ));
         }
         buf.extend_from_slice(&temp[..n]);
     }
@@ -233,8 +261,8 @@ fn run_client(
         let cmd = command_fn(i);
         let start = Instant::now();
 
-        let success = stream.write_all(&cmd).is_ok()
-            && read_response(&mut stream, &mut buf).is_ok();
+        let success =
+            stream.write_all(&cmd).is_ok() && read_response(&mut stream, &mut buf).is_ok();
 
         let latency = start.elapsed();
         stats.record(latency, success);
@@ -251,7 +279,11 @@ fn run_client(
 }
 
 /// Run a benchmark test
-fn run_benchmark(config: &Config, test_name: &str, command_fn: impl Fn(usize) -> Vec<u8> + Send + Sync + Clone) {
+fn run_benchmark(
+    config: &Config,
+    test_name: &str,
+    command_fn: impl Fn(usize) -> Vec<u8> + Send + Sync + Clone,
+) {
     let stats = Arc::new(Stats::default());
     let requests_per_client = config.requests / config.clients;
 
@@ -272,7 +304,8 @@ fn run_benchmark(config: &Config, test_name: &str, command_fn: impl Fn(usize) ->
 }
 
 fn print_usage() {
-    println!("Usage: viator-benchmark [OPTIONS]
+    println!(
+        "Usage: viator-benchmark [OPTIONS]
 
 Options:
   -h <hostname>      Server hostname (default: 127.0.0.1)
@@ -290,7 +323,8 @@ Available tests:
   PING_INLINE, PING_MBULK, SET, GET, INCR, LPUSH, RPUSH, LPOP, RPOP,
   SADD, HSET, SPOP, ZADD, ZPOPMIN, LRANGE_100, LRANGE_300, LRANGE_500,
   LRANGE_600, MSET
-");
+"
+    );
 }
 
 fn main() {
@@ -379,15 +413,28 @@ fn main() {
     let data_ref = data.as_str();
 
     let all_tests = vec![
-        "PING_INLINE", "PING_MBULK", "SET", "GET", "INCR",
-        "LPUSH", "RPUSH", "LPOP", "RPOP", "SADD", "HSET",
-        "SPOP", "ZADD", "ZPOPMIN", "MSET",
+        "PING_INLINE",
+        "PING_MBULK",
+        "SET",
+        "GET",
+        "INCR",
+        "LPUSH",
+        "RPUSH",
+        "LPOP",
+        "RPOP",
+        "SADD",
+        "HSET",
+        "SPOP",
+        "ZADD",
+        "ZPOPMIN",
+        "MSET",
     ];
 
     let tests_to_run: Vec<&str> = if config.tests.is_empty() {
         all_tests
     } else {
-        all_tests.into_iter()
+        all_tests
+            .into_iter()
             .filter(|t| config.tests.iter().any(|ct| ct == *t))
             .collect()
     };
@@ -414,9 +461,7 @@ fn main() {
                 });
             }
             "INCR" => {
-                run_benchmark(&config, "INCR", |_| {
-                    encode_command(&["INCR", "counter"])
-                });
+                run_benchmark(&config, "INCR", |_| encode_command(&["INCR", "counter"]));
             }
             "LPUSH" => {
                 let data = data_ref.to_string();
@@ -431,14 +476,10 @@ fn main() {
                 });
             }
             "LPOP" => {
-                run_benchmark(&config, "LPOP", |_| {
-                    encode_command(&["LPOP", "mylist"])
-                });
+                run_benchmark(&config, "LPOP", |_| encode_command(&["LPOP", "mylist"]));
             }
             "RPOP" => {
-                run_benchmark(&config, "RPOP", |_| {
-                    encode_command(&["RPOP", "mylist"])
-                });
+                run_benchmark(&config, "RPOP", |_| encode_command(&["RPOP", "mylist"]));
             }
             "SADD" => {
                 run_benchmark(&config, "SADD", |i| {
@@ -454,9 +495,7 @@ fn main() {
                 });
             }
             "SPOP" => {
-                run_benchmark(&config, "SPOP", |_| {
-                    encode_command(&["SPOP", "myset"])
-                });
+                run_benchmark(&config, "SPOP", |_| encode_command(&["SPOP", "myset"]));
             }
             "ZADD" => {
                 run_benchmark(&config, "ZADD", |i| {

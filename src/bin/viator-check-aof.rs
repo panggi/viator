@@ -35,7 +35,9 @@ impl AofChecker {
 
     fn read_line(&mut self) -> Result<String, String> {
         let mut line = String::new();
-        let bytes_read = self.reader.read_line(&mut line)
+        let bytes_read = self
+            .reader
+            .read_line(&mut line)
             .map_err(|e| format!("Read error at position {}: {}", self.position, e))?;
 
         if bytes_read == 0 {
@@ -57,7 +59,8 @@ impl AofChecker {
 
     fn read_bytes(&mut self, len: usize) -> Result<Vec<u8>, String> {
         let mut buf = vec![0u8; len];
-        self.reader.read_exact(&mut buf)
+        self.reader
+            .read_exact(&mut buf)
             .map_err(|e| format!("Read error at position {}: {}", self.position, e))?;
         self.position += len as u64;
         Ok(buf)
@@ -65,11 +68,15 @@ impl AofChecker {
 
     fn skip_crlf(&mut self) -> Result<(), String> {
         let mut crlf = [0u8; 2];
-        self.reader.read_exact(&mut crlf)
+        self.reader
+            .read_exact(&mut crlf)
             .map_err(|e| format!("Expected CRLF at position {}: {}", self.position, e))?;
 
         if crlf != [b'\r', b'\n'] {
-            return Err(format!("Expected CRLF at position {}, got {:?}", self.position, crlf));
+            return Err(format!(
+                "Expected CRLF at position {}, got {:?}",
+                self.position, crlf
+            ));
         }
 
         self.position += 2;
@@ -87,20 +94,33 @@ impl AofChecker {
         if !line.starts_with('*') {
             // Could be inline command
             if line.starts_with(|c: char| c.is_ascii_alphabetic()) {
-                let parts: Vec<Vec<u8>> = line.split_whitespace()
+                let parts: Vec<Vec<u8>> = line
+                    .split_whitespace()
                     .map(|s| s.as_bytes().to_vec())
                     .collect();
                 return Ok(parts);
             }
-            return Err(format!("Expected '*' at position {}, got '{}'", self.position, &line[..1.min(line.len())]));
+            return Err(format!(
+                "Expected '*' at position {}, got '{}'",
+                self.position,
+                &line[..1.min(line.len())]
+            ));
         }
 
         // Parse array length
-        let num_args: usize = line[1..].parse()
-            .map_err(|_| format!("Invalid array length '{}' at position {}", &line[1..], self.position))?;
+        let num_args: usize = line[1..].parse().map_err(|_| {
+            format!(
+                "Invalid array length '{}' at position {}",
+                &line[1..],
+                self.position
+            )
+        })?;
 
         if num_args == 0 || num_args > 1024 * 1024 {
-            return Err(format!("Invalid number of arguments {} at position {}", num_args, self.position));
+            return Err(format!(
+                "Invalid number of arguments {} at position {}",
+                num_args, self.position
+            ));
         }
 
         let mut args = Vec::with_capacity(num_args);
@@ -109,14 +129,25 @@ impl AofChecker {
             let bulk_line = self.read_line()?;
 
             if !bulk_line.starts_with('$') {
-                return Err(format!("Expected '$' for argument {} at position {}", i, self.position));
+                return Err(format!(
+                    "Expected '$' for argument {} at position {}",
+                    i, self.position
+                ));
             }
 
-            let len: usize = bulk_line[1..].parse()
-                .map_err(|_| format!("Invalid bulk length '{}' at position {}", &bulk_line[1..], self.position))?;
+            let len: usize = bulk_line[1..].parse().map_err(|_| {
+                format!(
+                    "Invalid bulk length '{}' at position {}",
+                    &bulk_line[1..],
+                    self.position
+                )
+            })?;
 
             if len > 512 * 1024 * 1024 {
-                return Err(format!("Bulk string too large ({} bytes) at position {}", len, self.position));
+                return Err(format!(
+                    "Bulk string too large ({} bytes) at position {}",
+                    len, self.position
+                ));
             }
 
             let data = self.read_bytes(len)?;
@@ -129,9 +160,7 @@ impl AofChecker {
     }
 
     fn check(&mut self) -> Result<bool, String> {
-        let file_size = std::fs::metadata(&self.path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let file_size = std::fs::metadata(&self.path).map(|m| m.len()).unwrap_or(0);
 
         println!("Checking AOF file: {}", self.path.display());
         println!("File size: {} bytes", file_size);
@@ -150,7 +179,12 @@ impl AofChecker {
 
                     if self.verbose && !args.is_empty() {
                         let cmd_name = String::from_utf8_lossy(&args[0]).to_uppercase();
-                        println!("[offset {}] {} with {} args", cmd_start, cmd_name, args.len());
+                        println!(
+                            "[offset {}] {} with {} args",
+                            cmd_start,
+                            cmd_name,
+                            args.len()
+                        );
                     }
                 }
                 Err(e) if e == "EOF" => {
@@ -228,7 +262,8 @@ impl AofChecker {
 }
 
 fn print_usage() {
-    println!("Usage: viator-check-aof [OPTIONS] <appendonly.aof>
+    println!(
+        "Usage: viator-check-aof [OPTIONS] <appendonly.aof>
 
 Check the integrity of a Viator/Redis AOF file and optionally repair it.
 
@@ -241,7 +276,8 @@ Examples:
   viator-check-aof appendonly.aof
   viator-check-aof -v /var/lib/viator/appendonly.aof
   viator-check-aof --fix appendonly.aof
-");
+"
+    );
 }
 
 fn main() {

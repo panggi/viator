@@ -165,13 +165,16 @@ impl Sentinel {
         self.running.store(true, Ordering::SeqCst);
 
         let addr = format!("{}:{}", self.config.bind, self.config.port);
-        let listener = TcpListener::bind(&addr)
-            .map_err(|e| format!("Cannot bind to {}: {}", addr, e))?;
+        let listener =
+            TcpListener::bind(&addr).map_err(|e| format!("Cannot bind to {}: {}", addr, e))?;
 
         listener.set_nonblocking(true).ok();
 
         println!("Viator Sentinel {} running on {}", &self.my_id[..8], addr);
-        println!("Monitoring {} master(s)", self.state.read().unwrap().masters.len());
+        println!(
+            "Monitoring {} master(s)",
+            self.state.read().unwrap().masters.len()
+        );
 
         // Start monitoring threads
         let state_clone = self.state.clone();
@@ -214,7 +217,8 @@ fn monitor_loop(state: Arc<RwLock<SentinelState>>, config: SentinelConfig) {
     loop {
         let masters: Vec<(String, String, u16)> = {
             let s = state.read().unwrap();
-            s.masters.iter()
+            s.masters
+                .iter()
                 .map(|(name, cfg)| (name.clone(), cfg.host.clone(), cfg.port))
                 .collect()
         };
@@ -235,9 +239,9 @@ fn monitor_loop(state: Arc<RwLock<SentinelState>>, config: SentinelConfig) {
                     // Update replicas list
                     if let Some(replicas) = s.replicas.get_mut(&name) {
                         for replica_info in &info.replicas {
-                            let exists = replicas.iter().any(|r| {
-                                r.host == replica_info.0 && r.port == replica_info.1
-                            });
+                            let exists = replicas
+                                .iter()
+                                .any(|r| r.host == replica_info.0 && r.port == replica_info.1);
                             if !exists {
                                 let mut inst = InstanceInfo::new(&replica_info.0, replica_info.1);
                                 inst.role = "slave".to_string();
@@ -250,7 +254,8 @@ fn monitor_loop(state: Arc<RwLock<SentinelState>>, config: SentinelConfig) {
                     let mut s = state.write().unwrap();
                     let key = format!("{}:{}", host, port);
                     if let Some(inst) = s.instances.get_mut(&key) {
-                        let elapsed = inst.last_pong
+                        let elapsed = inst
+                            .last_pong
                             .map(|t| t.elapsed().as_millis() as u64)
                             .unwrap_or(inst.last_ping.elapsed().as_millis() as u64);
 
@@ -268,7 +273,8 @@ fn monitor_loop(state: Arc<RwLock<SentinelState>>, config: SentinelConfig) {
             // Ping replicas
             let replicas: Vec<(String, u16)> = {
                 let s = state.read().unwrap();
-                s.replicas.get(&name)
+                s.replicas
+                    .get(&name)
                     .map(|r| r.iter().map(|i| (i.host.clone(), i.port)).collect())
                     .unwrap_or_default()
             };
@@ -278,7 +284,10 @@ fn monitor_loop(state: Arc<RwLock<SentinelState>>, config: SentinelConfig) {
                     Ok(info) => {
                         let mut s = state.write().unwrap();
                         if let Some(replicas) = s.replicas.get_mut(&name) {
-                            if let Some(inst) = replicas.iter_mut().find(|r| r.host == rhost && r.port == rport) {
+                            if let Some(inst) = replicas
+                                .iter_mut()
+                                .find(|r| r.host == rhost && r.port == rport)
+                            {
                                 inst.last_pong = Some(Instant::now());
                                 inst.state = InstanceState::Up;
                                 inst.replica_offset = info.repl_offset;
@@ -288,8 +297,12 @@ fn monitor_loop(state: Arc<RwLock<SentinelState>>, config: SentinelConfig) {
                     Err(_) => {
                         let mut s = state.write().unwrap();
                         if let Some(replicas) = s.replicas.get_mut(&name) {
-                            if let Some(inst) = replicas.iter_mut().find(|r| r.host == rhost && r.port == rport) {
-                                let elapsed = inst.last_pong
+                            if let Some(inst) = replicas
+                                .iter_mut()
+                                .find(|r| r.host == rhost && r.port == rport)
+                            {
+                                let elapsed = inst
+                                    .last_pong
                                     .map(|t| t.elapsed().as_millis() as u64)
                                     .unwrap_or(inst.last_ping.elapsed().as_millis() as u64);
 
@@ -319,14 +332,17 @@ fn ping_instance(host: &str, port: u16) -> Result<PingInfo, String> {
     let addr = format!("{}:{}", host, port);
     let mut stream = TcpStream::connect_timeout(
         &addr.parse().map_err(|_| "Invalid address")?,
-        Duration::from_secs(2)
-    ).map_err(|e| e.to_string())?;
+        Duration::from_secs(2),
+    )
+    .map_err(|e| e.to_string())?;
 
     stream.set_read_timeout(Some(Duration::from_secs(2))).ok();
     stream.set_write_timeout(Some(Duration::from_secs(2))).ok();
 
     // Send PING
-    stream.write_all(b"*1\r\n$4\r\nPING\r\n").map_err(|e| e.to_string())?;
+    stream
+        .write_all(b"*1\r\n$4\r\nPING\r\n")
+        .map_err(|e| e.to_string())?;
 
     let mut buf = [0u8; 256];
     let n = stream.read(&mut buf).map_err(|e| e.to_string())?;
@@ -336,7 +352,9 @@ fn ping_instance(host: &str, port: u16) -> Result<PingInfo, String> {
     }
 
     // Send INFO replication
-    stream.write_all(b"*2\r\n$4\r\nINFO\r\n$11\r\nreplication\r\n").map_err(|e| e.to_string())?;
+    stream
+        .write_all(b"*2\r\n$4\r\nINFO\r\n$11\r\nreplication\r\n")
+        .map_err(|e| e.to_string())?;
 
     let mut info_buf = vec![0u8; 4096];
     let n = stream.read(&mut info_buf).map_err(|e| e.to_string())?;
@@ -378,7 +396,11 @@ fn ping_instance(host: &str, port: u16) -> Result<PingInfo, String> {
         }
     }
 
-    Ok(PingInfo { role, replicas, repl_offset })
+    Ok(PingInfo {
+        role,
+        replicas,
+        repl_offset,
+    })
 }
 
 /// Handle client connection
@@ -469,7 +491,12 @@ fn parse_command(buf: &[u8]) -> Option<(String, Vec<String>, usize)> {
 }
 
 /// Handle sentinel command
-fn handle_command(cmd: &str, args: &[String], state: &Arc<RwLock<SentinelState>>, my_id: &str) -> String {
+fn handle_command(
+    cmd: &str,
+    args: &[String],
+    state: &Arc<RwLock<SentinelState>>,
+    my_id: &str,
+) -> String {
     match cmd {
         "PING" => "+PONG\r\n".to_string(),
 
@@ -487,19 +514,26 @@ fn handle_command(cmd: &str, args: &[String], state: &Arc<RwLock<SentinelState>>
                     for (name, cfg) in &s.masters {
                         let inst_key = format!("{}:{}", cfg.host, cfg.port);
                         let inst = s.instances.get(&inst_key);
-                        let flags = inst.map(|i| match i.state {
-                            InstanceState::Up => "master",
-                            InstanceState::SubjectivelyDown => "master,s_down",
-                            InstanceState::ObjectivelyDown => "master,o_down",
-                            InstanceState::Down => "master,disconnected",
-                        }).unwrap_or("master");
+                        let flags = inst
+                            .map(|i| match i.state {
+                                InstanceState::Up => "master",
+                                InstanceState::SubjectivelyDown => "master,s_down",
+                                InstanceState::ObjectivelyDown => "master,o_down",
+                                InstanceState::Down => "master,disconnected",
+                            })
+                            .unwrap_or("master");
 
                         let num_slaves = s.replicas.get(name).map(|r| r.len()).unwrap_or(0);
                         let num_sentinels = s.sentinels.get(name).map(|r| r.len()).unwrap_or(0);
 
                         result.push_str(&format_master_info(
-                            name, &cfg.host, cfg.port, flags,
-                            cfg.quorum, num_slaves, num_sentinels
+                            name,
+                            &cfg.host,
+                            cfg.port,
+                            flags,
+                            cfg.quorum,
+                            num_slaves,
+                            num_sentinels,
                         ));
                     }
 
@@ -516,17 +550,27 @@ fn handle_command(cmd: &str, args: &[String], state: &Arc<RwLock<SentinelState>>
                     if let Some(cfg) = s.masters.get(name) {
                         let inst_key = format!("{}:{}", cfg.host, cfg.port);
                         let inst = s.instances.get(&inst_key);
-                        let flags = inst.map(|i| match i.state {
-                            InstanceState::Up => "master",
-                            InstanceState::SubjectivelyDown => "master,s_down",
-                            InstanceState::ObjectivelyDown => "master,o_down",
-                            InstanceState::Down => "master,disconnected",
-                        }).unwrap_or("master");
+                        let flags = inst
+                            .map(|i| match i.state {
+                                InstanceState::Up => "master",
+                                InstanceState::SubjectivelyDown => "master,s_down",
+                                InstanceState::ObjectivelyDown => "master,o_down",
+                                InstanceState::Down => "master,disconnected",
+                            })
+                            .unwrap_or("master");
 
                         let num_slaves = s.replicas.get(name).map(|r| r.len()).unwrap_or(0);
                         let num_sentinels = s.sentinels.get(name).map(|r| r.len()).unwrap_or(0);
 
-                        format_master_info(name, &cfg.host, cfg.port, flags, cfg.quorum, num_slaves, num_sentinels)
+                        format_master_info(
+                            name,
+                            &cfg.host,
+                            cfg.port,
+                            flags,
+                            cfg.quorum,
+                            num_slaves,
+                            num_sentinels,
+                        )
                     } else {
                         "-ERR No such master with that name\r\n".to_string()
                     }
@@ -548,8 +592,11 @@ fn handle_command(cmd: &str, args: &[String], state: &Arc<RwLock<SentinelState>>
                                 _ => "slave,disconnected",
                             };
                             result.push_str(&format_replica_info(
-                                &replica.host, replica.port, flags,
-                                replica.replica_offset, replica.replica_priority
+                                &replica.host,
+                                replica.port,
+                                flags,
+                                replica.replica_offset,
+                                replica.replica_priority,
                             ));
                         }
                         result
@@ -568,8 +615,11 @@ fn handle_command(cmd: &str, args: &[String], state: &Arc<RwLock<SentinelState>>
                     if let Some(sentinels) = s.sentinels.get(name) {
                         let mut result = format!("*{}\r\n", sentinels.len());
                         for sentinel in sentinels {
-                            result.push_str(&format!("*4\r\n$4\r\nname\r\n$8\r\nsentinel\r\n$2\r\nip\r\n${}\r\n{}\r\n",
-                                sentinel.host.len(), sentinel.host));
+                            result.push_str(&format!(
+                                "*4\r\n$4\r\nname\r\n$8\r\nsentinel\r\n$2\r\nip\r\n${}\r\n{}\r\n",
+                                sentinel.host.len(),
+                                sentinel.host
+                            ));
                         }
                         result
                     } else {
@@ -586,8 +636,13 @@ fn handle_command(cmd: &str, args: &[String], state: &Arc<RwLock<SentinelState>>
 
                     if let Some(cfg) = s.masters.get(name) {
                         let port_str = cfg.port.to_string();
-                        format!("*2\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
-                            cfg.host.len(), cfg.host, port_str.len(), port_str)
+                        format!(
+                            "*2\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
+                            cfg.host.len(),
+                            cfg.host,
+                            port_str.len(),
+                            port_str
+                        )
                     } else {
                         "*-1\r\n".to_string()
                     }
@@ -597,9 +652,7 @@ fn handle_command(cmd: &str, args: &[String], state: &Arc<RwLock<SentinelState>>
                     format!("${}\r\n{}\r\n", my_id.len(), my_id)
                 }
 
-                "INFO-CACHE" => {
-                    "+OK\r\n".to_string()
-                }
+                "INFO-CACHE" => "+OK\r\n".to_string(),
 
                 "CKQUORUM" => {
                     if args.len() < 2 {
@@ -613,8 +666,10 @@ fn handle_command(cmd: &str, args: &[String], state: &Arc<RwLock<SentinelState>>
                         if num_sentinels as u32 >= cfg.quorum {
                             "+OK 1 usable Sentinels. Quorum is reachable.\r\n".to_string()
                         } else {
-                            format!("-NOQUORUM {} sentinels available, {} needed\r\n",
-                                num_sentinels, cfg.quorum)
+                            format!(
+                                "-NOQUORUM {} sentinels available, {} needed\r\n",
+                                num_sentinels, cfg.quorum
+                            )
                         }
                     } else {
                         "-ERR No such master with that name\r\n".to_string()
@@ -655,14 +710,22 @@ fn handle_command(cmd: &str, args: &[String], state: &Arc<RwLock<SentinelState>>
     }
 }
 
-fn format_master_info(name: &str, host: &str, port: u16, flags: &str,
-                       quorum: u32, num_slaves: usize, num_sentinels: usize) -> String {
+fn format_master_info(
+    name: &str,
+    host: &str,
+    port: u16,
+    flags: &str,
+    quorum: u32,
+    num_slaves: usize,
+    num_sentinels: usize,
+) -> String {
     let port_str = port.to_string();
     let quorum_str = quorum.to_string();
     let slaves_str = num_slaves.to_string();
     let sentinels_str = num_sentinels.to_string();
 
-    format!("*20\r\n\
+    format!(
+        "*20\r\n\
         $4\r\nname\r\n${}\r\n{}\r\n\
         $2\r\nip\r\n${}\r\n{}\r\n\
         $4\r\nport\r\n${}\r\n{}\r\n\
@@ -673,13 +736,21 @@ fn format_master_info(name: &str, host: &str, port: u16, flags: &str,
         $12\r\nconfig-epoch\r\n$1\r\n0\r\n\
         $15\r\nfailover-timeout\r\n$6\r\n180000\r\n\
         $14\r\nparallel-syncs\r\n$1\r\n1\r\n",
-        name.len(), name,
-        host.len(), host,
-        port_str.len(), port_str,
-        flags.len(), flags,
-        quorum_str.len(), quorum_str,
-        slaves_str.len(), slaves_str,
-        sentinels_str.len(), sentinels_str)
+        name.len(),
+        name,
+        host.len(),
+        host,
+        port_str.len(),
+        port_str,
+        flags.len(),
+        flags,
+        quorum_str.len(),
+        quorum_str,
+        slaves_str.len(),
+        slaves_str,
+        sentinels_str.len(),
+        sentinels_str
+    )
 }
 
 fn format_replica_info(host: &str, port: u16, flags: &str, offset: u64, priority: u32) -> String {
@@ -687,19 +758,28 @@ fn format_replica_info(host: &str, port: u16, flags: &str, offset: u64, priority
     let offset_str = offset.to_string();
     let priority_str = priority.to_string();
 
-    format!("*12\r\n\
+    format!(
+        "*12\r\n\
         $4\r\nname\r\n${}\r\n{}:{}\r\n\
         $2\r\nip\r\n${}\r\n{}\r\n\
         $4\r\nport\r\n${}\r\n{}\r\n\
         $5\r\nflags\r\n${}\r\n{}\r\n\
         $14\r\nslave-priority\r\n${}\r\n{}\r\n\
         $17\r\nslave-repl-offset\r\n${}\r\n{}\r\n",
-        host.len() + 1 + port_str.len(), host, port,
-        host.len(), host,
-        port_str.len(), port_str,
-        flags.len(), flags,
-        priority_str.len(), priority_str,
-        offset_str.len(), offset_str)
+        host.len() + 1 + port_str.len(),
+        host,
+        port,
+        host.len(),
+        host,
+        port_str.len(),
+        port_str,
+        flags.len(),
+        flags,
+        priority_str.len(),
+        priority_str,
+        offset_str.len(),
+        offset_str
+    )
 }
 
 fn format_info(state: &Arc<RwLock<SentinelState>>, my_id: &str, section: &str) -> String {
@@ -726,15 +806,25 @@ fn format_info(state: &Arc<RwLock<SentinelState>>, my_id: &str, section: &str) -
         for (name, cfg) in &s.masters {
             let num_slaves = s.replicas.get(name).map(|r| r.len()).unwrap_or(0);
             let num_sentinels = s.sentinels.get(name).map(|r| r.len()).unwrap_or(0);
-            let status = s.instances.get(&format!("{}:{}", cfg.host, cfg.port))
+            let status = s
+                .instances
+                .get(&format!("{}:{}", cfg.host, cfg.port))
                 .map(|i| match i.state {
                     InstanceState::Up => "ok",
                     _ => "sdown",
                 })
                 .unwrap_or("unknown");
 
-            info.push_str(&format!("master{}:name={},status={},address={}:{},slaves={},sentinels={}\r\n",
-                0, name, status, cfg.host, cfg.port, num_slaves, num_sentinels + 1));
+            info.push_str(&format!(
+                "master{}:name={},status={},address={}:{},slaves={},sentinels={}\r\n",
+                0,
+                name,
+                status,
+                cfg.host,
+                cfg.port,
+                num_slaves,
+                num_sentinels + 1
+            ));
         }
     }
 
@@ -743,7 +833,8 @@ fn format_info(state: &Arc<RwLock<SentinelState>>, my_id: &str, section: &str) -
 }
 
 fn print_usage() {
-    println!("Usage: viator-sentinel [OPTIONS] [config-file]
+    println!(
+        "Usage: viator-sentinel [OPTIONS] [config-file]
 
 Viator Sentinel - High availability monitoring service.
 Compatible with Redis Sentinel 8.4.0 protocol.
@@ -770,12 +861,15 @@ Configuration file format:
   sentinel down-after-milliseconds mymaster 30000
   sentinel failover-timeout mymaster 180000
   sentinel parallel-syncs mymaster 1
-");
+"
+    );
 }
 
-fn parse_config_file(path: &str) -> Result<(SentinelConfig, Vec<(String, String, u16, u32)>), String> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("Cannot read config file: {}", e))?;
+fn parse_config_file(
+    path: &str,
+) -> Result<(SentinelConfig, Vec<(String, String, u16, u32)>), String> {
+    let content =
+        std::fs::read_to_string(path).map_err(|e| format!("Cannot read config file: {}", e))?;
 
     let mut config = SentinelConfig::default();
     let mut masters = Vec::new();
@@ -912,7 +1006,10 @@ fn main() {
     let sentinel = Sentinel::new(config);
 
     for (name, host, port, quorum) in masters {
-        println!("Monitoring master '{}' at {}:{} (quorum: {})", name, host, port, quorum);
+        println!(
+            "Monitoring master '{}' at {}:{} (quorum: {})",
+            name, host, port, quorum
+        );
         sentinel.add_master(&name, &host, port, quorum);
     }
 

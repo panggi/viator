@@ -252,13 +252,12 @@ impl VectorSet {
                 let dot: f32 = v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum();
                 1.0 - dot
             }
-            DistanceMetric::Euclidean => {
-                v1.iter()
-                    .zip(v2.iter())
-                    .map(|(a, b)| (a - b).powi(2))
-                    .sum::<f32>()
-                    .sqrt()
-            }
+            DistanceMetric::Euclidean => v1
+                .iter()
+                .zip(v2.iter())
+                .map(|(a, b)| (a - b).powi(2))
+                .sum::<f32>()
+                .sqrt(),
             DistanceMetric::InnerProduct => {
                 // For inner product, higher is better, so negate for distance
                 -v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum::<f32>()
@@ -269,9 +268,7 @@ impl VectorSet {
     /// Calculate similarity (1 - distance for cosine/euclidean, raw for IP).
     pub fn similarity(&self, v1: &[f32], v2: &[f32]) -> f32 {
         match self.metric {
-            DistanceMetric::Cosine => {
-                v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum()
-            }
+            DistanceMetric::Cosine => v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum(),
             DistanceMetric::Euclidean => {
                 let dist: f32 = v1
                     .iter()
@@ -281,9 +278,7 @@ impl VectorSet {
                     .sqrt();
                 1.0 / (1.0 + dist)
             }
-            DistanceMetric::InnerProduct => {
-                v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum()
-            }
+            DistanceMetric::InnerProduct => v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum(),
         }
     }
 

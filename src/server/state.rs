@@ -26,9 +26,11 @@ pub struct QueuedCommand {
 #[derive(Debug)]
 pub struct PubSubState {
     /// Subscribed channels with their receivers
-    pub channel_receivers: std::collections::HashMap<Bytes, broadcast::Receiver<super::pubsub::PubSubMessage>>,
+    pub channel_receivers:
+        std::collections::HashMap<Bytes, broadcast::Receiver<super::pubsub::PubSubMessage>>,
     /// Subscribed patterns with their receivers
-    pub pattern_receivers: std::collections::HashMap<Bytes, broadcast::Receiver<super::pubsub::PubSubMessage>>,
+    pub pattern_receivers:
+        std::collections::HashMap<Bytes, broadcast::Receiver<super::pubsub::PubSubMessage>>,
 }
 
 impl Default for PubSubState {
@@ -217,7 +219,9 @@ impl ClientState {
 
     /// Queue a command for the transaction.
     pub fn queue_command(&self, name: String, args: Vec<Bytes>) {
-        self.transaction_queue.write().push(QueuedCommand { name, args });
+        self.transaction_queue
+            .write()
+            .push(QueuedCommand { name, args });
     }
 
     /// Get the number of queued commands.
@@ -282,14 +286,22 @@ impl ClientState {
     }
 
     /// Subscribe to a channel.
-    pub fn subscribe_channel(&self, channel: Bytes, receiver: broadcast::Receiver<super::pubsub::PubSubMessage>) {
+    pub fn subscribe_channel(
+        &self,
+        channel: Bytes,
+        receiver: broadcast::Receiver<super::pubsub::PubSubMessage>,
+    ) {
         let mut state = self.pubsub.write();
         state.channel_receivers.insert(channel, receiver);
         self.in_pubsub_mode.store(true, Ordering::Relaxed);
     }
 
     /// Subscribe to a pattern.
-    pub fn subscribe_pattern(&self, pattern: Bytes, receiver: broadcast::Receiver<super::pubsub::PubSubMessage>) {
+    pub fn subscribe_pattern(
+        &self,
+        pattern: Bytes,
+        receiver: broadcast::Receiver<super::pubsub::PubSubMessage>,
+    ) {
         let mut state = self.pubsub.write();
         state.pattern_receivers.insert(pattern, receiver);
         self.in_pubsub_mode.store(true, Ordering::Relaxed);
@@ -355,12 +367,22 @@ impl ClientState {
 
     /// Get subscribed channels.
     pub fn subscribed_channels(&self) -> Vec<Bytes> {
-        self.pubsub.read().channel_receivers.keys().cloned().collect()
+        self.pubsub
+            .read()
+            .channel_receivers
+            .keys()
+            .cloned()
+            .collect()
     }
 
     /// Get subscribed patterns.
     pub fn subscribed_patterns(&self) -> Vec<Bytes> {
-        self.pubsub.read().pattern_receivers.keys().cloned().collect()
+        self.pubsub
+            .read()
+            .pattern_receivers
+            .keys()
+            .cloned()
+            .collect()
     }
 
     /// Take the Pub/Sub state for async message delivery.
@@ -413,7 +435,8 @@ impl ClientState {
         let failures = self.auth_failures.fetch_add(1, Ordering::Relaxed) + 1;
         if failures >= MAX_AUTH_FAILURES {
             let lockout_until = Self::current_timestamp_secs() + AUTH_LOCKOUT_SECONDS;
-            self.auth_lockout_until.store(lockout_until, Ordering::Relaxed);
+            self.auth_lockout_until
+                .store(lockout_until, Ordering::Relaxed);
             true
         } else {
             false

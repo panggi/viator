@@ -43,7 +43,13 @@ impl TopK {
     #[must_use]
     pub fn new(k: usize, width: usize, depth: usize, decay: f64) -> Self {
         let buckets = vec![
-            vec![HeavyBucket { fingerprint: 0, count: 0 }; width];
+            vec![
+                HeavyBucket {
+                    fingerprint: 0,
+                    count: 0
+                };
+                width
+            ];
             depth
         ];
         Self {
@@ -137,7 +143,10 @@ impl TopK {
         if self.heap.len() < self.k {
             // Heap not full, just add
             let idx = self.heap.len();
-            self.heap.push(HeapItem { item: item.clone(), count });
+            self.heap.push(HeapItem {
+                item: item.clone(),
+                count,
+            });
             self.item_to_heap.insert(item, idx);
             self.heapify_up(idx);
             None
@@ -145,7 +154,10 @@ impl TopK {
             // New item has higher count than min, replace
             let dropped = self.heap[0].item.clone();
             self.item_to_heap.remove(&dropped);
-            self.heap[0] = HeapItem { item: item.clone(), count };
+            self.heap[0] = HeapItem {
+                item: item.clone(),
+                count,
+            };
             self.item_to_heap.insert(item, 0);
             self.heapify_down(0);
             Some(dropped)
@@ -160,8 +172,10 @@ impl TopK {
             let parent = (idx - 1) / 2;
             if self.heap[idx].count < self.heap[parent].count {
                 // Update index map
-                self.item_to_heap.insert(self.heap[idx].item.clone(), parent);
-                self.item_to_heap.insert(self.heap[parent].item.clone(), idx);
+                self.item_to_heap
+                    .insert(self.heap[idx].item.clone(), parent);
+                self.item_to_heap
+                    .insert(self.heap[parent].item.clone(), idx);
                 self.heap.swap(idx, parent);
                 idx = parent;
             } else {
@@ -186,8 +200,10 @@ impl TopK {
 
             if smallest != idx {
                 // Update index map
-                self.item_to_heap.insert(self.heap[idx].item.clone(), smallest);
-                self.item_to_heap.insert(self.heap[smallest].item.clone(), idx);
+                self.item_to_heap
+                    .insert(self.heap[idx].item.clone(), smallest);
+                self.item_to_heap
+                    .insert(self.heap[smallest].item.clone(), idx);
                 self.heap.swap(idx, smallest);
                 idx = smallest;
             } else {
@@ -225,7 +241,9 @@ impl TopK {
     /// Get the top-k items sorted by count (descending).
     #[must_use]
     pub fn list(&self) -> Vec<(Bytes, u64)> {
-        let mut items: Vec<_> = self.heap.iter()
+        let mut items: Vec<_> = self
+            .heap
+            .iter()
             .map(|h| (h.item.clone(), h.count))
             .collect();
         items.sort_by(|a, b| b.1.cmp(&a.1));

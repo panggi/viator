@@ -19,8 +19,8 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::collections::VecDeque;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 /// Replication role.
@@ -109,13 +109,12 @@ impl ReplicationBacklog {
     /// Add a command to the backlog.
     pub fn add(&self, data: Bytes) {
         let size = data.len() as u64;
-        let offset = self.current_offset.fetch_add(data.len() as i64, Ordering::SeqCst);
+        let offset = self
+            .current_offset
+            .fetch_add(data.len() as i64, Ordering::SeqCst);
 
         let mut buffer = self.buffer.write();
-        buffer.push_back(BacklogEntry {
-            data,
-            offset,
-        });
+        buffer.push_back(BacklogEntry { data, offset });
 
         let mut current = self.current_size.fetch_add(size, Ordering::Relaxed) + size;
 
@@ -123,8 +122,10 @@ impl ReplicationBacklog {
         while current > self.max_size as u64 && !buffer.is_empty() {
             if let Some(entry) = buffer.pop_front() {
                 current -= entry.data.len() as u64;
-                self.current_size.fetch_sub(entry.data.len() as u64, Ordering::Relaxed);
-                self.first_offset.store(entry.offset + entry.data.len() as i64, Ordering::Relaxed);
+                self.current_size
+                    .fetch_sub(entry.data.len() as u64, Ordering::Relaxed);
+                self.first_offset
+                    .store(entry.offset + entry.data.len() as i64, Ordering::Relaxed);
             }
         }
     }
@@ -420,8 +421,12 @@ impl ReplicationManager {
     pub fn feed_command(&self, cmd: Bytes) {
         if *self.role.read() == ReplicationRole::Master {
             self.backlog.add(cmd.clone());
-            self.stats.commands_replicated.fetch_add(1, Ordering::Relaxed);
-            self.stats.bytes_replicated.fetch_add(cmd.len() as u64, Ordering::Relaxed);
+            self.stats
+                .commands_replicated
+                .fetch_add(1, Ordering::Relaxed);
+            self.stats
+                .bytes_replicated
+                .fetch_add(cmd.len() as u64, Ordering::Relaxed);
         }
     }
 
@@ -449,7 +454,12 @@ impl ReplicationManager {
     }
 
     /// Register a new replica.
-    pub fn register_replica(&self, id: String, addr: SocketAddr, port: u16) -> Arc<ConnectedReplica> {
+    pub fn register_replica(
+        &self,
+        id: String,
+        addr: SocketAddr,
+        port: u16,
+    ) -> Arc<ConnectedReplica> {
         let replica = Arc::new(ConnectedReplica::new(id.clone(), addr, port));
         self.replicas.insert(id, replica.clone());
         replica
@@ -484,7 +494,12 @@ impl ReplicationManager {
     }
 
     /// Wait for replicas to acknowledge offset.
-    pub async fn wait_for_replicas(&self, num_replicas: usize, offset: i64, timeout: Duration) -> usize {
+    pub async fn wait_for_replicas(
+        &self,
+        num_replicas: usize,
+        offset: i64,
+        timeout: Duration,
+    ) -> usize {
         let start = Instant::now();
 
         loop {
@@ -512,7 +527,10 @@ impl ReplicationManager {
 
     /// Get master info (when replica).
     pub fn master_info(&self) -> Option<(String, u16)> {
-        self.master.read().as_ref().map(|m| (m.host.clone(), m.port))
+        self.master
+            .read()
+            .as_ref()
+            .map(|m| (m.host.clone(), m.port))
     }
 
     /// Get backlog reference.
@@ -535,7 +553,9 @@ impl ReplicationManager {
             connected_replicas: self.replicas.len(),
             master_host: master.as_ref().map(|m| m.host.clone()),
             master_port: master.as_ref().map(|m| m.port),
-            master_link_status: master.as_ref().map(|m| m.link_status.load(Ordering::Relaxed)),
+            master_link_status: master
+                .as_ref()
+                .map(|m| m.link_status.load(Ordering::Relaxed)),
             master_repl_offset: self.backlog.current_offset(),
             repl_backlog_active: self.backlog.current_size.load(Ordering::Relaxed) > 0,
             repl_backlog_size: self.backlog.max_size,
@@ -613,10 +633,15 @@ fn generate_repl_id() -> String {
 
     let hash = std::hash::Hasher::finish(&hasher);
 
-    format!("{:016x}{:016x}{:08x}", hash, timestamp as u64, std::process::id())
-        .chars()
-        .take(40)
-        .collect()
+    format!(
+        "{:016x}{:016x}{:08x}",
+        hash,
+        timestamp as u64,
+        std::process::id()
+    )
+    .chars()
+    .take(40)
+    .collect()
 }
 
 #[cfg(test)]

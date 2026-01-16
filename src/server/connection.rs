@@ -1,12 +1,12 @@
 //! Connection handling for individual clients.
 
+use super::ClientState;
 use super::metrics::ServerMetrics;
 use super::pubsub::PubSubMessage;
-use super::ClientState;
+use crate::Result;
 use crate::commands::{CommandExecutor, ParsedCommand};
 use crate::protocol::{Frame, RespParser};
 use crate::storage::Database;
-use crate::Result;
 use bytes::{Bytes, BytesMut};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -126,7 +126,9 @@ impl Connection {
                     }
                     Err(e) => {
                         // Protocol error - send error response and continue
-                        self.metrics.parse_errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        self.metrics
+                            .parse_errors
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         let error_frame = Frame::error(format!("ERR {e}"));
                         self.queue_frame(&error_frame);
                         self.flush_writes().await?;
@@ -314,13 +316,18 @@ impl Connection {
                     }
                 } else {
                     for channel_bytes in &cmd.args {
-                        if let Some(pos) = channel_receivers.iter().position(|(c, _)| c == channel_bytes) {
+                        if let Some(pos) = channel_receivers
+                            .iter()
+                            .position(|(c, _)| c == channel_bytes)
+                        {
                             let (channel, _) = channel_receivers.remove(pos);
                             self.database.pubsub().unsubscribe(&channel);
                             let response = Frame::Array(vec![
                                 Frame::Bulk(Bytes::from_static(b"unsubscribe")),
                                 Frame::Bulk(channel),
-                                Frame::Integer((channel_receivers.len() + pattern_receivers.len()) as i64),
+                                Frame::Integer(
+                                    (channel_receivers.len() + pattern_receivers.len()) as i64,
+                                ),
                             ]);
                             self.queue_frame(&response);
                         }
@@ -345,13 +352,18 @@ impl Connection {
                     }
                 } else {
                     for pattern_bytes in &cmd.args {
-                        if let Some(pos) = pattern_receivers.iter().position(|(p, _)| p == pattern_bytes) {
+                        if let Some(pos) = pattern_receivers
+                            .iter()
+                            .position(|(p, _)| p == pattern_bytes)
+                        {
                             let (pattern, _) = pattern_receivers.remove(pos);
                             self.database.pubsub().punsubscribe(&pattern);
                             let response = Frame::Array(vec![
                                 Frame::Bulk(Bytes::from_static(b"punsubscribe")),
                                 Frame::Bulk(pattern),
-                                Frame::Integer((channel_receivers.len() + pattern_receivers.len()) as i64),
+                                Frame::Integer(
+                                    (channel_receivers.len() + pattern_receivers.len()) as i64,
+                                ),
                             ]);
                             self.queue_frame(&response);
                         }
@@ -436,7 +448,9 @@ impl Connection {
         let cmd = match ParsedCommand::from_frame(frame) {
             Ok(cmd) => cmd,
             Err(e) => {
-                self.metrics.parse_errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.metrics
+                    .parse_errors
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let error_frame = Frame::error(e.to_string());
                 self.queue_frame(&error_frame);
                 return Ok(());
@@ -459,7 +473,8 @@ impl Connection {
         let bytes_out = self.queue_frame(&response);
 
         // Record metrics
-        self.metrics.record_command(start.elapsed(), bytes_in, bytes_out as u64);
+        self.metrics
+            .record_command(start.elapsed(), bytes_in, bytes_out as u64);
 
         Ok(())
     }

@@ -12,11 +12,11 @@ mod value;
 
 // Probabilistic data structures (compatible with Redis Stack)
 pub mod bloom;
-pub mod cuckoo;
 pub mod cms;
-pub mod topk;
+pub mod cuckoo;
 pub mod tdigest;
 pub mod timeseries;
+pub mod topk;
 
 // Advanced data structures
 pub mod graph;
@@ -27,17 +27,17 @@ pub use key::Key;
 pub use list::ViatorList;
 pub use set::ViatorSet;
 pub use sorted_set::{ScoreBound, SortedSet, SortedSetEntry};
-pub use stream::{ViatorStream, StreamEntry, StreamId, StreamIdParsed};
-pub use value::{ViatorValue, StoredValue};
-pub use vectorset::{VectorSet, VectorSetInfo, VectorElement, DistanceMetric};
+pub use stream::{StreamEntry, StreamId, StreamIdParsed, ViatorStream};
+pub use value::{StoredValue, ViatorValue};
+pub use vectorset::{DistanceMetric, VectorElement, VectorSet, VectorSetInfo};
 
 // Probabilistic data structure exports
-pub use bloom::{BloomFilter, ScalingBloomFilter, BloomInfo};
+pub use bloom::{BloomFilter, BloomInfo, ScalingBloomFilter};
+pub use cms::{CmsInfo, CountMinSketch};
 pub use cuckoo::{CuckooFilter, CuckooInfo};
-pub use cms::{CountMinSketch, CmsInfo};
-pub use topk::{TopK, TopKInfo};
 pub use tdigest::{TDigest, TDigestInfo};
-pub use timeseries::{TimeSeries, TimeSeriesInfo, Sample, Aggregation, DuplicatePolicy};
+pub use timeseries::{Aggregation, DuplicatePolicy, Sample, TimeSeries, TimeSeriesInfo};
+pub use topk::{TopK, TopKInfo};
 
 use bytes::Bytes;
 use std::collections::HashMap;

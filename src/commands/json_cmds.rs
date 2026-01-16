@@ -3,14 +3,14 @@
 //! Redis Stack compatible JSON.* commands.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
-use crate::Result;
 use bytes::Bytes;
 use parking_lot::RwLock;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -87,7 +87,12 @@ fn set_at_path(root: &mut Value, path: &str, new_value: Value) -> bool {
     set_at_path_recursive(root, &segments, 0, new_value)
 }
 
-fn set_at_path_recursive(current: &mut Value, segments: &[&str], idx: usize, new_value: Value) -> bool {
+fn set_at_path_recursive(
+    current: &mut Value,
+    segments: &[&str],
+    idx: usize,
+    new_value: Value,
+) -> bool {
     if idx >= segments.len() {
         return false;
     }
@@ -109,7 +114,12 @@ fn set_at_path_recursive(current: &mut Value, segments: &[&str], idx: usize, new
                     return false;
                 }
                 if array_idx < arr.len() {
-                    return set_at_path_recursive(&mut arr[array_idx], segments, idx + 1, new_value);
+                    return set_at_path_recursive(
+                        &mut arr[array_idx],
+                        segments,
+                        idx + 1,
+                        new_value,
+                    );
                 }
             }
         }
@@ -195,8 +205,7 @@ pub fn cmd_json_set(
         let path = cmd.get_str(1)?;
         let json_str = cmd.get_str(2)?;
 
-        let value: Value = serde_json::from_str(json_str)
-            .map_err(|_| CommandError::SyntaxError)?;
+        let value: Value = serde_json::from_str(json_str).map_err(|_| CommandError::SyntaxError)?;
 
         let nx = cmd.args.len() > 3 && cmd.get_str(3)?.to_uppercase() == "NX";
         let xx = cmd.args.len() > 3 && cmd.get_str(3)?.to_uppercase() == "XX";
@@ -265,7 +274,10 @@ pub fn cmd_json_get(
                 if results.len() == 1 {
                     result_obj.insert(path.to_string(), results[0].clone());
                 } else {
-                    result_obj.insert(path.to_string(), Value::Array(results.iter().cloned().cloned().collect()));
+                    result_obj.insert(
+                        path.to_string(),
+                        Value::Array(results.iter().cloned().cloned().collect()),
+                    );
                 }
             }
         }
@@ -330,7 +342,11 @@ pub fn cmd_json_del(
 
         if cmd.args.len() == 1 || cmd.get_str(1)? == "$" {
             // Delete entire key
-            return Ok(Frame::Integer(if storage.remove(&key).is_some() { 1 } else { 0 }));
+            return Ok(Frame::Integer(if storage.remove(&key).is_some() {
+                1
+            } else {
+                0
+            }));
         }
 
         let path = cmd.get_str(1)?;
@@ -365,7 +381,11 @@ pub fn cmd_json_type(
         let storage = JSON_STORAGE.read();
         let value = storage.get(&key).ok_or(CommandError::NoSuchKey)?;
 
-        let path = if cmd.args.len() > 1 { cmd.get_str(1)? } else { "$" };
+        let path = if cmd.args.len() > 1 {
+            cmd.get_str(1)?
+        } else {
+            "$"
+        };
         let results = query_path(value, path);
 
         if results.is_empty() {
@@ -379,7 +399,11 @@ pub fn cmd_json_type(
                     Value::Null => "null",
                     Value::Bool(_) => "boolean",
                     Value::Number(n) => {
-                        if n.is_i64() { "integer" } else { "number" }
+                        if n.is_i64() {
+                            "integer"
+                        } else {
+                            "number"
+                        }
                     }
                     Value::String(_) => "string",
                     Value::Array(_) => "array",
@@ -408,7 +432,10 @@ pub fn cmd_json_numincrby(
         cmd.require_exact_args(3)?;
         let key = cmd.args[0].to_vec();
         let path = cmd.get_str(1)?;
-        let increment: f64 = cmd.get_str(2)?.parse().map_err(|_| CommandError::NotFloat)?;
+        let increment: f64 = cmd
+            .get_str(2)?
+            .parse()
+            .map_err(|_| CommandError::NotFloat)?;
 
         let mut storage = JSON_STORAGE.write();
         let root = storage.get_mut(&key).ok_or(CommandError::NoSuchKey)?;
@@ -417,7 +444,12 @@ pub fn cmd_json_numincrby(
         let path_str = path.trim().trim_start_matches('$').trim_start_matches('.');
         let segments: Vec<&str> = path_str.split('.').filter(|s| !s.is_empty()).collect();
 
-        fn navigate_and_incr(current: &mut Value, segments: &[&str], idx: usize, increment: f64) -> Option<f64> {
+        fn navigate_and_incr(
+            current: &mut Value,
+            segments: &[&str],
+            idx: usize,
+            increment: f64,
+        ) -> Option<f64> {
             if idx >= segments.len() {
                 if let Value::Number(n) = current {
                     let new_val = n.as_f64().unwrap_or(0.0) + increment;
@@ -455,7 +487,10 @@ pub fn cmd_json_nummultby(
         cmd.require_exact_args(3)?;
         let key = cmd.args[0].to_vec();
         let path = cmd.get_str(1)?;
-        let multiplier: f64 = cmd.get_str(2)?.parse().map_err(|_| CommandError::NotFloat)?;
+        let multiplier: f64 = cmd
+            .get_str(2)?
+            .parse()
+            .map_err(|_| CommandError::NotFloat)?;
 
         let mut storage = JSON_STORAGE.write();
         let root = storage.get_mut(&key).ok_or(CommandError::NoSuchKey)?;
@@ -463,7 +498,12 @@ pub fn cmd_json_nummultby(
         let path_str = path.trim().trim_start_matches('$').trim_start_matches('.');
         let segments: Vec<&str> = path_str.split('.').filter(|s| !s.is_empty()).collect();
 
-        fn navigate_and_mult(current: &mut Value, segments: &[&str], idx: usize, multiplier: f64) -> Option<f64> {
+        fn navigate_and_mult(
+            current: &mut Value,
+            segments: &[&str],
+            idx: usize,
+            multiplier: f64,
+        ) -> Option<f64> {
             if idx >= segments.len() {
                 if let Value::Number(n) = current {
                     let new_val = n.as_f64().unwrap_or(0.0) * multiplier;
@@ -508,8 +548,8 @@ pub fn cmd_json_strappend(
         };
 
         // Parse the JSON string to append
-        let append_str: String = serde_json::from_str(append_value)
-            .map_err(|_| CommandError::SyntaxError)?;
+        let append_str: String =
+            serde_json::from_str(append_value).map_err(|_| CommandError::SyntaxError)?;
 
         let mut storage = JSON_STORAGE.write();
         let root = storage.get_mut(&key).ok_or(CommandError::NoSuchKey)?;
@@ -517,7 +557,12 @@ pub fn cmd_json_strappend(
         let path_str = path.trim().trim_start_matches('$').trim_start_matches('.');
         let segments: Vec<&str> = path_str.split('.').filter(|s| !s.is_empty()).collect();
 
-        fn navigate_and_append(current: &mut Value, segments: &[&str], idx: usize, append_str: &str) -> Option<usize> {
+        fn navigate_and_append(
+            current: &mut Value,
+            segments: &[&str],
+            idx: usize,
+            append_str: &str,
+        ) -> Option<usize> {
             if idx >= segments.len() {
                 if let Value::String(s) = current {
                     s.push_str(append_str);
@@ -553,7 +598,11 @@ pub fn cmd_json_strlen(
     Box::pin(async move {
         cmd.require_args(1)?;
         let key = cmd.args[0].to_vec();
-        let path = if cmd.args.len() > 1 { cmd.get_str(1)? } else { "$" };
+        let path = if cmd.args.len() > 1 {
+            cmd.get_str(1)?
+        } else {
+            "$"
+        };
 
         let storage = JSON_STORAGE.read();
         let value = storage.get(&key).ok_or(CommandError::NoSuchKey)?;
@@ -594,8 +643,8 @@ pub fn cmd_json_arrappend(
         let mut values_to_append = Vec::new();
         for i in 2..cmd.args.len() {
             let json_str = cmd.get_str(i)?;
-            let value: Value = serde_json::from_str(json_str)
-                .map_err(|_| CommandError::SyntaxError)?;
+            let value: Value =
+                serde_json::from_str(json_str).map_err(|_| CommandError::SyntaxError)?;
             values_to_append.push(value);
         }
 
@@ -605,7 +654,11 @@ pub fn cmd_json_arrappend(
         let path_str = path.trim().trim_start_matches('$').trim_start_matches('.');
         let segments: Vec<&str> = path_str.split('.').filter(|s| !s.is_empty()).collect();
 
-        fn navigate_to_array<'a>(current: &'a mut Value, segments: &[&str], idx: usize) -> Option<&'a mut Vec<Value>> {
+        fn navigate_to_array<'a>(
+            current: &'a mut Value,
+            segments: &[&str],
+            idx: usize,
+        ) -> Option<&'a mut Vec<Value>> {
             if idx >= segments.len() {
                 if let Value::Array(arr) = current {
                     return Some(arr);
@@ -645,8 +698,8 @@ pub fn cmd_json_arrindex(
         let key = cmd.args[0].to_vec();
         let path = cmd.get_str(1)?;
         let search_str = cmd.get_str(2)?;
-        let search_value: Value = serde_json::from_str(search_str)
-            .map_err(|_| CommandError::SyntaxError)?;
+        let search_value: Value =
+            serde_json::from_str(search_str).map_err(|_| CommandError::SyntaxError)?;
 
         let start = if cmd.args.len() > 3 {
             cmd.get_i64(3)?
@@ -698,7 +751,11 @@ pub fn cmd_json_arrlen(
     Box::pin(async move {
         cmd.require_args(1)?;
         let key = cmd.args[0].to_vec();
-        let path = if cmd.args.len() > 1 { cmd.get_str(1)? } else { "$" };
+        let path = if cmd.args.len() > 1 {
+            cmd.get_str(1)?
+        } else {
+            "$"
+        };
 
         let storage = JSON_STORAGE.read();
         let value = storage.get(&key).ok_or(CommandError::NoSuchKey)?;
@@ -733,7 +790,11 @@ pub fn cmd_json_arrpop(
     Box::pin(async move {
         cmd.require_args(1)?;
         let key = cmd.args[0].to_vec();
-        let path = if cmd.args.len() > 1 { cmd.get_str(1)? } else { "$" };
+        let path = if cmd.args.len() > 1 {
+            cmd.get_str(1)?
+        } else {
+            "$"
+        };
         let index: i64 = if cmd.args.len() > 2 {
             cmd.get_i64(2)?
         } else {
@@ -746,7 +807,11 @@ pub fn cmd_json_arrpop(
         let path_str = path.trim().trim_start_matches('$').trim_start_matches('.');
         let segments: Vec<&str> = path_str.split('.').filter(|s| !s.is_empty()).collect();
 
-        fn navigate_to_array<'a>(current: &'a mut Value, segments: &[&str], idx: usize) -> Option<&'a mut Vec<Value>> {
+        fn navigate_to_array<'a>(
+            current: &'a mut Value,
+            segments: &[&str],
+            idx: usize,
+        ) -> Option<&'a mut Vec<Value>> {
             if idx >= segments.len() {
                 if let Value::Array(arr) = current {
                     return Some(arr);
@@ -803,7 +868,11 @@ pub fn cmd_json_arrtrim(
         let path_str = path.trim().trim_start_matches('$').trim_start_matches('.');
         let segments: Vec<&str> = path_str.split('.').filter(|s| !s.is_empty()).collect();
 
-        fn navigate_to_array<'a>(current: &'a mut Value, segments: &[&str], idx: usize) -> Option<&'a mut Vec<Value>> {
+        fn navigate_to_array<'a>(
+            current: &'a mut Value,
+            segments: &[&str],
+            idx: usize,
+        ) -> Option<&'a mut Vec<Value>> {
             if idx >= segments.len() {
                 if let Value::Array(arr) = current {
                     return Some(arr);
@@ -822,8 +891,16 @@ pub fn cmd_json_arrtrim(
 
         if let Some(arr) = navigate_to_array(root, &segments, 0) {
             let len = arr.len() as i64;
-            let start_idx = if start < 0 { (len + start).max(0) as usize } else { start as usize };
-            let stop_idx = if stop < 0 { (len + stop).max(0) as usize } else { stop as usize };
+            let start_idx = if start < 0 {
+                (len + start).max(0) as usize
+            } else {
+                start as usize
+            };
+            let stop_idx = if stop < 0 {
+                (len + stop).max(0) as usize
+            } else {
+                stop as usize
+            };
 
             if start_idx >= arr.len() {
                 arr.clear();
@@ -856,8 +933,8 @@ pub fn cmd_json_arrinsert(
         let mut values_to_insert = Vec::new();
         for i in 3..cmd.args.len() {
             let json_str = cmd.get_str(i)?;
-            let value: Value = serde_json::from_str(json_str)
-                .map_err(|_| CommandError::SyntaxError)?;
+            let value: Value =
+                serde_json::from_str(json_str).map_err(|_| CommandError::SyntaxError)?;
             values_to_insert.push(value);
         }
 
@@ -867,7 +944,11 @@ pub fn cmd_json_arrinsert(
         let path_str = path.trim().trim_start_matches('$').trim_start_matches('.');
         let segments: Vec<&str> = path_str.split('.').filter(|s| !s.is_empty()).collect();
 
-        fn navigate_to_array<'a>(current: &'a mut Value, segments: &[&str], idx: usize) -> Option<&'a mut Vec<Value>> {
+        fn navigate_to_array<'a>(
+            current: &'a mut Value,
+            segments: &[&str],
+            idx: usize,
+        ) -> Option<&'a mut Vec<Value>> {
             if idx >= segments.len() {
                 if let Value::Array(arr) = current {
                     return Some(arr);
@@ -913,7 +994,11 @@ pub fn cmd_json_objkeys(
     Box::pin(async move {
         cmd.require_args(1)?;
         let key = cmd.args[0].to_vec();
-        let path = if cmd.args.len() > 1 { cmd.get_str(1)? } else { "$" };
+        let path = if cmd.args.len() > 1 {
+            cmd.get_str(1)?
+        } else {
+            "$"
+        };
 
         let storage = JSON_STORAGE.read();
         let value = storage.get(&key).ok_or(CommandError::NoSuchKey)?;
@@ -952,7 +1037,11 @@ pub fn cmd_json_objlen(
     Box::pin(async move {
         cmd.require_args(1)?;
         let key = cmd.args[0].to_vec();
-        let path = if cmd.args.len() > 1 { cmd.get_str(1)? } else { "$" };
+        let path = if cmd.args.len() > 1 {
+            cmd.get_str(1)?
+        } else {
+            "$"
+        };
 
         let storage = JSON_STORAGE.read();
         let value = storage.get(&key).ok_or(CommandError::NoSuchKey)?;
@@ -1031,7 +1120,11 @@ pub fn cmd_json_clear(
     Box::pin(async move {
         cmd.require_args(1)?;
         let key = cmd.args[0].to_vec();
-        let path = if cmd.args.len() > 1 { cmd.get_str(1)? } else { "$" };
+        let path = if cmd.args.len() > 1 {
+            cmd.get_str(1)?
+        } else {
+            "$"
+        };
 
         let mut storage = JSON_STORAGE.write();
         let root = storage.get_mut(&key).ok_or(CommandError::NoSuchKey)?;
@@ -1082,7 +1175,11 @@ pub fn cmd_json_resp(
     Box::pin(async move {
         cmd.require_args(1)?;
         let key = cmd.args[0].to_vec();
-        let path = if cmd.args.len() > 1 { cmd.get_str(1)? } else { "$" };
+        let path = if cmd.args.len() > 1 {
+            cmd.get_str(1)?
+        } else {
+            "$"
+        };
 
         let storage = JSON_STORAGE.read();
         let value = storage.get(&key).ok_or(CommandError::NoSuchKey)?;
@@ -1120,7 +1217,9 @@ pub fn cmd_json_resp(
         if results.len() == 1 {
             Ok(value_to_resp(results[0]))
         } else {
-            Ok(Frame::Array(results.iter().map(|v| value_to_resp(v)).collect()))
+            Ok(Frame::Array(
+                results.iter().map(|v| value_to_resp(v)).collect(),
+            ))
         }
     })
 }
@@ -1164,8 +1263,8 @@ pub fn cmd_json_merge(
         let path = cmd.get_str(1)?;
         let patch_str = cmd.get_str(2)?;
 
-        let patch: Value = serde_json::from_str(patch_str)
-            .map_err(|_| CommandError::SyntaxError)?;
+        let patch: Value =
+            serde_json::from_str(patch_str).map_err(|_| CommandError::SyntaxError)?;
 
         let mut storage = JSON_STORAGE.write();
         let root = storage.get_mut(&key).ok_or(CommandError::NoSuchKey)?;
@@ -1185,9 +1284,7 @@ pub fn cmd_json_merge(
                             if value.is_null() {
                                 target_obj.remove(key);
                             } else {
-                                let entry = target_obj
-                                    .entry(key.clone())
-                                    .or_insert(json!(null));
+                                let entry = target_obj.entry(key.clone()).or_insert(json!(null));
                                 merge_patch(entry, value);
                             }
                         }
@@ -1199,7 +1296,12 @@ pub fn cmd_json_merge(
             }
         }
 
-        fn navigate_and_merge(current: &mut Value, segments: &[&str], idx: usize, patch: &Value) -> bool {
+        fn navigate_and_merge(
+            current: &mut Value,
+            segments: &[&str],
+            idx: usize,
+            patch: &Value,
+        ) -> bool {
             if idx >= segments.len() {
                 merge_patch(current, patch);
                 return true;
@@ -1245,17 +1347,15 @@ pub fn cmd_json_mset(
             let path = cmd.get_str(i + 1)?;
             let json_str = cmd.get_str(i + 2)?;
 
-            let new_value: Value = serde_json::from_str(json_str)
-                .map_err(|_| CommandError::SyntaxError)?;
+            let new_value: Value =
+                serde_json::from_str(json_str).map_err(|_| CommandError::SyntaxError)?;
 
             if path == "$" || path == "." || path.is_empty() {
                 // Set root
                 storage.insert(key, new_value);
             } else {
                 // Set at path - create if not exists
-                let root = storage
-                    .entry(key)
-                    .or_insert_with(|| json!({}));
+                let root = storage.entry(key).or_insert_with(|| json!({}));
 
                 let path_str = path.trim().trim_start_matches('$').trim_start_matches('.');
                 let segments: Vec<&str> = path_str.split('.').filter(|s| !s.is_empty()).collect();

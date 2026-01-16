@@ -58,7 +58,10 @@ impl ViatorSet {
     ///
     /// Returns the number of elements actually added.
     pub fn add_multi(&mut self, values: impl IntoIterator<Item = Bytes>) -> usize {
-        values.into_iter().filter(|v| self.inner.insert(v.clone())).count()
+        values
+            .into_iter()
+            .filter(|v| self.inner.insert(v.clone()))
+            .count()
     }
 
     /// Remove a member from the set (SREM).

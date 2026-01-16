@@ -3,12 +3,12 @@
 //! Redis Stack compatible CMS.* commands.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
 use crate::types::CountMinSketch;
-use crate::Result;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -52,8 +52,14 @@ pub fn cmd_cms_initbyprob(
     Box::pin(async move {
         cmd.require_exact_args(3)?;
         let key = cmd.args[0].to_vec();
-        let error: f64 = cmd.get_str(1)?.parse().map_err(|_| CommandError::NotFloat)?;
-        let probability: f64 = cmd.get_str(2)?.parse().map_err(|_| CommandError::NotFloat)?;
+        let error: f64 = cmd
+            .get_str(1)?
+            .parse()
+            .map_err(|_| CommandError::NotFloat)?;
+        let probability: f64 = cmd
+            .get_str(2)?
+            .parse()
+            .map_err(|_| CommandError::NotFloat)?;
 
         let mut sketches = CMS_SKETCHES.write();
         if sketches.contains_key(&key) {

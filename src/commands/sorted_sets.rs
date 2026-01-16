@@ -1,12 +1,12 @@
 //! Sorted set command implementations.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
-use crate::types::{sorted_set::ScoreBound, Key, ViatorValue, ValueType};
-use crate::Result;
+use crate::types::{Key, ValueType, ViatorValue, sorted_set::ScoreBound};
 use bytes::Bytes;
 use std::future::Future;
 use std::pin::Pin;
@@ -245,11 +245,15 @@ pub fn cmd_zrange(
         let key = Key::from(cmd.args[0].clone());
         let start = cmd.get_i64(1)?;
         let stop = cmd.get_i64(2)?;
-        let with_scores = cmd.args.get(3).map(|a| {
-            std::str::from_utf8(a)
-                .map(|s| s.eq_ignore_ascii_case("WITHSCORES"))
-                .unwrap_or(false)
-        }).unwrap_or(false);
+        let with_scores = cmd
+            .args
+            .get(3)
+            .map(|a| {
+                std::str::from_utf8(a)
+                    .map(|s| s.eq_ignore_ascii_case("WITHSCORES"))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
 
         let entries = match db.get_typed(&key, ValueType::ZSet)? {
             Some(v) => v.as_zset().unwrap().read().range(start, stop),
@@ -259,7 +263,12 @@ pub fn cmd_zrange(
         let frames = if with_scores {
             entries
                 .into_iter()
-                .flat_map(|e| vec![Frame::Bulk(e.member), Frame::Bulk(Bytes::from(e.score.to_string()))])
+                .flat_map(|e| {
+                    vec![
+                        Frame::Bulk(e.member),
+                        Frame::Bulk(Bytes::from(e.score.to_string())),
+                    ]
+                })
                 .collect()
         } else {
             entries.into_iter().map(|e| Frame::Bulk(e.member)).collect()
@@ -279,11 +288,15 @@ pub fn cmd_zrevrange(
         let key = Key::from(cmd.args[0].clone());
         let start = cmd.get_i64(1)?;
         let stop = cmd.get_i64(2)?;
-        let with_scores = cmd.args.get(3).map(|a| {
-            std::str::from_utf8(a)
-                .map(|s| s.eq_ignore_ascii_case("WITHSCORES"))
-                .unwrap_or(false)
-        }).unwrap_or(false);
+        let with_scores = cmd
+            .args
+            .get(3)
+            .map(|a| {
+                std::str::from_utf8(a)
+                    .map(|s| s.eq_ignore_ascii_case("WITHSCORES"))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
 
         let entries = match db.get_typed(&key, ValueType::ZSet)? {
             Some(v) => v.as_zset().unwrap().read().rev_range(start, stop),
@@ -293,7 +306,12 @@ pub fn cmd_zrevrange(
         let frames = if with_scores {
             entries
                 .into_iter()
-                .flat_map(|e| vec![Frame::Bulk(e.member), Frame::Bulk(Bytes::from(e.score.to_string()))])
+                .flat_map(|e| {
+                    vec![
+                        Frame::Bulk(e.member),
+                        Frame::Bulk(Bytes::from(e.score.to_string())),
+                    ]
+                })
                 .collect()
         } else {
             entries.into_iter().map(|e| Frame::Bulk(e.member)).collect()
@@ -331,7 +349,11 @@ pub fn cmd_zpopmin(
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
         let key = Key::from(cmd.args[0].clone());
-        let count = if cmd.args.len() > 1 { cmd.get_u64(1)? as usize } else { 1 };
+        let count = if cmd.args.len() > 1 {
+            cmd.get_u64(1)? as usize
+        } else {
+            1
+        };
 
         let value = match db.get_typed(&key, ValueType::ZSet)? {
             Some(v) => v,
@@ -351,7 +373,12 @@ pub fn cmd_zpopmin(
 
         let frames: Vec<Frame> = entries
             .into_iter()
-            .flat_map(|e| vec![Frame::Bulk(e.member), Frame::Bulk(Bytes::from(e.score.to_string()))])
+            .flat_map(|e| {
+                vec![
+                    Frame::Bulk(e.member),
+                    Frame::Bulk(Bytes::from(e.score.to_string())),
+                ]
+            })
             .collect();
 
         Ok(Frame::Array(frames))
@@ -366,7 +393,11 @@ pub fn cmd_zpopmax(
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
         let key = Key::from(cmd.args[0].clone());
-        let count = if cmd.args.len() > 1 { cmd.get_u64(1)? as usize } else { 1 };
+        let count = if cmd.args.len() > 1 {
+            cmd.get_u64(1)? as usize
+        } else {
+            1
+        };
 
         let value = match db.get_typed(&key, ValueType::ZSet)? {
             Some(v) => v,
@@ -386,7 +417,12 @@ pub fn cmd_zpopmax(
 
         let frames: Vec<Frame> = entries
             .into_iter()
-            .flat_map(|e| vec![Frame::Bulk(e.member), Frame::Bulk(Bytes::from(e.score.to_string()))])
+            .flat_map(|e| {
+                vec![
+                    Frame::Bulk(e.member),
+                    Frame::Bulk(Bytes::from(e.score.to_string())),
+                ]
+            })
             .collect();
 
         Ok(Frame::Array(frames))
@@ -500,14 +536,24 @@ pub fn cmd_zrandmember(
 
         let value = match db.get_typed(&key, ValueType::ZSet)? {
             Some(v) => v,
-            None => return Ok(if count.is_some() { Frame::Array(vec![]) } else { Frame::Null }),
+            None => {
+                return Ok(if count.is_some() {
+                    Frame::Array(vec![])
+                } else {
+                    Frame::Null
+                });
+            }
         };
 
         let zset = value.as_zset().unwrap().read();
         let entries = zset.range(0, -1);
 
         if entries.is_empty() {
-            return Ok(if count.is_some() { Frame::Array(vec![]) } else { Frame::Null });
+            return Ok(if count.is_some() {
+                Frame::Array(vec![])
+            } else {
+                Frame::Null
+            });
         }
 
         let mut rng = rand::thread_rng();
@@ -538,15 +584,18 @@ pub fn cmd_zrandmember(
                     }
                     Ok(Frame::Array(result))
                 } else {
-                    Ok(Frame::Array(selected.into_iter().map(|e| Frame::Bulk(e.member)).collect()))
+                    Ok(Frame::Array(
+                        selected
+                            .into_iter()
+                            .map(|e| Frame::Bulk(e.member))
+                            .collect(),
+                    ))
                 }
             }
-            None => {
-                match entries.choose(&mut rng) {
-                    Some(entry) => Ok(Frame::Bulk(entry.member.clone())),
-                    None => Ok(Frame::Null),
-                }
-            }
+            None => match entries.choose(&mut rng) {
+                Some(entry) => Ok(Frame::Bulk(entry.member.clone())),
+                None => Ok(Frame::Null),
+            },
         }
     })
 }
@@ -649,7 +698,11 @@ pub fn cmd_zrangestore(
             } else {
                 src_zset.range(start, stop)
             };
-            results.into_iter().skip(offset).take(count.unwrap_or(usize::MAX)).collect()
+            results
+                .into_iter()
+                .skip(offset)
+                .take(count.unwrap_or(usize::MAX))
+                .collect()
         };
 
         let result_count = entries.len() as i64;
@@ -683,7 +736,10 @@ pub fn cmd_zunion(
         let numkeys: usize = cmd.get_u64(0)? as usize;
 
         if cmd.args.len() < 1 + numkeys {
-            return Err(CommandError::WrongArity { command: "ZUNION".to_string() }.into());
+            return Err(CommandError::WrongArity {
+                command: "ZUNION".to_string(),
+            }
+            .into());
         }
 
         let keys: Vec<Key> = cmd.args[1..1 + numkeys]
@@ -722,14 +778,16 @@ pub fn cmd_zunion(
         }
 
         // Collect all members with their weighted scores
-        let mut result_map: std::collections::HashMap<Bytes, f64> = std::collections::HashMap::new();
+        let mut result_map: std::collections::HashMap<Bytes, f64> =
+            std::collections::HashMap::new();
 
         for (i, key) in keys.iter().enumerate() {
             if let Some(value) = db.get_typed(key, ValueType::ZSet)? {
                 let zset = value.as_zset().unwrap().read();
                 for entry in zset.iter() {
                     let weighted_score = entry.score * weights[i];
-                    result_map.entry(entry.member.clone())
+                    result_map
+                        .entry(entry.member.clone())
                         .and_modify(|existing| {
                             *existing = match aggregate {
                                 "SUM" => *existing + weighted_score,
@@ -746,7 +804,8 @@ pub fn cmd_zunion(
         // Sort by score then by member
         let mut entries: Vec<_> = result_map.into_iter().collect();
         entries.sort_by(|a, b| {
-            a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+            a.1.partial_cmp(&b.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| a.0.cmp(&b.0))
         });
 
@@ -758,7 +817,9 @@ pub fn cmd_zunion(
             }
             Ok(Frame::Array(result))
         } else {
-            Ok(Frame::Array(entries.into_iter().map(|(m, _)| Frame::Bulk(m)).collect()))
+            Ok(Frame::Array(
+                entries.into_iter().map(|(m, _)| Frame::Bulk(m)).collect(),
+            ))
         }
     })
 }
@@ -775,7 +836,10 @@ pub fn cmd_zinter(
         let numkeys: usize = cmd.get_u64(0)? as usize;
 
         if cmd.args.len() < 1 + numkeys {
-            return Err(CommandError::WrongArity { command: "ZINTER".to_string() }.into());
+            return Err(CommandError::WrongArity {
+                command: "ZINTER".to_string(),
+            }
+            .into());
         }
 
         let keys: Vec<Key> = cmd.args[1..1 + numkeys]
@@ -820,7 +884,8 @@ pub fn cmd_zinter(
         };
 
         let first_zset = first_value.as_zset().unwrap().read();
-        let mut result_map: std::collections::HashMap<Bytes, f64> = std::collections::HashMap::new();
+        let mut result_map: std::collections::HashMap<Bytes, f64> =
+            std::collections::HashMap::new();
 
         for entry in first_zset.iter() {
             result_map.insert(entry.member.clone(), entry.score * weights[0]);
@@ -857,7 +922,8 @@ pub fn cmd_zinter(
         // Sort by score then by member
         let mut entries: Vec<_> = result_map.into_iter().collect();
         entries.sort_by(|a, b| {
-            a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+            a.1.partial_cmp(&b.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| a.0.cmp(&b.0))
         });
 
@@ -869,7 +935,9 @@ pub fn cmd_zinter(
             }
             Ok(Frame::Array(result))
         } else {
-            Ok(Frame::Array(entries.into_iter().map(|(m, _)| Frame::Bulk(m)).collect()))
+            Ok(Frame::Array(
+                entries.into_iter().map(|(m, _)| Frame::Bulk(m)).collect(),
+            ))
         }
     })
 }
@@ -886,7 +954,10 @@ pub fn cmd_zdiff(
         let numkeys: usize = cmd.get_u64(0)? as usize;
 
         if cmd.args.len() < 1 + numkeys {
-            return Err(CommandError::WrongArity { command: "ZDIFF".to_string() }.into());
+            return Err(CommandError::WrongArity {
+                command: "ZDIFF".to_string(),
+            }
+            .into());
         }
 
         let keys: Vec<Key> = cmd.args[1..1 + numkeys]
@@ -904,7 +975,8 @@ pub fn cmd_zdiff(
         };
 
         let first_zset = first_value.as_zset().unwrap().read();
-        let mut result_map: std::collections::HashMap<Bytes, f64> = std::collections::HashMap::new();
+        let mut result_map: std::collections::HashMap<Bytes, f64> =
+            std::collections::HashMap::new();
 
         for entry in first_zset.iter() {
             result_map.insert(entry.member.clone(), entry.score);
@@ -924,7 +996,8 @@ pub fn cmd_zdiff(
         // Sort by score then by member
         let mut entries: Vec<_> = result_map.into_iter().collect();
         entries.sort_by(|a, b| {
-            a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+            a.1.partial_cmp(&b.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| a.0.cmp(&b.0))
         });
 
@@ -936,7 +1009,9 @@ pub fn cmd_zdiff(
             }
             Ok(Frame::Array(result))
         } else {
-            Ok(Frame::Array(entries.into_iter().map(|(m, _)| Frame::Bulk(m)).collect()))
+            Ok(Frame::Array(
+                entries.into_iter().map(|(m, _)| Frame::Bulk(m)).collect(),
+            ))
         }
     })
 }
@@ -953,7 +1028,10 @@ pub fn cmd_zmpop(
         let numkeys: usize = cmd.get_u64(0)? as usize;
 
         if cmd.args.len() < 2 + numkeys {
-            return Err(CommandError::WrongArity { command: "ZMPOP".to_string() }.into());
+            return Err(CommandError::WrongArity {
+                command: "ZMPOP".to_string(),
+            }
+            .into());
         }
 
         let keys: Vec<Key> = cmd.args[1..1 + numkeys]
@@ -985,16 +1063,22 @@ pub fn cmd_zmpop(
                         if !entries.is_empty() {
                             let elements: Vec<Frame> = entries
                                 .into_iter()
-                                .map(|entry| Frame::Array(vec![
-                                    Frame::Bulk(entry.member),
-                                    Frame::Bulk(Bytes::from(entry.score.to_string())),
-                                ]))
+                                .map(|entry| {
+                                    Frame::Array(vec![
+                                        Frame::Bulk(entry.member),
+                                        Frame::Bulk(Bytes::from(entry.score.to_string())),
+                                    ])
+                                })
                                 .collect();
 
                             let key_bytes = Bytes::copy_from_slice(key.as_bytes());
                             drop(guard);
 
-                            if value.as_zset().map(|z| z.read().len() == 0).unwrap_or(false) {
+                            if value
+                                .as_zset()
+                                .map(|z| z.read().len() == 0)
+                                .unwrap_or(false)
+                            {
                                 db.delete(key);
                             }
 
@@ -1025,7 +1109,10 @@ pub fn cmd_zdiffstore(
         let numkeys: usize = cmd.get_u64(1)? as usize;
 
         if cmd.args.len() < 2 + numkeys {
-            return Err(CommandError::WrongArity { command: "ZDIFFSTORE".to_string() }.into());
+            return Err(CommandError::WrongArity {
+                command: "ZDIFFSTORE".to_string(),
+            }
+            .into());
         }
 
         let keys: Vec<Key> = cmd.args[2..2 + numkeys]
@@ -1043,7 +1130,8 @@ pub fn cmd_zdiffstore(
         };
 
         let first_zset = first_value.as_zset().unwrap().read();
-        let mut result_map: std::collections::HashMap<Bytes, f64> = std::collections::HashMap::new();
+        let mut result_map: std::collections::HashMap<Bytes, f64> =
+            std::collections::HashMap::new();
 
         for entry in first_zset.iter() {
             result_map.insert(entry.member.clone(), entry.score);
@@ -1091,7 +1179,10 @@ pub fn cmd_zinterstore(
         let numkeys: usize = cmd.get_u64(1)? as usize;
 
         if cmd.args.len() < 2 + numkeys {
-            return Err(CommandError::WrongArity { command: "ZINTERSTORE".to_string() }.into());
+            return Err(CommandError::WrongArity {
+                command: "ZINTERSTORE".to_string(),
+            }
+            .into());
         }
 
         let keys: Vec<Key> = cmd.args[2..2 + numkeys]
@@ -1196,7 +1287,10 @@ pub fn cmd_zunionstore(
         let numkeys: usize = cmd.get_u64(1)? as usize;
 
         if cmd.args.len() < 2 + numkeys {
-            return Err(CommandError::WrongArity { command: "ZUNIONSTORE".to_string() }.into());
+            return Err(CommandError::WrongArity {
+                command: "ZUNIONSTORE".to_string(),
+            }
+            .into());
         }
 
         let keys: Vec<Key> = cmd.args[2..2 + numkeys]
@@ -1232,13 +1326,15 @@ pub fn cmd_zunionstore(
         }
 
         // Compute union
-        let mut result: std::collections::HashMap<Bytes, Vec<f64>> = std::collections::HashMap::new();
+        let mut result: std::collections::HashMap<Bytes, Vec<f64>> =
+            std::collections::HashMap::new();
 
         for (idx, key) in keys.iter().enumerate() {
             if let Some(value) = db.get_typed(key, ValueType::ZSet)? {
                 let zset = value.as_zset().unwrap().read();
                 for entry in zset.iter() {
-                    result.entry(entry.member.clone())
+                    result
+                        .entry(entry.member.clone())
                         .or_default()
                         .push(entry.score * weights[idx]);
                 }
@@ -1336,17 +1432,15 @@ pub fn cmd_zmscore(
 
         let results: Vec<Frame> = cmd.args[1..]
             .iter()
-            .map(|member| {
-                match &value {
-                    Some(v) => {
-                        let zset = v.as_zset().unwrap().read();
-                        match zset.score(member) {
-                            Some(score) => Frame::Bulk(Bytes::from(score.to_string())),
-                            None => Frame::Null,
-                        }
+            .map(|member| match &value {
+                Some(v) => {
+                    let zset = v.as_zset().unwrap().read();
+                    match zset.score(member) {
+                        Some(score) => Frame::Bulk(Bytes::from(score.to_string())),
+                        None => Frame::Null,
                     }
-                    None => Frame::Null,
                 }
+                None => Frame::Null,
             })
             .collect();
 
@@ -1373,7 +1467,8 @@ pub fn cmd_zlexcount(
         };
 
         let zset = value.as_zset().unwrap().read();
-        let count = zset.iter()
+        let count = zset
+            .iter()
             .filter(|entry| {
                 let member_str = String::from_utf8_lossy(&entry.member);
                 lex_in_range(&member_str, min, max)
@@ -1411,7 +1506,8 @@ pub fn cmd_zrangebylex(
         };
 
         let zset = value.as_zset().unwrap().read();
-        let results: Vec<Frame> = zset.iter()
+        let results: Vec<Frame> = zset
+            .iter()
             .filter(|entry| {
                 let member_str = String::from_utf8_lossy(&entry.member);
                 lex_in_range(&member_str, min, max)
@@ -1452,7 +1548,8 @@ pub fn cmd_zrevrangebylex(
         };
 
         let zset = value.as_zset().unwrap().read();
-        let mut entries: Vec<_> = zset.iter()
+        let mut entries: Vec<_> = zset
+            .iter()
             .filter(|entry| {
                 let member_str = String::from_utf8_lossy(&entry.member);
                 lex_in_range(&member_str, min, max)
@@ -1460,7 +1557,8 @@ pub fn cmd_zrevrangebylex(
             .collect();
         entries.reverse();
 
-        let results: Vec<Frame> = entries.into_iter()
+        let results: Vec<Frame> = entries
+            .into_iter()
             .skip(offset)
             .take(count)
             .map(|entry| Frame::Bulk(entry.member.clone()))
@@ -1508,7 +1606,8 @@ pub fn cmd_zrangebyscore(
         };
 
         let zset = value.as_zset().unwrap().read();
-        let entries: Vec<_> = zset.iter()
+        let entries: Vec<_> = zset
+            .iter()
             .filter(|entry| score_in_range(entry.score, &min, &max))
             .skip(offset)
             .take(count)
@@ -1522,7 +1621,12 @@ pub fn cmd_zrangebyscore(
             }
             Ok(Frame::Array(result))
         } else {
-            Ok(Frame::Array(entries.into_iter().map(|e| Frame::Bulk(e.member.clone())).collect()))
+            Ok(Frame::Array(
+                entries
+                    .into_iter()
+                    .map(|e| Frame::Bulk(e.member.clone()))
+                    .collect(),
+            ))
         }
     })
 }
@@ -1565,15 +1669,13 @@ pub fn cmd_zrevrangebyscore(
         };
 
         let zset = value.as_zset().unwrap().read();
-        let mut entries: Vec<_> = zset.iter()
+        let mut entries: Vec<_> = zset
+            .iter()
             .filter(|entry| score_in_range(entry.score, &min, &max))
             .collect();
         entries.reverse();
 
-        let entries: Vec<_> = entries.into_iter()
-            .skip(offset)
-            .take(count)
-            .collect();
+        let entries: Vec<_> = entries.into_iter().skip(offset).take(count).collect();
 
         if with_scores {
             let mut result = Vec::new();
@@ -1583,7 +1685,12 @@ pub fn cmd_zrevrangebyscore(
             }
             Ok(Frame::Array(result))
         } else {
-            Ok(Frame::Array(entries.into_iter().map(|e| Frame::Bulk(e.member.clone())).collect()))
+            Ok(Frame::Array(
+                entries
+                    .into_iter()
+                    .map(|e| Frame::Bulk(e.member.clone()))
+                    .collect(),
+            ))
         }
     })
 }
@@ -1609,7 +1716,8 @@ pub fn cmd_zremrangebylex(
         let zset = value.as_zset().unwrap();
         let mut guard = zset.write();
 
-        let to_remove: Vec<Bytes> = guard.iter()
+        let to_remove: Vec<Bytes> = guard
+            .iter()
             .filter(|entry| {
                 let member_str = String::from_utf8_lossy(&entry.member);
                 lex_in_range(&member_str, min, max)
@@ -1656,8 +1764,16 @@ pub fn cmd_zremrangebyrank(
         let len = guard.len() as i64;
 
         // Normalize indices
-        let start_idx = if start < 0 { (len + start).max(0) } else { start.min(len) } as usize;
-        let stop_idx = if stop < 0 { (len + stop).max(0) } else { stop.min(len - 1) } as usize;
+        let start_idx = if start < 0 {
+            (len + start).max(0)
+        } else {
+            start.min(len)
+        } as usize;
+        let stop_idx = if stop < 0 {
+            (len + stop).max(0)
+        } else {
+            stop.min(len - 1)
+        } as usize;
 
         if start_idx > stop_idx {
             return Ok(Frame::Integer(0));
@@ -1706,7 +1822,8 @@ pub fn cmd_zremrangebyscore(
         let zset = value.as_zset().unwrap();
         let mut guard = zset.write();
 
-        let to_remove: Vec<Bytes> = guard.iter()
+        let to_remove: Vec<Bytes> = guard
+            .iter()
             .filter(|entry| score_in_range(entry.score, &min, &max))
             .map(|entry| entry.member.clone())
             .collect();

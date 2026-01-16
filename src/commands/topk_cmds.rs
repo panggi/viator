@@ -3,12 +3,12 @@
 //! Redis Stack compatible TOPK.* commands.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
 use crate::types::TopK;
-use crate::Result;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -44,7 +44,9 @@ pub fn cmd_topk_reserve(
         };
 
         let decay: f64 = if cmd.args.len() > 4 {
-            cmd.get_str(4)?.parse().map_err(|_| CommandError::NotFloat)?
+            cmd.get_str(4)?
+                .parse()
+                .map_err(|_| CommandError::NotFloat)?
         } else {
             0.9
         };
@@ -71,7 +73,9 @@ pub fn cmd_topk_add(
         let key = cmd.args[0].to_vec();
 
         let mut structures = TOPK_STRUCTURES.write();
-        let topk = structures.entry(key).or_insert_with(|| TopK::new(10, 80, 7, 0.9));
+        let topk = structures
+            .entry(key)
+            .or_insert_with(|| TopK::new(10, 80, 7, 0.9));
 
         let results: Vec<Frame> = cmd.args[1..]
             .iter()
@@ -107,7 +111,9 @@ pub fn cmd_topk_incrby(
         let key = cmd.args[0].to_vec();
 
         let mut structures = TOPK_STRUCTURES.write();
-        let topk = structures.entry(key).or_insert_with(|| TopK::new(10, 80, 7, 0.9));
+        let topk = structures
+            .entry(key)
+            .or_insert_with(|| TopK::new(10, 80, 7, 0.9));
 
         let mut results = Vec::new();
         let mut i = 1;
@@ -190,8 +196,7 @@ pub fn cmd_topk_list(
         cmd.require_args(1)?;
         let key = cmd.args[0].to_vec();
 
-        let with_count = cmd.args.len() > 1
-            && cmd.get_str(1)?.to_uppercase() == "WITHCOUNT";
+        let with_count = cmd.args.len() > 1 && cmd.get_str(1)?.to_uppercase() == "WITHCOUNT";
 
         let structures = TOPK_STRUCTURES.read();
         let topk = structures.get(&key).ok_or(CommandError::NoSuchKey)?;
@@ -201,9 +206,7 @@ pub fn cmd_topk_list(
         if with_count {
             let results: Vec<Frame> = items
                 .into_iter()
-                .flat_map(|(item, count)| {
-                    vec![Frame::Bulk(item), Frame::Integer(count as i64)]
-                })
+                .flat_map(|(item, count)| vec![Frame::Bulk(item), Frame::Integer(count as i64)])
                 .collect();
             Ok(Frame::Array(results))
         } else {

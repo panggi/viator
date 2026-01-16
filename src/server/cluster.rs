@@ -17,8 +17,8 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use tracing::info;
 
@@ -67,38 +67,30 @@ fn extract_hash_tag(key: &[u8]) -> Option<&[u8]> {
 /// This matches the Redis implementation exactly.
 fn crc16_ccitt(data: &[u8]) -> u16 {
     const CRC16_TABLE: [u16; 256] = [
-        0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
-        0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef,
-        0x1231, 0x0210, 0x3273, 0x2252, 0x52b5, 0x4294, 0x72f7, 0x62d6,
-        0x9339, 0x8318, 0xb37b, 0xa35a, 0xd3bd, 0xc39c, 0xf3ff, 0xe3de,
-        0x2462, 0x3443, 0x0420, 0x1401, 0x64e6, 0x74c7, 0x44a4, 0x5485,
-        0xa56a, 0xb54b, 0x8528, 0x9509, 0xe5ee, 0xf5cf, 0xc5ac, 0xd58d,
-        0x3653, 0x2672, 0x1611, 0x0630, 0x76d7, 0x66f6, 0x5695, 0x46b4,
-        0xb75b, 0xa77a, 0x9719, 0x8738, 0xf7df, 0xe7fe, 0xd79d, 0xc7bc,
-        0x48c4, 0x58e5, 0x6886, 0x78a7, 0x0840, 0x1861, 0x2802, 0x3823,
-        0xc9cc, 0xd9ed, 0xe98e, 0xf9af, 0x8948, 0x9969, 0xa90a, 0xb92b,
-        0x5af5, 0x4ad4, 0x7ab7, 0x6a96, 0x1a71, 0x0a50, 0x3a33, 0x2a12,
-        0xdbfd, 0xcbdc, 0xfbbf, 0xeb9e, 0x9b79, 0x8b58, 0xbb3b, 0xab1a,
-        0x6ca6, 0x7c87, 0x4ce4, 0x5cc5, 0x2c22, 0x3c03, 0x0c60, 0x1c41,
-        0xedae, 0xfd8f, 0xcdec, 0xddcd, 0xad2a, 0xbd0b, 0x8d68, 0x9d49,
-        0x7e97, 0x6eb6, 0x5ed5, 0x4ef4, 0x3e13, 0x2e32, 0x1e51, 0x0e70,
-        0xff9f, 0xefbe, 0xdfdd, 0xcffc, 0xbf1b, 0xaf3a, 0x9f59, 0x8f78,
-        0x9188, 0x81a9, 0xb1ca, 0xa1eb, 0xd10c, 0xc12d, 0xf14e, 0xe16f,
-        0x1080, 0x00a1, 0x30c2, 0x20e3, 0x5004, 0x4025, 0x7046, 0x6067,
-        0x83b9, 0x9398, 0xa3fb, 0xb3da, 0xc33d, 0xd31c, 0xe37f, 0xf35e,
-        0x02b1, 0x1290, 0x22f3, 0x32d2, 0x4235, 0x5214, 0x6277, 0x7256,
-        0xb5ea, 0xa5cb, 0x95a8, 0x8589, 0xf56e, 0xe54f, 0xd52c, 0xc50d,
-        0x34e2, 0x24c3, 0x14a0, 0x0481, 0x7466, 0x6447, 0x5424, 0x4405,
-        0xa7db, 0xb7fa, 0x8799, 0x97b8, 0xe75f, 0xf77e, 0xc71d, 0xd73c,
-        0x26d3, 0x36f2, 0x0691, 0x16b0, 0x6657, 0x7676, 0x4615, 0x5634,
-        0xd94c, 0xc96d, 0xf90e, 0xe92f, 0x99c8, 0x89e9, 0xb98a, 0xa9ab,
-        0x5844, 0x4865, 0x7806, 0x6827, 0x18c0, 0x08e1, 0x3882, 0x28a3,
-        0xcb7d, 0xdb5c, 0xeb3f, 0xfb1e, 0x8bf9, 0x9bd8, 0xabbb, 0xbb9a,
-        0x4a75, 0x5a54, 0x6a37, 0x7a16, 0x0af1, 0x1ad0, 0x2ab3, 0x3a92,
-        0xfd2e, 0xed0f, 0xdd6c, 0xcd4d, 0xbdaa, 0xad8b, 0x9de8, 0x8dc9,
-        0x7c26, 0x6c07, 0x5c64, 0x4c45, 0x3ca2, 0x2c83, 0x1ce0, 0x0cc1,
-        0xef1f, 0xff3e, 0xcf5d, 0xdf7c, 0xaf9b, 0xbfba, 0x8fd9, 0x9ff8,
-        0x6e17, 0x7e36, 0x4e55, 0x5e74, 0x2e93, 0x3eb2, 0x0ed1, 0x1ef0,
+        0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7, 0x8108, 0x9129, 0xa14a,
+        0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef, 0x1231, 0x0210, 0x3273, 0x2252, 0x52b5, 0x4294,
+        0x72f7, 0x62d6, 0x9339, 0x8318, 0xb37b, 0xa35a, 0xd3bd, 0xc39c, 0xf3ff, 0xe3de, 0x2462,
+        0x3443, 0x0420, 0x1401, 0x64e6, 0x74c7, 0x44a4, 0x5485, 0xa56a, 0xb54b, 0x8528, 0x9509,
+        0xe5ee, 0xf5cf, 0xc5ac, 0xd58d, 0x3653, 0x2672, 0x1611, 0x0630, 0x76d7, 0x66f6, 0x5695,
+        0x46b4, 0xb75b, 0xa77a, 0x9719, 0x8738, 0xf7df, 0xe7fe, 0xd79d, 0xc7bc, 0x48c4, 0x58e5,
+        0x6886, 0x78a7, 0x0840, 0x1861, 0x2802, 0x3823, 0xc9cc, 0xd9ed, 0xe98e, 0xf9af, 0x8948,
+        0x9969, 0xa90a, 0xb92b, 0x5af5, 0x4ad4, 0x7ab7, 0x6a96, 0x1a71, 0x0a50, 0x3a33, 0x2a12,
+        0xdbfd, 0xcbdc, 0xfbbf, 0xeb9e, 0x9b79, 0x8b58, 0xbb3b, 0xab1a, 0x6ca6, 0x7c87, 0x4ce4,
+        0x5cc5, 0x2c22, 0x3c03, 0x0c60, 0x1c41, 0xedae, 0xfd8f, 0xcdec, 0xddcd, 0xad2a, 0xbd0b,
+        0x8d68, 0x9d49, 0x7e97, 0x6eb6, 0x5ed5, 0x4ef4, 0x3e13, 0x2e32, 0x1e51, 0x0e70, 0xff9f,
+        0xefbe, 0xdfdd, 0xcffc, 0xbf1b, 0xaf3a, 0x9f59, 0x8f78, 0x9188, 0x81a9, 0xb1ca, 0xa1eb,
+        0xd10c, 0xc12d, 0xf14e, 0xe16f, 0x1080, 0x00a1, 0x30c2, 0x20e3, 0x5004, 0x4025, 0x7046,
+        0x6067, 0x83b9, 0x9398, 0xa3fb, 0xb3da, 0xc33d, 0xd31c, 0xe37f, 0xf35e, 0x02b1, 0x1290,
+        0x22f3, 0x32d2, 0x4235, 0x5214, 0x6277, 0x7256, 0xb5ea, 0xa5cb, 0x95a8, 0x8589, 0xf56e,
+        0xe54f, 0xd52c, 0xc50d, 0x34e2, 0x24c3, 0x14a0, 0x0481, 0x7466, 0x6447, 0x5424, 0x4405,
+        0xa7db, 0xb7fa, 0x8799, 0x97b8, 0xe75f, 0xf77e, 0xc71d, 0xd73c, 0x26d3, 0x36f2, 0x0691,
+        0x16b0, 0x6657, 0x7676, 0x4615, 0x5634, 0xd94c, 0xc96d, 0xf90e, 0xe92f, 0x99c8, 0x89e9,
+        0xb98a, 0xa9ab, 0x5844, 0x4865, 0x7806, 0x6827, 0x18c0, 0x08e1, 0x3882, 0x28a3, 0xcb7d,
+        0xdb5c, 0xeb3f, 0xfb1e, 0x8bf9, 0x9bd8, 0xabbb, 0xbb9a, 0x4a75, 0x5a54, 0x6a37, 0x7a16,
+        0x0af1, 0x1ad0, 0x2ab3, 0x3a92, 0xfd2e, 0xed0f, 0xdd6c, 0xcd4d, 0xbdaa, 0xad8b, 0x9de8,
+        0x8dc9, 0x7c26, 0x6c07, 0x5c64, 0x4c45, 0x3ca2, 0x2c83, 0x1ce0, 0x0cc1, 0xef1f, 0xff3e,
+        0xcf5d, 0xdf7c, 0xaf9b, 0xbfba, 0x8fd9, 0x9ff8, 0x6e17, 0x7e36, 0x4e55, 0x5e74, 0x2e93,
+        0x3eb2, 0x0ed1, 0x1ef0,
     ];
 
     let mut crc: u16 = 0;
@@ -338,11 +330,13 @@ impl ClusterNode {
     /// Format as CLUSTER NODES line.
     #[must_use]
     pub fn to_cluster_nodes_line(&self) -> String {
-        let master_id = self.master_id
+        let master_id = self
+            .master_id
             .map(|id| hex_encode(&id))
             .unwrap_or_else(|| "-".to_string());
 
-        let slots_str: Vec<String> = self.slots
+        let slots_str: Vec<String> = self
+            .slots
             .iter()
             .map(|r| {
                 if r.start == r.end {
@@ -610,7 +604,10 @@ impl ClusterManager {
     }
 
     /// Convert slot ownership array to ranges for a node.
-    fn slots_to_ranges(owners: &[Option<NodeId>; CLUSTER_SLOTS as usize], node_id: NodeId) -> Vec<SlotRange> {
+    fn slots_to_ranges(
+        owners: &[Option<NodeId>; CLUSTER_SLOTS as usize],
+        node_id: NodeId,
+    ) -> Vec<SlotRange> {
         let mut ranges = Vec::new();
         let mut start: Option<Slot> = None;
 
@@ -648,7 +645,8 @@ impl ClusterManager {
         }
         drop(owners);
 
-        self.slot_states.insert(slot, SlotState::Migrating { target_node });
+        self.slot_states
+            .insert(slot, SlotState::Migrating { target_node });
         true
     }
 
@@ -658,7 +656,8 @@ impl ClusterManager {
             return false;
         }
 
-        self.slot_states.insert(slot, SlotState::Importing { source_node });
+        self.slot_states
+            .insert(slot, SlotState::Importing { source_node });
         true
     }
 
@@ -762,10 +761,16 @@ impl ClusterManager {
                                 addr: node.addr,
                                 id: node.id,
                             },
-                            replicas: replicas.iter().map(|n| {
-                                let n = n.read();
-                                NodeInfo { addr: n.addr, id: n.id }
-                            }).collect(),
+                            replicas: replicas
+                                .iter()
+                                .map(|n| {
+                                    let n = n.read();
+                                    NodeInfo {
+                                        addr: n.addr,
+                                        id: n.id,
+                                    }
+                                })
+                                .collect(),
                         });
                     }
 
@@ -789,10 +794,16 @@ impl ClusterManager {
                         addr: node.addr,
                         id: node.id,
                     },
-                    replicas: replicas.iter().map(|n| {
-                        let n = n.read();
-                        NodeInfo { addr: n.addr, id: n.id }
-                    }).collect(),
+                    replicas: replicas
+                        .iter()
+                        .map(|n| {
+                            let n = n.read();
+                            NodeInfo {
+                                addr: n.addr,
+                                id: n.id,
+                            }
+                        })
+                        .collect(),
                 });
             }
         }
@@ -836,22 +847,35 @@ impl ClusterManager {
 
         let mut info = HashMap::new();
 
-        info.insert("cluster_state".to_string(),
+        info.insert(
+            "cluster_state".to_string(),
             match *self.state.read() {
                 ClusterState::Ok => "ok".to_string(),
                 ClusterState::Fail => "fail".to_string(),
-            }
+            },
         );
-        info.insert("cluster_slots_assigned".to_string(), slots_assigned.to_string());
+        info.insert(
+            "cluster_slots_assigned".to_string(),
+            slots_assigned.to_string(),
+        );
         info.insert("cluster_slots_ok".to_string(), slots_ok.to_string());
         info.insert("cluster_slots_pfail".to_string(), "0".to_string());
         info.insert("cluster_slots_fail".to_string(), "0".to_string());
-        info.insert("cluster_known_nodes".to_string(), self.nodes.len().to_string());
-        info.insert("cluster_size".to_string(),
-            self.nodes.iter().filter(|n| n.read().is_master()).count().to_string()
+        info.insert(
+            "cluster_known_nodes".to_string(),
+            self.nodes.len().to_string(),
         );
-        info.insert("cluster_current_epoch".to_string(),
-            self.current_epoch.load(Ordering::Relaxed).to_string()
+        info.insert(
+            "cluster_size".to_string(),
+            self.nodes
+                .iter()
+                .filter(|n| n.read().is_master())
+                .count()
+                .to_string(),
+        );
+        info.insert(
+            "cluster_current_epoch".to_string(),
+            self.current_epoch.load(Ordering::Relaxed).to_string(),
         );
         info.insert("cluster_my_epoch".to_string(), "0".to_string());
 
@@ -886,13 +910,18 @@ impl ClusterManager {
     /// Count how many slots are assigned.
     #[must_use]
     pub fn slots_assigned(&self) -> usize {
-        self.slot_owners.read().iter().filter(|o| o.is_some()).count()
+        self.slot_owners
+            .read()
+            .iter()
+            .filter(|o| o.is_some())
+            .count()
     }
 
     /// Count how many slots this node owns.
     #[must_use]
     pub fn my_slots_count(&self) -> usize {
-        self.slot_owners.read()
+        self.slot_owners
+            .read()
             .iter()
             .filter(|o| *o == &Some(self.my_id))
             .count()
@@ -921,12 +950,11 @@ impl ClusterManager {
             if epoch <= current {
                 break;
             }
-            if self.current_epoch.compare_exchange(
-                current,
-                epoch,
-                Ordering::SeqCst,
-                Ordering::Relaxed
-            ).is_ok() {
+            if self
+                .current_epoch
+                .compare_exchange(current, epoch, Ordering::SeqCst, Ordering::Relaxed)
+                .is_ok()
+            {
                 break;
             }
         }
@@ -938,7 +966,8 @@ impl ClusterManager {
         // Get slots owned by the failed master
         let slots_to_take: Vec<Slot> = {
             let owners = self.slot_owners.read();
-            owners.iter()
+            owners
+                .iter()
                 .enumerate()
                 .filter(|(_, owner)| *owner == &Some(*failed_master_id))
                 .map(|(slot, _)| slot as Slot)
@@ -972,8 +1001,11 @@ impl ClusterManager {
         // Update cluster state
         self.update_cluster_state();
 
-        info!("Failover complete: took over {} slots from {}",
-            slots_to_take.len(), hex_encode(failed_master_id));
+        info!(
+            "Failover complete: took over {} slots from {}",
+            slots_to_take.len(),
+            hex_encode(failed_master_id)
+        );
 
         true
     }
@@ -1002,14 +1034,14 @@ impl ClusterManager {
     /// Get this node's master (if replica).
     #[must_use]
     pub fn get_my_master(&self) -> Option<NodeId> {
-        self.nodes.get(&self.my_id)
-            .and_then(|n| n.read().master_id)
+        self.nodes.get(&self.my_id).and_then(|n| n.read().master_id)
     }
 
     /// Check if this node is a replica.
     #[must_use]
     pub fn is_replica(&self) -> bool {
-        self.nodes.get(&self.my_id)
+        self.nodes
+            .get(&self.my_id)
             .map(|n| n.read().flags.replica)
             .unwrap_or(false)
     }
@@ -1017,7 +1049,8 @@ impl ClusterManager {
     /// Check if this node is a master.
     #[must_use]
     pub fn is_master(&self) -> bool {
-        self.nodes.get(&self.my_id)
+        self.nodes
+            .get(&self.my_id)
             .map(|n| n.read().flags.master)
             .unwrap_or(false)
     }
@@ -1031,7 +1064,8 @@ impl ClusterManager {
     /// Get all healthy masters.
     #[must_use]
     pub fn get_healthy_masters(&self) -> Vec<Arc<RwLock<ClusterNode>>> {
-        self.nodes.iter()
+        self.nodes
+            .iter()
             .filter(|n| {
                 let node = n.read();
                 node.is_master() && node.is_healthy()

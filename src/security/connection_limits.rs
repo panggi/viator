@@ -15,8 +15,8 @@
 
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 /// Default query buffer limit (1 GB like Redis)
@@ -77,8 +77,8 @@ impl OutputBufferLimits {
     #[must_use]
     pub fn pubsub() -> Self {
         Self {
-            hard_limit: 32 * 1024 * 1024,  // 32 MB
-            soft_limit: 8 * 1024 * 1024,   // 8 MB
+            hard_limit: 32 * 1024 * 1024, // 32 MB
+            soft_limit: 8 * 1024 * 1024,  // 8 MB
             soft_timeout: Duration::from_secs(60),
         }
     }
@@ -301,7 +301,11 @@ pub enum LimitViolation {
     /// Output buffer hard limit exceeded
     OutputBufferHardLimit { size: usize, limit: usize },
     /// Output buffer soft limit timeout exceeded
-    OutputBufferSoftTimeout { size: usize, limit: usize, duration: Duration },
+    OutputBufferSoftTimeout {
+        size: usize,
+        limit: usize,
+        duration: Duration,
+    },
     /// Too many pending commands
     TooManyPendingCommands { count: usize, limit: usize },
     /// Total client memory exceeded
@@ -317,7 +321,11 @@ impl std::fmt::Display for LimitViolation {
             Self::OutputBufferHardLimit { size, limit } => {
                 write!(f, "output buffer hard limit exceeded: {size} > {limit}")
             }
-            Self::OutputBufferSoftTimeout { size, limit, duration } => {
+            Self::OutputBufferSoftTimeout {
+                size,
+                limit,
+                duration,
+            } => {
                 write!(
                     f,
                     "output buffer soft limit {size} > {limit} exceeded for {duration:?}"
@@ -540,7 +548,9 @@ impl ConnectionLimits {
 
     /// Record a killed connection.
     pub fn record_kill(&self) {
-        self.stats.connections_killed.fetch_add(1, Ordering::Relaxed);
+        self.stats
+            .connections_killed
+            .fetch_add(1, Ordering::Relaxed);
     }
 }
 

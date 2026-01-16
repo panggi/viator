@@ -3,15 +3,13 @@
 //! This module provides actual TCP-based monitoring of Redis instances,
 //! failure detection, and automated failover execution.
 
-use crate::commands::sentinel::{
-    MasterState, MonitoredMaster, ReplicaInfo, SentinelState,
-};
+use crate::commands::sentinel::{MasterState, MonitoredMaster, ReplicaInfo, SentinelState};
 use bytes::BytesMut;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -125,8 +123,11 @@ impl InstanceConnection {
 
         // Read response
         let mut buf = [0u8; 128];
-        match tokio::time::timeout(Duration::from_millis(PING_TIMEOUT_MS), stream.read(&mut buf))
-            .await
+        match tokio::time::timeout(
+            Duration::from_millis(PING_TIMEOUT_MS),
+            stream.read(&mut buf),
+        )
+        .await
         {
             Ok(Ok(n)) if n > 0 => {
                 let response = String::from_utf8_lossy(&buf[..n]);
@@ -158,8 +159,11 @@ impl InstanceConnection {
 
         // Wait for PONG with timeout
         let mut buf = [0u8; 128];
-        match tokio::time::timeout(Duration::from_millis(PING_TIMEOUT_MS), stream.read(&mut buf))
-            .await
+        match tokio::time::timeout(
+            Duration::from_millis(PING_TIMEOUT_MS),
+            stream.read(&mut buf),
+        )
+        .await
         {
             Ok(Ok(n)) if n > 0 => {
                 let response = String::from_utf8_lossy(&buf[..n]);
@@ -361,9 +365,9 @@ impl SentinelMonitor {
                 // Ensure we have a connection entry
                 {
                     let mut conns = self.master_conns.write();
-                    conns.entry(master_name.clone()).or_insert_with(|| {
-                        InstanceConnection::new(addr, auth_pass, auth_user)
-                    });
+                    conns
+                        .entry(master_name.clone())
+                        .or_insert_with(|| InstanceConnection::new(addr, auth_pass, auth_user));
                 }
 
                 // Ping the master
@@ -392,11 +396,12 @@ impl SentinelMonitor {
                     // Ensure connection entry exists
                     {
                         let mut replica_conns = self.replica_conns.write();
-                        let master_replicas =
-                            replica_conns.entry(master_name.clone()).or_default();
-                        master_replicas.entry(replica_id.clone()).or_insert_with(|| {
-                            InstanceConnection::new(replica_info.addr, None, None)
-                        });
+                        let master_replicas = replica_conns.entry(master_name.clone()).or_default();
+                        master_replicas
+                            .entry(replica_id.clone())
+                            .or_insert_with(|| {
+                                InstanceConnection::new(replica_info.addr, None, None)
+                            });
                     }
 
                     // Ping the replica
@@ -607,7 +612,8 @@ impl SentinelMonitor {
         for (key, value) in info.iter() {
             if key.starts_with("slave") {
                 if let Some(replica_info) = parse_slave_info(value) {
-                    let replica_id = format!("{}:{}", replica_info.addr.ip(), replica_info.addr.port());
+                    let replica_id =
+                        format!("{}:{}", replica_info.addr.ip(), replica_info.addr.port());
 
                     // Add or update replica
                     master
@@ -656,7 +662,10 @@ impl SentinelMonitor {
             info!("We are the leader for failover of {}", master_name);
             self.execute_failover(master_name).await;
         } else {
-            info!("Another sentinel is leading the failover of {}", master_name);
+            info!(
+                "Another sentinel is leading the failover of {}",
+                master_name
+            );
         }
     }
 

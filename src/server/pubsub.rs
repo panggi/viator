@@ -145,7 +145,10 @@ impl PubSubHub {
 
     /// Get the number of subscribers to a channel.
     pub fn numsub(&self, channel: &Bytes) -> usize {
-        self.channel_subscribers.get(channel).map(|c| *c).unwrap_or(0)
+        self.channel_subscribers
+            .get(channel)
+            .map(|c| *c)
+            .unwrap_or(0)
     }
 
     /// Get the number of pattern subscriptions.
@@ -158,7 +161,9 @@ impl PubSubHub {
         self.channel_subscribers
             .iter()
             .filter(|entry| {
-                pattern.map(|p| Self::matches_pattern(p, entry.key())).unwrap_or(true)
+                pattern
+                    .map(|p| Self::matches_pattern(p, entry.key()))
+                    .unwrap_or(true)
             })
             .map(|entry| entry.key().clone())
             .collect()

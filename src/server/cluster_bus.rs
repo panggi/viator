@@ -7,20 +7,19 @@
 //! - Failover coordination
 //! - Configuration propagation
 
-use super::cluster::{
-    ClusterManager, ClusterState, LinkState, NodeFlags, NodeId,
-    CLUSTER_SLOTS, hex_encode,
-};
 #[cfg(test)]
 use super::cluster::generate_node_id;
+use super::cluster::{
+    CLUSTER_SLOTS, ClusterManager, ClusterState, LinkState, NodeFlags, NodeId, hex_encode,
+};
 use bytes::{Buf, BufMut, BytesMut};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::io::{self, ErrorKind};
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -168,7 +167,8 @@ impl ClusterMsgHeader {
 
     /// Deserialize header from bytes.
     pub fn deserialize(mut buf: &[u8]) -> Option<Self> {
-        if buf.len() < 100 {  // Minimum viable header
+        if buf.len() < 100 {
+            // Minimum viable header
             return None;
         }
 
@@ -216,14 +216,28 @@ impl ClusterMsgHeader {
             buf = &buf[46..];
         }
 
-        let bus_port = if buf.len() >= 2 { (&buf[..2]).get_u16_le() } else { 0 };
-        if buf.len() >= 2 { buf = &buf[2..]; }
+        let bus_port = if buf.len() >= 2 {
+            (&buf[..2]).get_u16_le()
+        } else {
+            0
+        };
+        if buf.len() >= 2 {
+            buf = &buf[2..];
+        }
 
-        let flags = if buf.len() >= 2 { (&buf[..2]).get_u16_le() } else { 0 };
-        if buf.len() >= 2 { buf = &buf[2..]; }
+        let flags = if buf.len() >= 2 {
+            (&buf[..2]).get_u16_le()
+        } else {
+            0
+        };
+        if buf.len() >= 2 {
+            buf = &buf[2..];
+        }
 
         let state = if !buf.is_empty() { buf[0] } else { 0 };
-        if !buf.is_empty() { buf = &buf[1..]; }
+        if !buf.is_empty() {
+            buf = &buf[1..];
+        }
 
         let mut mflags = [0u8; 3];
         if buf.len() >= 3 {
@@ -231,13 +245,29 @@ impl ClusterMsgHeader {
             buf = &buf[3..];
         }
 
-        let current_epoch = if buf.len() >= 8 { (&buf[..8]).get_u64_le() } else { 0 };
-        if buf.len() >= 8 { buf = &buf[8..]; }
+        let current_epoch = if buf.len() >= 8 {
+            (&buf[..8]).get_u64_le()
+        } else {
+            0
+        };
+        if buf.len() >= 8 {
+            buf = &buf[8..];
+        }
 
-        let config_epoch = if buf.len() >= 8 { (&buf[..8]).get_u64_le() } else { 0 };
-        if buf.len() >= 8 { buf = &buf[8..]; }
+        let config_epoch = if buf.len() >= 8 {
+            (&buf[..8]).get_u64_le()
+        } else {
+            0
+        };
+        if buf.len() >= 8 {
+            buf = &buf[8..];
+        }
 
-        let offset = if buf.len() >= 8 { (&buf[..8]).get_u64_le() } else { 0 };
+        let offset = if buf.len() >= 8 {
+            (&buf[..8]).get_u64_le()
+        } else {
+            0
+        };
 
         Some(Self {
             signature,
@@ -497,7 +527,8 @@ impl ClusterBus {
         let bus_port = client_port + 10000;
         *self.bus_port.write() = bus_port;
 
-        let addr: SocketAddr = format!("0.0.0.0:{}", bus_port).parse()
+        let addr: SocketAddr = format!("0.0.0.0:{}", bus_port)
+            .parse()
             .map_err(|e| io::Error::new(ErrorKind::InvalidInput, e))?;
 
         let listener = TcpListener::bind(addr).await?;
@@ -573,7 +604,9 @@ impl ClusterBus {
                 }
             };
 
-            self.stats.bytes_received.fetch_add(n as u64, Ordering::Relaxed);
+            self.stats
+                .bytes_received
+                .fetch_add(n as u64, Ordering::Relaxed);
 
             // Parse and handle the message
             if let Some(header) = ClusterMsgHeader::deserialize(&buf[..n]) {
@@ -586,7 +619,12 @@ impl ClusterBus {
     }
 
     /// Handle a received cluster message.
-    async fn handle_message(&self, header: &ClusterMsgHeader, data: &[u8], link: Arc<RwLock<ClusterLink>>) {
+    async fn handle_message(
+        &self,
+        header: &ClusterMsgHeader,
+        data: &[u8],
+        link: Arc<RwLock<ClusterLink>>,
+    ) {
         // Update link's node ID if not set
         {
             let mut link = link.write();
@@ -628,7 +666,12 @@ impl ClusterBus {
     }
 
     /// Handle PING message - respond with PONG.
-    async fn handle_ping(&self, header: &ClusterMsgHeader, _data: &[u8], link: Arc<RwLock<ClusterLink>>) {
+    async fn handle_ping(
+        &self,
+        header: &ClusterMsgHeader,
+        _data: &[u8],
+        link: Arc<RwLock<ClusterLink>>,
+    ) {
         // Update node info from ping
         self.update_node_from_header(header);
 
@@ -641,7 +684,9 @@ impl ClusterBus {
             warn!("Failed to send PONG: {}", e);
         } else {
             self.stats.pongs_sent.fetch_add(1, Ordering::Relaxed);
-            self.stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
+            self.stats
+                .bytes_sent
+                .fetch_add(data.len() as u64, Ordering::Relaxed);
         }
     }
 
@@ -666,7 +711,12 @@ impl ClusterBus {
     }
 
     /// Handle MEET message - add node to cluster.
-    async fn handle_meet(&self, header: &ClusterMsgHeader, _data: &[u8], link: Arc<RwLock<ClusterLink>>) {
+    async fn handle_meet(
+        &self,
+        header: &ClusterMsgHeader,
+        _data: &[u8],
+        link: Arc<RwLock<ClusterLink>>,
+    ) {
         // Extract IP from header
         let ip_str = std::str::from_utf8(&header.sender_ip)
             .unwrap_or("")
@@ -676,7 +726,9 @@ impl ClusterBus {
         let node_addr = if ip_str.is_empty() {
             addr
         } else {
-            format!("{}:{}", ip_str, header.port).parse().unwrap_or(addr)
+            format!("{}:{}", ip_str, header.port)
+                .parse()
+                .unwrap_or(addr)
         };
 
         // Add the node if not already known
@@ -709,22 +761,32 @@ impl ClusterBus {
         }
 
         let mut failed_id = [0u8; 20];
-        failed_id.copy_from_slice(&data[ClusterMsgHeader::HEADER_SIZE..ClusterMsgHeader::HEADER_SIZE + 20]);
+        failed_id.copy_from_slice(
+            &data[ClusterMsgHeader::HEADER_SIZE..ClusterMsgHeader::HEADER_SIZE + 20],
+        );
 
         if let Some(node) = self.manager.get_node(&failed_id) {
             let mut node = node.write();
             if !node.flags.fail {
                 node.flags.fail = true;
                 node.link_state = LinkState::Disconnected;
-                warn!("Node {} marked as FAIL by {}",
-                    hex_encode(&failed_id), hex_encode(&header.sender));
+                warn!(
+                    "Node {} marked as FAIL by {}",
+                    hex_encode(&failed_id),
+                    hex_encode(&header.sender)
+                );
             }
         }
     }
 
     /// Handle failover auth request.
     /// A replica is requesting to become the new master of a failed node.
-    async fn handle_failover_auth_request(&self, header: &ClusterMsgHeader, _data: &[u8], link: Arc<RwLock<ClusterLink>>) {
+    async fn handle_failover_auth_request(
+        &self,
+        header: &ClusterMsgHeader,
+        _data: &[u8],
+        link: Arc<RwLock<ClusterLink>>,
+    ) {
         // Only masters can vote for failover
         if !self.manager.is_master() {
             return;
@@ -758,7 +820,10 @@ impl ClusterBus {
         let request_epoch = header.current_epoch;
         let last_vote = self.last_vote_epoch.load(Ordering::Relaxed);
         if request_epoch <= last_vote {
-            debug!("Rejecting failover auth: already voted in epoch {}", last_vote);
+            debug!(
+                "Rejecting failover auth: already voted in epoch {}",
+                last_vote
+            );
             return;
         }
 
@@ -774,7 +839,11 @@ impl ClusterBus {
         if let Err(e) = link.send(&ack_data).await {
             warn!("Failed to send failover auth ack: {}", e);
         } else {
-            info!("Voted for {} to take over {}", hex_encode(&header.sender), hex_encode(&failed_master_id));
+            info!(
+                "Voted for {} to take over {}",
+                hex_encode(&header.sender),
+                hex_encode(&failed_master_id)
+            );
         }
     }
 
@@ -799,8 +868,12 @@ impl ClusterBus {
         let vote_count = state.votes_received.len();
         let required_votes = self.get_failover_quorum();
 
-        info!("Received failover vote from {}: {}/{} votes",
-            hex_encode(&header.sender), vote_count, required_votes);
+        info!(
+            "Received failover vote from {}: {}/{} votes",
+            hex_encode(&header.sender),
+            vote_count,
+            required_votes
+        );
 
         // Check if we have enough votes
         if vote_count >= required_votes {
@@ -843,10 +916,15 @@ impl ClusterBus {
             state.auth_epoch = new_epoch;
         }
 
-        info!("Starting failover for master {}, epoch {}", hex_encode(&failed_master_id), new_epoch);
+        info!(
+            "Starting failover for master {}, epoch {}",
+            hex_encode(&failed_master_id),
+            new_epoch
+        );
 
         // Request auth from all masters
-        self.broadcast_failover_auth_request(failed_master_id, new_epoch).await;
+        self.broadcast_failover_auth_request(failed_master_id, new_epoch)
+            .await;
     }
 
     /// Broadcast failover auth request to all masters.
@@ -873,7 +951,10 @@ impl ClusterBus {
 
     /// Execute the actual failover takeover.
     async fn execute_failover_takeover(&self, failed_master_id: &NodeId) {
-        info!("Executing failover - taking over from {}", hex_encode(failed_master_id));
+        info!(
+            "Executing failover - taking over from {}",
+            hex_encode(failed_master_id)
+        );
 
         // Execute the failover in cluster manager
         if self.manager.execute_failover(failed_master_id) {
@@ -975,10 +1056,18 @@ impl ClusterBus {
         if let Some(node) = self.manager.get_node(&self.manager.my_id()) {
             let node = node.read();
             let mut flags: u16 = 0;
-            if node.flags.master { flags |= 0x01; }
-            if node.flags.replica { flags |= 0x02; }
-            if node.flags.pfail { flags |= 0x04; }
-            if node.flags.fail { flags |= 0x08; }
+            if node.flags.master {
+                flags |= 0x01;
+            }
+            if node.flags.replica {
+                flags |= 0x02;
+            }
+            if node.flags.pfail {
+                flags |= 0x04;
+            }
+            if node.flags.fail {
+                flags |= 0x08;
+            }
             header.flags = flags;
             header.config_epoch = node.config_epoch;
 
@@ -1028,7 +1117,9 @@ impl ClusterBus {
         }
 
         self.stats.meet_sent.fetch_add(1, Ordering::Relaxed);
-        self.stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
+        self.stats
+            .bytes_sent
+            .fetch_add(data.len() as u64, Ordering::Relaxed);
 
         self.pending_links.insert(bus_addr, link.clone());
 
@@ -1051,7 +1142,9 @@ impl ClusterBus {
             link.send(&data).await?;
 
             self.stats.pings_sent.fetch_add(1, Ordering::Relaxed);
-            self.stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
+            self.stats
+                .bytes_sent
+                .fetch_add(data.len() as u64, Ordering::Relaxed);
 
             // Update ping_sent timestamp
             if let Some(node) = self.manager.get_node(node_id) {

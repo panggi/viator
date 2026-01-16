@@ -121,7 +121,7 @@ impl KeyspaceEventFlags {
                 'm' => flags.key_miss = true,
                 'd' => flags.module = true,
                 'n' => flags.new_key = true,
-                'O' => flags.overwritten = true, // Redis 8.2+
+                'O' => flags.overwritten = true,  // Redis 8.2+
                 'T' => flags.type_changed = true, // Redis 8.2+
                 'A' => flags.all = true,
                 _ => {}
@@ -133,23 +133,57 @@ impl KeyspaceEventFlags {
     /// Convert to config string
     pub fn to_config(&self) -> String {
         let mut s = String::new();
-        if self.keyspace { s.push('K'); }
-        if self.keyevent { s.push('E'); }
-        if self.generic { s.push('g'); }
-        if self.string { s.push('$'); }
-        if self.list { s.push('l'); }
-        if self.set { s.push('s'); }
-        if self.hash { s.push('h'); }
-        if self.zset { s.push('z'); }
-        if self.expired { s.push('x'); }
-        if self.evicted { s.push('e'); }
-        if self.stream { s.push('t'); }
-        if self.key_miss { s.push('m'); }
-        if self.module { s.push('d'); }
-        if self.new_key { s.push('n'); }
-        if self.overwritten { s.push('O'); }
-        if self.type_changed { s.push('T'); }
-        if self.all { s.push('A'); }
+        if self.keyspace {
+            s.push('K');
+        }
+        if self.keyevent {
+            s.push('E');
+        }
+        if self.generic {
+            s.push('g');
+        }
+        if self.string {
+            s.push('$');
+        }
+        if self.list {
+            s.push('l');
+        }
+        if self.set {
+            s.push('s');
+        }
+        if self.hash {
+            s.push('h');
+        }
+        if self.zset {
+            s.push('z');
+        }
+        if self.expired {
+            s.push('x');
+        }
+        if self.evicted {
+            s.push('e');
+        }
+        if self.stream {
+            s.push('t');
+        }
+        if self.key_miss {
+            s.push('m');
+        }
+        if self.module {
+            s.push('d');
+        }
+        if self.new_key {
+            s.push('n');
+        }
+        if self.overwritten {
+            s.push('O');
+        }
+        if self.type_changed {
+            s.push('T');
+        }
+        if self.all {
+            s.push('A');
+        }
         s
     }
 
@@ -320,8 +354,8 @@ impl Config {
     /// directive "value with spaces"
     /// ```
     pub fn load_from_file(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
-        let content = fs::read_to_string(path.as_ref())
-            .map_err(|e| ConfigError::IoError(e.to_string()))?;
+        let content =
+            fs::read_to_string(path.as_ref()).map_err(|e| ConfigError::IoError(e.to_string()))?;
         Self::parse(&content)
     }
 
@@ -341,8 +375,8 @@ impl Config {
             }
 
             // Parse directive and value
-            let (directive, value) = Self::parse_line(line)
-                .ok_or_else(|| ConfigError::ParseError {
+            let (directive, value) =
+                Self::parse_line(line).ok_or_else(|| ConfigError::ParseError {
                     line: line_num + 1,
                     message: "Invalid directive format".to_string(),
                 })?;
@@ -384,7 +418,12 @@ impl Config {
     }
 
     /// Apply a single directive to the config.
-    fn apply_directive(&mut self, directive: &str, value: &str, line: usize) -> Result<(), ConfigError> {
+    fn apply_directive(
+        &mut self,
+        directive: &str,
+        value: &str,
+        line: usize,
+    ) -> Result<(), ConfigError> {
         match directive {
             // Server
             "daemonize" => self.daemonize = parse_bool(value, line)?,
@@ -406,10 +445,12 @@ impl Config {
                     "verbose" => LogLevel::Verbose,
                     "notice" => LogLevel::Notice,
                     "warning" => LogLevel::Warning,
-                    _ => return Err(ConfigError::ParseError {
-                        line,
-                        message: format!("Invalid loglevel: {value}"),
-                    }),
+                    _ => {
+                        return Err(ConfigError::ParseError {
+                            line,
+                            message: format!("Invalid loglevel: {value}"),
+                        });
+                    }
                 };
             }
             "databases" => self.databases = parse_number(value, line)?,
@@ -431,10 +472,12 @@ impl Config {
                     "volatile_lfu" | "volatile-lfu" => MaxMemoryPolicy::VolatileLfu,
                     "volatile_random" | "volatile-random" => MaxMemoryPolicy::VolatileRandom,
                     "volatile_ttl" | "volatile-ttl" => MaxMemoryPolicy::VolatileTtl,
-                    _ => return Err(ConfigError::ParseError {
-                        line,
-                        message: format!("Invalid maxmemory-policy: {value}"),
-                    }),
+                    _ => {
+                        return Err(ConfigError::ParseError {
+                            line,
+                            message: format!("Invalid maxmemory-policy: {value}"),
+                        });
+                    }
                 };
             }
 
@@ -446,10 +489,12 @@ impl Config {
                     "always" => AppendFsync::Always,
                     "everysec" => AppendFsync::Everysec,
                     "no" => AppendFsync::No,
-                    _ => return Err(ConfigError::ParseError {
-                        line,
-                        message: format!("Invalid appendfsync: {value}"),
-                    }),
+                    _ => {
+                        return Err(ConfigError::ParseError {
+                            line,
+                            message: format!("Invalid appendfsync: {value}"),
+                        });
+                    }
                 };
             }
 
@@ -532,7 +577,10 @@ impl Config {
         lines.push(String::new());
 
         lines.push("# Server".to_string());
-        lines.push(format!("daemonize {}", if self.daemonize { "yes" } else { "no" }));
+        lines.push(format!(
+            "daemonize {}",
+            if self.daemonize { "yes" } else { "no" }
+        ));
         if let Some(ref pidfile) = self.pidfile {
             lines.push(format!("pidfile \"{}\"", pidfile.display()));
         }
@@ -561,7 +609,10 @@ impl Config {
         lines.push(String::new());
 
         lines.push("# Persistence".to_string());
-        lines.push(format!("appendonly {}", if self.appendonly { "yes" } else { "no" }));
+        lines.push(format!(
+            "appendonly {}",
+            if self.appendonly { "yes" } else { "no" }
+        ));
         lines.push(format!("appendfilename \"{}\"", self.appendfilename));
         lines.push(format!("appendfsync {:?}", self.appendfsync).to_lowercase());
         lines.push(format!("dbfilename \"{}\"", self.dbfilename));
@@ -639,10 +690,13 @@ fn parse_memory(value: &str, line: usize) -> Result<usize, ConfigError> {
         (value.as_str(), 1)
     };
 
-    let num: usize = num_str.trim().parse().map_err(|_| ConfigError::ParseError {
-        line,
-        message: format!("Invalid memory value: {value}"),
-    })?;
+    let num: usize = num_str
+        .trim()
+        .parse()
+        .map_err(|_| ConfigError::ParseError {
+            line,
+            message: format!("Invalid memory value: {value}"),
+        })?;
 
     Ok(num * multiplier)
 }

@@ -7,7 +7,7 @@ mod frame;
 mod parser;
 
 pub use frame::Frame;
-pub use parser::{parse_frame, RespParser};
+pub use parser::{RespParser, parse_frame};
 
 /// RESP protocol version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

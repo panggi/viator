@@ -91,7 +91,8 @@ impl Connection {
 
     fn execute(&mut self, args: &[&str]) -> Result<String, String> {
         let cmd = encode_command(args);
-        self.stream.write_all(&cmd)
+        self.stream
+            .write_all(&cmd)
             .map_err(|e| format!("Write error: {}", e))?;
 
         self.read_response()
@@ -107,7 +108,9 @@ impl Connection {
         let mut temp = [0u8; 4096];
 
         loop {
-            let n = self.stream.read(&mut temp)
+            let n = self
+                .stream
+                .read(&mut temp)
                 .map_err(|e| format!("Read error: {}", e))?;
 
             if n == 0 {
@@ -220,8 +223,10 @@ fn parse_array(buf: &[u8]) -> Result<Option<String>, String> {
             match buf[pos] {
                 b'$' => {
                     if let Some(bulk_len_end) = find_crlf(&buf[pos..]) {
-                        let bulk_len_str = String::from_utf8_lossy(&buf[pos + 1..pos + bulk_len_end]);
-                        let bulk_len: i64 = bulk_len_str.parse().map_err(|_| "Invalid bulk length")?;
+                        let bulk_len_str =
+                            String::from_utf8_lossy(&buf[pos + 1..pos + bulk_len_end]);
+                        let bulk_len: i64 =
+                            bulk_len_str.parse().map_err(|_| "Invalid bulk length")?;
 
                         if bulk_len < 0 {
                             elements.push(format!("{}) (nil)", i + 1));
@@ -271,7 +276,10 @@ fn parse_array(buf: &[u8]) -> Result<Option<String>, String> {
                     }
                 }
                 _ => {
-                    return Err(format!("Unknown element type in array: {}", buf[pos] as char));
+                    return Err(format!(
+                        "Unknown element type in array: {}",
+                        buf[pos] as char
+                    ));
                 }
             }
         }
@@ -540,10 +548,14 @@ fn run_subscribe(config: &Config, channels: &[String]) -> Result<(), String> {
     }
 
     let cmd = encode_command(&args);
-    conn.stream.write_all(&cmd)
+    conn.stream
+        .write_all(&cmd)
         .map_err(|e| format!("Write error: {}", e))?;
 
-    println!("Subscribed to {} channel(s). Press Ctrl+C to exit.", channels.len());
+    println!(
+        "Subscribed to {} channel(s). Press Ctrl+C to exit.",
+        channels.len()
+    );
 
     // Read continuous output
     let mut temp = [0u8; 4096];
@@ -640,7 +652,8 @@ fn parse_pubsub_message(buf: &[u8]) -> Result<Option<(String, usize)>, String> {
 }
 
 fn print_help() {
-    println!("Viator CLI Commands:
+    println!(
+        "Viator CLI Commands:
 
   General:
     PING                    Test connection
@@ -684,11 +697,13 @@ fn print_help() {
     ZSCORE <key> <member>   Get score
 
   Type 'quit' or 'exit' to close the connection.
-");
+"
+    );
 }
 
 fn print_usage() {
-    println!("Usage: viator-cli [OPTIONS] [COMMAND [ARG...]]
+    println!(
+        "Usage: viator-cli [OPTIONS] [COMMAND [ARG...]]
 
 Viator command line interface - Redis 8.4.0 compatible.
 
@@ -722,7 +737,8 @@ Interactive commands:
   help      Show command help
   quit      Exit the CLI
   clear     Clear screen
-");
+"
+    );
 }
 
 fn main() {

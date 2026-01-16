@@ -82,14 +82,16 @@ impl TDigest {
 
         // Add buffer to centroids
         for &value in &self.buffer {
-            self.centroids.push(Centroid { mean: value, weight: 1.0 });
+            self.centroids.push(Centroid {
+                mean: value,
+                weight: 1.0,
+            });
         }
         self.buffer.clear();
 
         // Sort by mean
-        self.centroids.sort_by(|a, b| {
-            a.mean.partial_cmp(&b.mean).unwrap_or(Ordering::Equal)
-        });
+        self.centroids
+            .sort_by(|a, b| a.mean.partial_cmp(&b.mean).unwrap_or(Ordering::Equal));
 
         // Merge centroids
         if self.centroids.is_empty() {
@@ -129,8 +131,8 @@ impl TDigest {
 
     /// Calculate size limit for merging.
     fn size_limit(&self, q0: f64, q2: f64) -> f64 {
-        let scale = (self.compression / 2.0)
-            * (q0 * (1.0 - q0)).sqrt().min((q2 * (1.0 - q2)).sqrt());
+        let scale =
+            (self.compression / 2.0) * (q0 * (1.0 - q0)).sqrt().min((q2 * (1.0 - q2)).sqrt());
         scale.max(1.0)
     }
 
@@ -371,11 +373,7 @@ mod tests {
 
         // 90th percentile should be around 900
         let p90 = td.quantile(0.9);
-        assert!(
-            (p90 - 900.0).abs() < 50.0,
-            "p90 {} should be near 900",
-            p90
-        );
+        assert!((p90 - 900.0).abs() < 50.0, "p90 {} should be near 900", p90);
     }
 
     #[test]

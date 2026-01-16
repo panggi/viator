@@ -114,7 +114,9 @@ impl VdbChecker {
 
     fn read_byte(&mut self) -> Result<u8, String> {
         let mut buf = [0u8; 1];
-        self.reader.read_exact(&mut buf).map_err(|e| format!("Read error at {}: {}", self.position, e))?;
+        self.reader
+            .read_exact(&mut buf)
+            .map_err(|e| format!("Read error at {}: {}", self.position, e))?;
         self.crc64 = crc64_update(&self.crc64_table, self.crc64, &buf);
         self.position += 1;
         Ok(buf[0])
@@ -122,7 +124,9 @@ impl VdbChecker {
 
     fn read_bytes(&mut self, len: usize) -> Result<Vec<u8>, String> {
         let mut buf = vec![0u8; len];
-        self.reader.read_exact(&mut buf).map_err(|e| format!("Read error at {}: {}", self.position, e))?;
+        self.reader
+            .read_exact(&mut buf)
+            .map_err(|e| format!("Read error at {}: {}", self.position, e))?;
         self.crc64 = crc64_update(&self.crc64_table, self.crc64, &buf);
         self.position += len as u64;
         Ok(buf)
@@ -140,7 +144,10 @@ impl VdbChecker {
             }
             VDB_ENCVAL => {
                 // Special encoding - return the type
-                Err(format!("Unexpected ENCVAL in length at position {}", self.position))
+                Err(format!(
+                    "Unexpected ENCVAL in length at position {}",
+                    self.position
+                ))
             }
             _ => {
                 if first == VDB_32BITLEN {
@@ -148,9 +155,14 @@ impl VdbChecker {
                     Ok(u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as u64)
                 } else if first == VDB_64BITLEN {
                     let buf = self.read_bytes(8)?;
-                    Ok(u64::from_be_bytes([buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]]))
+                    Ok(u64::from_be_bytes([
+                        buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
+                    ]))
                 } else {
-                    Err(format!("Unknown length encoding {} at position {}", first, self.position))
+                    Err(format!(
+                        "Unknown length encoding {} at position {}",
+                        first, self.position
+                    ))
                 }
             }
         }
@@ -184,7 +196,10 @@ impl VdbChecker {
                     // Just validate we can read it, don't decompress
                     Ok(vec![])
                 }
-                _ => Err(format!("Unknown string encoding {} at position {}", enc_type, self.position)),
+                _ => Err(format!(
+                    "Unknown string encoding {} at position {}",
+                    enc_type, self.position
+                )),
             }
         } else {
             let len = match encoding {
@@ -199,9 +214,14 @@ impl VdbChecker {
                         u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as u64
                     } else if first == VDB_64BITLEN {
                         let buf = self.read_bytes(8)?;
-                        u64::from_be_bytes([buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]])
+                        u64::from_be_bytes([
+                            buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
+                        ])
                     } else {
-                        return Err(format!("Unknown string length {} at position {}", first, self.position));
+                        return Err(format!(
+                            "Unknown string length {} at position {}",
+                            first, self.position
+                        ));
                     }
                 }
             };
@@ -267,7 +287,10 @@ impl VdbChecker {
         let magic_str = String::from_utf8_lossy(&magic);
 
         if &magic != b"VIATR" && &magic != b"REDIS" {
-            return Err(format!("Invalid magic header: expected 'VIATR' or 'REDIS', got '{}'", magic_str));
+            return Err(format!(
+                "Invalid magic header: expected 'VIATR' or 'REDIS', got '{}'",
+                magic_str
+            ));
         }
 
         if self.verbose {
@@ -277,7 +300,9 @@ impl VdbChecker {
         // Check version
         let version_bytes = self.read_bytes(4)?;
         let version_str = String::from_utf8_lossy(&version_bytes);
-        let version: u32 = version_str.parse().map_err(|_| format!("Invalid version: {}", version_str))?;
+        let version: u32 = version_str
+            .parse()
+            .map_err(|_| format!("Invalid version: {}", version_str))?;
 
         if version > 12 {
             return Err(format!("Unsupported VDB version: {}", version));
@@ -300,9 +325,12 @@ impl VdbChecker {
                     let key = self.read_string()?;
                     let value = self.read_string()?;
                     if self.verbose {
-                        println!("[offset {}] AUX: {} = {}", offset,
-                                 String::from_utf8_lossy(&key),
-                                 String::from_utf8_lossy(&value));
+                        println!(
+                            "[offset {}] AUX: {} = {}",
+                            offset,
+                            String::from_utf8_lossy(&key),
+                            String::from_utf8_lossy(&value)
+                        );
                     }
                 }
                 VDB_OPCODE_SELECTDB => {
@@ -318,7 +346,10 @@ impl VdbChecker {
                     let db_size = self.read_length()?;
                     let expires_size = self.read_length()?;
                     if self.verbose {
-                        println!("[offset {}] DB resize: {} keys, {} expires", offset, db_size, expires_size);
+                        println!(
+                            "[offset {}] DB resize: {} keys, {} expires",
+                            offset, db_size, expires_size
+                        );
                     }
                 }
                 VDB_OPCODE_EXPIRETIME_MS => {
@@ -345,14 +376,22 @@ impl VdbChecker {
                         VDB_TYPE_STRING => self.string_keys += 1,
                         VDB_TYPE_LIST | VDB_TYPE_LIST_QUICKLIST => self.list_keys += 1,
                         VDB_TYPE_SET | VDB_TYPE_SET_INTSET => self.set_keys += 1,
-                        VDB_TYPE_ZSET | VDB_TYPE_ZSET_2 | VDB_TYPE_ZSET_ZIPLIST => self.zset_keys += 1,
-                        VDB_TYPE_HASH | VDB_TYPE_HASH_ZIPLIST | VDB_TYPE_HASH_ZIPMAP => self.hash_keys += 1,
+                        VDB_TYPE_ZSET | VDB_TYPE_ZSET_2 | VDB_TYPE_ZSET_ZIPLIST => {
+                            self.zset_keys += 1
+                        }
+                        VDB_TYPE_HASH | VDB_TYPE_HASH_ZIPLIST | VDB_TYPE_HASH_ZIPMAP => {
+                            self.hash_keys += 1
+                        }
                         _ => self.other_keys += 1,
                     }
 
                     if self.verbose {
-                        println!("[offset {}] Key '{}' (type {})", offset,
-                                 String::from_utf8_lossy(&key), value_type);
+                        println!(
+                            "[offset {}] Key '{}' (type {})",
+                            offset,
+                            String::from_utf8_lossy(&key),
+                            value_type
+                        );
                     }
                 }
             }
@@ -363,17 +402,28 @@ impl VdbChecker {
 
         // Read stored CRC without updating our computed CRC
         let mut stored_crc_bytes = [0u8; 8];
-        self.reader.read_exact(&mut stored_crc_bytes)
+        self.reader
+            .read_exact(&mut stored_crc_bytes)
             .map_err(|e| format!("Cannot read CRC64: {}", e))?;
         let stored_crc = u64::from_le_bytes(stored_crc_bytes);
 
         if stored_crc != 0 && stored_crc != computed_crc {
-            return Err(format!("CRC64 mismatch: stored={:016x}, computed={:016x}", stored_crc, computed_crc));
+            return Err(format!(
+                "CRC64 mismatch: stored={:016x}, computed={:016x}",
+                stored_crc, computed_crc
+            ));
         }
 
         if self.verbose {
-            println!("[checksum] CRC64: {:016x} ({})", computed_crc,
-                     if stored_crc == 0 { "not verified" } else { "OK" });
+            println!(
+                "[checksum] CRC64: {:016x} ({})",
+                computed_crc,
+                if stored_crc == 0 {
+                    "not verified"
+                } else {
+                    "OK"
+                }
+            );
         }
 
         Ok(())
@@ -396,7 +446,8 @@ impl VdbChecker {
 }
 
 fn print_usage() {
-    println!("Usage: viator-check-vdb [OPTIONS] <dump.vdb>
+    println!(
+        "Usage: viator-check-vdb [OPTIONS] <dump.vdb>
 
 Check the integrity of a Viator VDB dump file.
 
@@ -407,7 +458,8 @@ Options:
 Examples:
   viator-check-vdb dump.vdb
   viator-check-vdb -v /var/lib/viator/dump.vdb
-");
+"
+    );
 }
 
 fn main() {
@@ -448,9 +500,7 @@ fn main() {
     }
 
     // Get file size
-    let file_size = std::fs::metadata(&path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
 
     println!("Checking VDB file: {}", path.display());
     println!("File size: {} bytes", file_size);

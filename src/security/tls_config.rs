@@ -25,9 +25,9 @@ use std::sync::Arc;
 
 #[cfg(feature = "tls")]
 use tokio_rustls::rustls::{
+    RootCertStore, ServerConfig,
     pki_types::{CertificateDer, PrivateKeyDer},
     server::WebPkiClientVerifier,
-    RootCertStore, ServerConfig,
 };
 
 /// TLS configuration options.
@@ -144,12 +144,11 @@ impl TlsConfig {
                 .map_err(|e| TlsError::Configuration(e.to_string()))?,
 
             TlsAuthClients::Optional | TlsAuthClients::Required => {
-                let ca_cert_file = self
-                    .ca_cert_file
-                    .as_ref()
-                    .ok_or_else(|| TlsError::Configuration(
+                let ca_cert_file = self.ca_cert_file.as_ref().ok_or_else(|| {
+                    TlsError::Configuration(
                         "ca_cert_file is required for client authentication".into(),
-                    ))?;
+                    )
+                })?;
 
                 let mut root_store = RootCertStore::empty();
                 let ca_certs = load_certs(ca_cert_file)?;
@@ -183,9 +182,8 @@ impl TlsConfig {
 
 #[cfg(feature = "tls")]
 fn load_certs(path: &str) -> Result<Vec<CertificateDer<'static>>, TlsError> {
-    let file = File::open(path).map_err(|e| {
-        TlsError::CertificateLoad(format!("cannot open {path}: {e}"))
-    })?;
+    let file = File::open(path)
+        .map_err(|e| TlsError::CertificateLoad(format!("cannot open {path}: {e}")))?;
     let mut reader = BufReader::new(file);
 
     rustls_pemfile::certs(&mut reader)
@@ -195,9 +193,8 @@ fn load_certs(path: &str) -> Result<Vec<CertificateDer<'static>>, TlsError> {
 
 #[cfg(feature = "tls")]
 fn load_private_key(path: &str) -> Result<PrivateKeyDer<'static>, TlsError> {
-    let file = File::open(path).map_err(|e| {
-        TlsError::PrivateKeyLoad(format!("cannot open {path}: {e}"))
-    })?;
+    let file = File::open(path)
+        .map_err(|e| TlsError::PrivateKeyLoad(format!("cannot open {path}: {e}")))?;
     let mut reader = BufReader::new(file);
 
     // Try to read as PKCS#8 first, then RSA, then EC

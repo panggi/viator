@@ -10,11 +10,11 @@
 //! OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 viator --port 6379
 //! ```
 
-use opentelemetry::trace::TracerProvider;
 use opentelemetry::KeyValue;
-use opentelemetry_sdk::{runtime, Resource};
+use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::WithExportConfig;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use opentelemetry_sdk::{Resource, runtime};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Initialize OpenTelemetry tracing.
 ///
@@ -50,8 +50,7 @@ pub fn init_telemetry() -> Result<(), Box<dyn std::error::Error + Send + Sync>> 
     let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
     // Set up the subscriber with both fmt and telemetry layers
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     tracing_subscriber::registry()
         .with(filter)
@@ -81,7 +80,8 @@ impl Drop for TelemetryGuard {
 /// # Errors
 ///
 /// Returns an error if telemetry initialization fails.
-pub fn init_telemetry_with_guard() -> Result<TelemetryGuard, Box<dyn std::error::Error + Send + Sync>> {
+pub fn init_telemetry_with_guard()
+-> Result<TelemetryGuard, Box<dyn std::error::Error + Send + Sync>> {
     init_telemetry()?;
     Ok(TelemetryGuard)
 }

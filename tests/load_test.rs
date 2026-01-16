@@ -2,8 +2,8 @@
 //!
 //! These tests verify behavior under extreme conditions.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -14,8 +14,14 @@ mod resp {
     use bytes::BytesMut;
 
     pub fn set_cmd(key: &str, value: &str) -> Vec<u8> {
-        format!("*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n${}\r\n{}\r\n", 
-            key.len(), key, value.len(), value).into_bytes()
+        format!(
+            "*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
+            key.len(),
+            key,
+            value.len(),
+            value
+        )
+        .into_bytes()
     }
 
     pub fn get_cmd(key: &str) -> Vec<u8> {
@@ -90,7 +96,7 @@ async fn run_connection_workload(
 ) -> anyhow::Result<()> {
     let addr = format!("{}:{}", config.host, config.port);
     let mut stream = TcpStream::connect(&addr).await?;
-    
+
     // Wait for all connections to be ready
     barrier.wait().await;
 
@@ -99,7 +105,7 @@ async fn run_connection_workload(
 
     for i in 0..config.requests_per_conn {
         let key = format!("key:{}:{}", conn_id, i);
-        
+
         // Build pipeline
         let mut cmds = Vec::with_capacity(config.pipeline_depth * 2);
         for j in 0..config.pipeline_depth {
@@ -108,15 +114,21 @@ async fn run_connection_workload(
             cmds.push(resp::get_cmd(&pkey));
         }
         let pipeline = resp::pipeline(&cmds);
-        
+
         // Send
-        results.total_bytes_sent.fetch_add(pipeline.len() as u64, Ordering::Relaxed);
+        results
+            .total_bytes_sent
+            .fetch_add(pipeline.len() as u64, Ordering::Relaxed);
         stream.write_all(&pipeline).await?;
-        
+
         // Read responses (simplified - just drain the buffer)
         let n = stream.read(&mut read_buf).await?;
-        results.total_bytes_received.fetch_add(n as u64, Ordering::Relaxed);
-        results.successful_requests.fetch_add((config.pipeline_depth * 2) as u64, Ordering::Relaxed);
+        results
+            .total_bytes_received
+            .fetch_add(n as u64, Ordering::Relaxed);
+        results
+            .successful_requests
+            .fetch_add((config.pipeline_depth * 2) as u64, Ordering::Relaxed);
     }
 
     Ok(())
@@ -135,7 +147,10 @@ async fn high_throughput_test() {
     };
 
     let results = Arc::new(LoadTestResults {
-        total_requests: (config.num_connections * config.requests_per_conn * config.pipeline_depth * 2) as u64,
+        total_requests: (config.num_connections
+            * config.requests_per_conn
+            * config.pipeline_depth
+            * 2) as u64,
         ..Default::default()
     });
 
@@ -149,7 +164,9 @@ async fn high_throughput_test() {
             let barrier = barrier.clone();
             let results = results.clone();
             tokio::spawn(async move {
-                if let Err(e) = run_connection_workload(&config_ref, conn_id, barrier, results).await {
+                if let Err(e) =
+                    run_connection_workload(&config_ref, conn_id, barrier, results).await
+                {
                     eprintln!("Connection {} error: {}", conn_id, e);
                 }
             })
@@ -162,7 +179,7 @@ async fn high_throughput_test() {
     }
 
     let duration = start.elapsed();
-    
+
     println!("\n=== High Throughput Test Results ===");
     println!("Connections: {}", config.num_connections);
     println!("Requests/conn: {}", config.requests_per_conn);
@@ -170,9 +187,11 @@ async fn high_throughput_test() {
     println!("Duration: {:?}", duration);
     println!("Ops/sec: {:.0}", results.ops_per_second());
     println!("Throughput: {:.2} MB/s", results.throughput_mbps());
-    println!("Success rate: {:.2}%", 
-        results.successful_requests.load(Ordering::Relaxed) as f64 / 
-        results.total_requests as f64 * 100.0);
+    println!(
+        "Success rate: {:.2}%",
+        results.successful_requests.load(Ordering::Relaxed) as f64 / results.total_requests as f64
+            * 100.0
+    );
 }
 
 /// Connection storm test - many connections opening/closing rapidly
@@ -184,13 +203,13 @@ async fn connection_storm_test() {
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(6379);
-    
+
     let num_iterations = 1000;
     let concurrent_connections = 100;
-    
+
     let successful = Arc::new(AtomicU64::new(0));
     let failed = Arc::new(AtomicU64::new(0));
-    
+
     let start = Instant::now();
 
     for _ in 0..num_iterations {
@@ -228,16 +247,25 @@ async fn connection_storm_test() {
     let duration = start.elapsed();
     let total = num_iterations * concurrent_connections;
     let success = successful.load(Ordering::Relaxed);
-    
+
     println!("\n=== Connection Storm Test Results ===");
     println!("Total connections: {}", total);
     println!("Successful: {}", success);
     println!("Failed: {}", failed.load(Ordering::Relaxed));
     println!("Duration: {:?}", duration);
-    println!("Connections/sec: {:.0}", total as f64 / duration.as_secs_f64());
-    println!("Success rate: {:.2}%", success as f64 / total as f64 * 100.0);
-    
-    assert!(success as f64 / total as f64 > 0.99, "Success rate too low!");
+    println!(
+        "Connections/sec: {:.0}",
+        total as f64 / duration.as_secs_f64()
+    );
+    println!(
+        "Success rate: {:.2}%",
+        success as f64 / total as f64 * 100.0
+    );
+
+    assert!(
+        success as f64 / total as f64 > 0.99,
+        "Success rate too low!"
+    );
 }
 
 /// Large value test - test with MB-sized values
@@ -249,48 +277,52 @@ async fn large_value_test() {
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(6379);
-    
+
     let addr = format!("{}:{}", host, port);
     let mut stream = TcpStream::connect(&addr).await.expect("Failed to connect");
-    
+
     // Test with increasingly large values
     let sizes = [1024, 10 * 1024, 100 * 1024, 1024 * 1024]; // 1KB, 10KB, 100KB, 1MB
-    
+
     for size in sizes {
         let key = format!("large_key_{}", size);
         let value = "x".repeat(size);
-        
+
         let start = Instant::now();
-        
+
         // SET
         let cmd = resp::set_cmd(&key, &value);
         stream.write_all(&cmd).await.expect("Write failed");
-        
+
         let mut buf = vec![0u8; 32];
         stream.read(&mut buf).await.expect("Read failed");
-        
+
         // GET
         let cmd = resp::get_cmd(&key);
         stream.write_all(&cmd).await.expect("Write failed");
-        
+
         let mut response = Vec::new();
         let mut total_read = 0;
         let expected_min = size + 10; // Value + RESP overhead
-        
+
         while total_read < expected_min {
             let mut chunk = vec![0u8; 64 * 1024];
             let n = stream.read(&mut chunk).await.expect("Read failed");
-            if n == 0 { break; }
+            if n == 0 {
+                break;
+            }
             response.extend_from_slice(&chunk[..n]);
             total_read += n;
         }
-        
+
         let duration = start.elapsed();
-        
-        println!("Size: {} KB, Round-trip: {:?}, Throughput: {:.2} MB/s",
+
+        println!(
+            "Size: {} KB, Round-trip: {:?}, Throughput: {:.2} MB/s",
             size / 1024,
             duration,
-            (size * 2) as f64 / 1_000_000.0 / duration.as_secs_f64());
+            (size * 2) as f64 / 1_000_000.0 / duration.as_secs_f64()
+        );
     }
 }
 
@@ -303,19 +335,22 @@ async fn memory_pressure_test() {
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(6379);
-    
+
     let addr = format!("{}:{}", host, port);
     let mut stream = TcpStream::connect(&addr).await.expect("Failed to connect");
-    
+
     let num_keys = 100_000;
     let value_size = 256;
     let value = "x".repeat(value_size);
-    
-    println!("Inserting {} keys with {} byte values...", num_keys, value_size);
-    
+
+    println!(
+        "Inserting {} keys with {} byte values...",
+        num_keys, value_size
+    );
+
     let start = Instant::now();
     let mut read_buf = vec![0u8; 4096];
-    
+
     // Use pipelining for efficiency
     let pipeline_size = 100;
     for batch in 0..(num_keys / pipeline_size) {
@@ -326,23 +361,23 @@ async fn memory_pressure_test() {
         }
         let pipeline = resp::pipeline(&cmds);
         stream.write_all(&pipeline).await.expect("Write failed");
-        
+
         // Drain responses
         for _ in 0..pipeline_size {
             stream.read(&mut read_buf).await.ok();
         }
-        
+
         if batch % 100 == 0 {
             println!("Progress: {}/{} batches", batch, num_keys / pipeline_size);
         }
     }
-    
+
     let insert_duration = start.elapsed();
-    
+
     // Now measure read performance under memory pressure
     let read_start = Instant::now();
     let num_reads = 10_000;
-    
+
     for i in 0..num_reads {
         let batch = i % (num_keys / pipeline_size);
         let idx = i % pipeline_size;
@@ -351,14 +386,23 @@ async fn memory_pressure_test() {
         stream.write_all(&cmd).await.expect("Write failed");
         stream.read(&mut read_buf).await.ok();
     }
-    
+
     let read_duration = read_start.elapsed();
-    
+
     println!("\n=== Memory Pressure Test Results ===");
     println!("Keys inserted: {}", num_keys);
-    println!("Estimated memory: {} MB", (num_keys * (value_size + 32)) / 1_000_000);
+    println!(
+        "Estimated memory: {} MB",
+        (num_keys * (value_size + 32)) / 1_000_000
+    );
     println!("Insert duration: {:?}", insert_duration);
-    println!("Insert rate: {:.0} keys/sec", num_keys as f64 / insert_duration.as_secs_f64());
+    println!(
+        "Insert rate: {:.0} keys/sec",
+        num_keys as f64 / insert_duration.as_secs_f64()
+    );
     println!("Read duration ({}): {:?}", num_reads, read_duration);
-    println!("Read rate: {:.0} ops/sec", num_reads as f64 / read_duration.as_secs_f64());
+    println!(
+        "Read rate: {:.0} ops/sec",
+        num_reads as f64 / read_duration.as_secs_f64()
+    );
 }

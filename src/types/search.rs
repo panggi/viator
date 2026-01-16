@@ -18,8 +18,8 @@
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A search index.
 #[derive(Debug)]
@@ -161,7 +161,8 @@ impl PostingList {
 
     fn add(&mut self, doc_id: &str, positions: Vec<u32>) {
         self.docs.insert(doc_id.to_string());
-        self.term_freq.insert(doc_id.to_string(), positions.len() as u32);
+        self.term_freq
+            .insert(doc_id.to_string(), positions.len() as u32);
         self.positions.insert(doc_id.to_string(), positions);
     }
 
@@ -372,7 +373,8 @@ impl SearchIndex {
                                 .add(doc_id, positions);
                         }
 
-                        self.total_terms.fetch_add(terms.len() as u64, Ordering::Relaxed);
+                        self.total_terms
+                            .fetch_add(terms.len() as u64, Ordering::Relaxed);
                     }
                     (FieldType::Numeric, FieldValue::Numeric(n)) => {
                         let key = field_name.clone();
@@ -384,7 +386,8 @@ impl SearchIndex {
                             .insert(doc_id.to_string());
                     }
                     (FieldType::Tag, FieldValue::Tag(tags)) => {
-                        let field_tags = self.tag_index
+                        let field_tags = self
+                            .tag_index
                             .entry(field_name.clone())
                             .or_insert_with(DashMap::new);
                         for tag in tags {
@@ -482,10 +485,13 @@ impl SearchIndex {
             .into_iter()
             .filter_map(|(doc_id, score)| {
                 self.documents.get(&doc_id).map(|doc| {
-                    let fields: HashMap<String, String> = doc.fields
+                    let fields: HashMap<String, String> = doc
+                        .fields
                         .iter()
                         .filter(|(name, _)| {
-                            query.return_fields.as_ref()
+                            query
+                                .return_fields
+                                .as_ref()
                                 .map(|rf| rf.contains(*name))
                                 .unwrap_or(true)
                         })
@@ -530,9 +536,7 @@ impl SearchIndex {
                             // Intersection with score addition
                             existing
                                 .into_iter()
-                                .filter_map(|(id, score)| {
-                                    matches.get(&id).map(|s| (id, score + s))
-                                })
+                                .filter_map(|(id, score)| matches.get(&id).map(|s| (id, score + s)))
                                 .collect()
                         }
                     });
@@ -582,7 +586,8 @@ impl SearchIndex {
         let fields: Vec<&str> = if let Some(f) = field {
             vec![f]
         } else {
-            self.schema.fields
+            self.schema
+                .fields
                 .iter()
                 .filter(|f| f.field_type == FieldType::Text)
                 .map(|f| f.name.as_str())
@@ -592,13 +597,17 @@ impl SearchIndex {
         for field_name in fields {
             let key = format!("{}:{}", field_name, term_lower);
             if let Some(posting) = self.inverted_index.get(&key) {
-                let weight = self.schema.get_field(field_name)
+                let weight = self
+                    .schema
+                    .get_field(field_name)
                     .map(|f| f.weight)
                     .unwrap_or(1.0);
 
                 for doc_id in posting.docs.iter() {
                     let tf = posting.term_freq.get(doc_id).copied().unwrap_or(1) as f64;
-                    let doc_len = self.documents.get(doc_id)
+                    let doc_len = self
+                        .documents
+                        .get(doc_id)
                         .map(|d| d.length as f64)
                         .unwrap_or(1.0);
                     let avg_len = *self.avg_doc_length.read();
@@ -609,7 +618,8 @@ impl SearchIndex {
                     let k1 = 1.2;
                     let b = 0.75;
                     let idf = ((doc_count - df + 0.5) / (df + 0.5) + 1.0).ln();
-                    let tf_norm = (tf * (k1 + 1.0)) / (tf + k1 * (1.0 - b + b * doc_len / avg_len.max(1.0)));
+                    let tf_norm =
+                        (tf * (k1 + 1.0)) / (tf + k1 * (1.0 - b + b * doc_len / avg_len.max(1.0)));
                     let score = idf * tf_norm * weight;
 
                     *results.entry(doc_id.clone()).or_insert(0.0) += score;
@@ -681,7 +691,12 @@ impl SearchIndex {
     }
 
     /// Search numeric range.
-    fn search_numeric_range(&self, field: &str, min: Option<f64>, max: Option<f64>) -> HashMap<String, f64> {
+    fn search_numeric_range(
+        &self,
+        field: &str,
+        min: Option<f64>,
+        max: Option<f64>,
+    ) -> HashMap<String, f64> {
         let mut results = HashMap::new();
 
         if let Some(index) = self.numeric_index.get(field) {
@@ -783,10 +798,9 @@ fn tokenize(text: &str, stopwords: &HashSet<String>) -> Vec<String> {
 /// Default English stopwords.
 fn default_stopwords() -> HashSet<String> {
     [
-        "a", "an", "and", "are", "as", "at", "be", "but", "by", "for",
-        "if", "in", "into", "is", "it", "no", "not", "of", "on", "or",
-        "such", "that", "the", "their", "then", "there", "these", "they",
-        "this", "to", "was", "will", "with",
+        "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "if", "in", "into", "is",
+        "it", "no", "not", "of", "on", "or", "such", "that", "the", "their", "then", "there",
+        "these", "they", "this", "to", "was", "will", "with",
     ]
     .iter()
     .map(|&s| s.to_string())
@@ -795,10 +809,7 @@ fn default_stopwords() -> HashSet<String> {
 
 /// Parse a simple query string into a query tree.
 pub fn parse_query(query: &str) -> QueryNode {
-    let terms: Vec<String> = query
-        .split_whitespace()
-        .map(|s| s.to_lowercase())
-        .collect();
+    let terms: Vec<String> = query.split_whitespace().map(|s| s.to_lowercase()).collect();
 
     if terms.is_empty() {
         return QueryNode::Term(String::new());
@@ -807,7 +818,7 @@ pub fn parse_query(query: &str) -> QueryNode {
     if terms.len() == 1 {
         let term = &terms[0];
         if term.ends_with('*') {
-            return QueryNode::Prefix(term[..term.len()-1].to_string());
+            return QueryNode::Prefix(term[..term.len() - 1].to_string());
         }
         return QueryNode::Term(term.clone());
     }
@@ -818,12 +829,12 @@ pub fn parse_query(query: &str) -> QueryNode {
             .into_iter()
             .map(|t| {
                 if t.ends_with('*') {
-                    QueryNode::Prefix(t[..t.len()-1].to_string())
+                    QueryNode::Prefix(t[..t.len() - 1].to_string())
                 } else {
                     QueryNode::Term(t)
                 }
             })
-            .collect()
+            .collect(),
     )
 }
 
@@ -844,7 +855,12 @@ impl SearchManager {
     }
 
     /// Create a new index.
-    pub fn create_index(&self, name: &str, schema: IndexSchema, options: IndexOptions) -> Result<(), SearchError> {
+    pub fn create_index(
+        &self,
+        name: &str,
+        schema: IndexSchema,
+        options: IndexOptions,
+    ) -> Result<(), SearchError> {
         if self.indexes.contains_key(name) {
             return Err(SearchError::IndexExists(name.to_string()));
         }
@@ -928,13 +944,25 @@ mod tests {
 
         // Add documents
         let mut fields1 = HashMap::new();
-        fields1.insert("title".to_string(), FieldValue::Text("Hello World".to_string()));
-        fields1.insert("body".to_string(), FieldValue::Text("This is a test document.".to_string()));
+        fields1.insert(
+            "title".to_string(),
+            FieldValue::Text("Hello World".to_string()),
+        );
+        fields1.insert(
+            "body".to_string(),
+            FieldValue::Text("This is a test document.".to_string()),
+        );
         index.add_document("doc:1", 1.0, fields1);
 
         let mut fields2 = HashMap::new();
-        fields2.insert("title".to_string(), FieldValue::Text("Another Document".to_string()));
-        fields2.insert("body".to_string(), FieldValue::Text("Hello from another doc.".to_string()));
+        fields2.insert(
+            "title".to_string(),
+            FieldValue::Text("Another Document".to_string()),
+        );
+        fields2.insert(
+            "body".to_string(),
+            FieldValue::Text("Hello from another doc.".to_string()),
+        );
         index.add_document("doc:2", 1.0, fields2);
 
         assert_eq!(index.doc_count(), 2);

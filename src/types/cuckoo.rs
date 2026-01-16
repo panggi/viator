@@ -104,7 +104,12 @@ impl CuckooFilter {
 
     /// Create from Redis BF.RESERVE parameters.
     #[must_use]
-    pub fn reserve(capacity: usize, bucket_size: Option<usize>, max_iterations: Option<usize>, expansion: Option<u16>) -> Self {
+    pub fn reserve(
+        capacity: usize,
+        bucket_size: Option<usize>,
+        max_iterations: Option<usize>,
+        expansion: Option<u16>,
+    ) -> Self {
         let bucket_size = bucket_size.unwrap_or(2);
         let num_buckets = ((capacity / bucket_size) + 1).next_power_of_two();
         let buckets = (0..num_buckets).map(|_| Bucket::new(bucket_size)).collect();

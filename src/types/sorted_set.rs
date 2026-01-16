@@ -287,10 +287,7 @@ impl SortedSet {
 
     /// Get reverse range by rank (ZREVRANGE).
     pub fn rev_range(&self, start: i64, stop: i64) -> Vec<SortedSetEntry> {
-        let mut result = self.range(
-            -(stop + 1),
-            if start == 0 { -1 } else { -(start + 1) },
-        );
+        let mut result = self.range(-(stop + 1), if start == 0 { -1 } else { -(start + 1) });
         result.reverse();
         result
     }
@@ -580,8 +577,7 @@ mod tests {
         assert_eq!(range.len(), 1);
         assert_eq!(range[0].member, Bytes::from("b"));
 
-        let range =
-            zset.range_by_score(ScoreBound::Exclusive(1.0), ScoreBound::PosInf, 0, None);
+        let range = zset.range_by_score(ScoreBound::Exclusive(1.0), ScoreBound::PosInf, 0, None);
         assert_eq!(range.len(), 2);
     }
 

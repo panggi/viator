@@ -3,12 +3,12 @@
 //! Redis Stack compatible BF.* commands.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
 use crate::types::ScalingBloomFilter;
-use crate::Result;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -83,10 +83,7 @@ pub fn cmd_bf_exists(
         let item = &cmd.args[1];
 
         let filters = BLOOM_FILTERS.read();
-        let exists = filters
-            .get(&key)
-            .map(|f| f.contains(item))
-            .unwrap_or(false);
+        let exists = filters.get(&key).map(|f| f.contains(item)).unwrap_or(false);
 
         Ok(Frame::Integer(if exists { 1 } else { 0 }))
     })
@@ -128,7 +125,10 @@ pub fn cmd_bf_reserve(
     Box::pin(async move {
         cmd.require_args(3)?;
         let key = cmd.args[0].to_vec();
-        let error_rate: f64 = cmd.get_str(1)?.parse().map_err(|_| CommandError::NotFloat)?;
+        let error_rate: f64 = cmd
+            .get_str(1)?
+            .parse()
+            .map_err(|_| CommandError::NotFloat)?;
         let capacity: usize = cmd.get_u64(2)? as usize;
 
         // Parse optional arguments
@@ -156,7 +156,10 @@ pub fn cmd_bf_reserve(
             return Err(CommandError::KeyExists.into());
         }
 
-        filters.insert(key, ScalingBloomFilter::new(capacity, error_rate, expansion));
+        filters.insert(
+            key,
+            ScalingBloomFilter::new(capacity, error_rate, expansion),
+        );
         Ok(Frame::ok())
     })
 }
@@ -237,7 +240,10 @@ pub fn cmd_bf_insert(
                 }
                 "ERROR" => {
                     i += 1;
-                    error_rate = cmd.get_str(i)?.parse().map_err(|_| CommandError::NotFloat)?;
+                    error_rate = cmd
+                        .get_str(i)?
+                        .parse()
+                        .map_err(|_| CommandError::NotFloat)?;
                 }
                 "EXPANSION" => {
                     i += 1;

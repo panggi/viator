@@ -1,12 +1,12 @@
 //! List command implementations.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
-use crate::types::{Key, ViatorValue, ValueType};
-use crate::Result;
+use crate::types::{Key, ValueType, ViatorValue};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -384,7 +384,13 @@ pub fn cmd_lpos(
 
         let value = match db.get_typed(&key, ValueType::List)? {
             Some(v) => v,
-            None => return Ok(if count.is_some() { Frame::Array(vec![]) } else { Frame::Null }),
+            None => {
+                return Ok(if count.is_some() {
+                    Frame::Array(vec![])
+                } else {
+                    Frame::Null
+                });
+            }
         };
 
         let list = value.as_list().unwrap().read();
@@ -437,7 +443,9 @@ pub fn cmd_lpos(
 
         if count.is_some() {
             // Return array of positions
-            Ok(Frame::Array(positions.into_iter().map(Frame::Integer).collect()))
+            Ok(Frame::Array(
+                positions.into_iter().map(Frame::Integer).collect(),
+            ))
         } else {
             // Return single position or null
             match positions.first() {

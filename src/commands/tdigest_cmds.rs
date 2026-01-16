@@ -3,12 +3,12 @@
 //! Redis Stack compatible TDIGEST.* commands.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
 use crate::types::TDigest;
-use crate::Result;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -37,7 +37,10 @@ pub fn cmd_tdigest_create(
             let opt = cmd.get_str(i)?.to_uppercase();
             if opt == "COMPRESSION" {
                 i += 1;
-                compression = cmd.get_str(i)?.parse().map_err(|_| CommandError::NotFloat)?;
+                compression = cmd
+                    .get_str(i)?
+                    .parse()
+                    .map_err(|_| CommandError::NotFloat)?;
             }
             i += 1;
         }
@@ -83,10 +86,15 @@ pub fn cmd_tdigest_add(
         let key = cmd.args[0].to_vec();
 
         let mut digests = TDIGESTS.write();
-        let digest = digests.entry(key).or_insert_with(TDigest::default_compression);
+        let digest = digests
+            .entry(key)
+            .or_insert_with(TDigest::default_compression);
 
         for i in 1..cmd.args.len() {
-            let value: f64 = cmd.get_str(i)?.parse().map_err(|_| CommandError::NotFloat)?;
+            let value: f64 = cmd
+                .get_str(i)?
+                .parse()
+                .map_err(|_| CommandError::NotFloat)?;
             digest.add(value);
         }
 
@@ -115,7 +123,11 @@ pub fn cmd_tdigest_merge(
             match opt.as_str() {
                 "COMPRESSION" => {
                     i += 1;
-                    compression = Some(cmd.get_str(i)?.parse().map_err(|_| CommandError::NotFloat)?);
+                    compression = Some(
+                        cmd.get_str(i)?
+                            .parse()
+                            .map_err(|_| CommandError::NotFloat)?,
+                    );
                 }
                 "OVERRIDE" => {
                     // OVERRIDE flag (ignored - we always override)
@@ -154,7 +166,9 @@ pub fn cmd_tdigest_merge(
 
         // Create destination with specified compression or default
         let comp = compression.unwrap_or(100.0);
-        let dest = digests.entry(dest_key).or_insert_with(|| TDigest::new(comp));
+        let dest = digests
+            .entry(dest_key)
+            .or_insert_with(|| TDigest::new(comp));
 
         // Merge the cloned sources
         for source in &sources {
@@ -273,8 +287,14 @@ pub fn cmd_tdigest_trimmed_mean(
     Box::pin(async move {
         cmd.require_exact_args(3)?;
         let key = cmd.args[0].to_vec();
-        let low: f64 = cmd.get_str(1)?.parse().map_err(|_| CommandError::NotFloat)?;
-        let high: f64 = cmd.get_str(2)?.parse().map_err(|_| CommandError::NotFloat)?;
+        let low: f64 = cmd
+            .get_str(1)?
+            .parse()
+            .map_err(|_| CommandError::NotFloat)?;
+        let high: f64 = cmd
+            .get_str(2)?
+            .parse()
+            .map_err(|_| CommandError::NotFloat)?;
 
         let digests = TDIGESTS.read();
         let digest = digests.get(&key).ok_or(CommandError::NoSuchKey)?;
@@ -400,7 +420,11 @@ pub fn cmd_tdigest_byrevrank(
                     .ok()
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(0.0);
-                let q = if total > 0.0 { 1.0 - (rank / total) } else { 1.0 };
+                let q = if total > 0.0 {
+                    1.0 - (rank / total)
+                } else {
+                    1.0
+                };
                 let value = digest.quantile(q);
                 Frame::Bulk(format!("{}", value).into())
             })

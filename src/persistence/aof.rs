@@ -75,7 +75,8 @@ impl AofWriter {
     pub fn append(&mut self, command: &[u8]) -> Result<(), StorageError> {
         self.writer.write_all(command).map_err(StorageError::Io)?;
         self.bytes_since_fsync += command.len() as u64;
-        self.total_bytes.fetch_add(command.len() as u64, Ordering::Relaxed);
+        self.total_bytes
+            .fetch_add(command.len() as u64, Ordering::Relaxed);
         self.needs_fsync.store(true, Ordering::Relaxed);
 
         // Handle fsync based on policy
@@ -119,7 +120,10 @@ impl AofWriter {
     pub fn fsync(&mut self) -> Result<(), StorageError> {
         if self.needs_fsync.load(Ordering::Relaxed) {
             self.writer.flush().map_err(StorageError::Io)?;
-            self.writer.get_ref().sync_data().map_err(StorageError::Io)?;
+            self.writer
+                .get_ref()
+                .sync_data()
+                .map_err(StorageError::Io)?;
             self.last_fsync = Instant::now();
             self.bytes_since_fsync = 0;
             self.needs_fsync.store(false, Ordering::Relaxed);
@@ -142,17 +146,11 @@ impl AofWriter {
     /// This function uses atomic temp-file + rename pattern to ensure
     /// crash-safety. If a crash occurs during rewrite, the original
     /// AOF file remains intact.
-    pub fn rewrite_from_db<P: AsRef<Path>>(
-        path: P,
-        db: &Database,
-    ) -> Result<(), StorageError> {
+    pub fn rewrite_from_db<P: AsRef<Path>>(path: P, db: &Database) -> Result<(), StorageError> {
         let path = path.as_ref();
 
         // Create a unique temp file in the same directory (for atomic rename)
-        let temp_path = path.with_extension(format!(
-            "aof.temp.{}",
-            std::process::id()
-        ));
+        let temp_path = path.with_extension(format!("aof.temp.{}", std::process::id()));
 
         // Ensure temp file is cleaned up on error
         let result = Self::write_aof_to_file(&temp_path, db);
@@ -170,10 +168,7 @@ impl AofWriter {
     }
 
     /// Internal helper to write AOF content to a file.
-    fn write_aof_to_file<P: AsRef<Path>>(
-        path: P,
-        db: &Database,
-    ) -> Result<(), StorageError> {
+    fn write_aof_to_file<P: AsRef<Path>>(path: P, db: &Database) -> Result<(), StorageError> {
         let file = File::create(path).map_err(StorageError::Io)?;
         let mut writer = BufWriter::with_capacity(64 * 1024, file);
 
@@ -199,7 +194,10 @@ impl AofWriter {
                 match entry.value_type {
                     crate::types::ValueType::String => {
                         if let Some(value) = entry.string_value {
-                            Self::write_command(&mut writer, &["SET", &key_str, &String::from_utf8_lossy(&value)])?;
+                            Self::write_command(
+                                &mut writer,
+                                &["SET", &key_str, &String::from_utf8_lossy(&value)],
+                            )?;
                         }
                     }
                     crate::types::ValueType::List => {
@@ -295,10 +293,7 @@ impl AofWriter {
 
                 // Set expiry if needed
                 if let crate::types::Expiry::At(ts) = entry.expiry {
-                    Self::write_command(
-                        &mut writer,
-                        &["PEXPIREAT", &key_str, &ts.to_string()],
-                    )?;
+                    Self::write_command(&mut writer, &["PEXPIREAT", &key_str, &ts.to_string()])?;
                 }
             }
         }
@@ -316,8 +311,7 @@ impl AofWriter {
 
         // Each argument as bulk string
         for arg in args {
-            write!(writer, "${}\r\n{}\r\n", arg.len(), arg)
-                .map_err(|e| StorageError::Io(e))?;
+            write!(writer, "${}\r\n{}\r\n", arg.len(), arg).map_err(|e| StorageError::Io(e))?;
         }
 
         Ok(())
@@ -344,7 +338,9 @@ impl AofReader {
         }
 
         // Skip any whitespace/newlines
-        while self.pos < self.data.len() && (self.data[self.pos] == b'\r' || self.data[self.pos] == b'\n') {
+        while self.pos < self.data.len()
+            && (self.data[self.pos] == b'\r' || self.data[self.pos] == b'\n')
+        {
             self.pos += 1;
         }
 
@@ -386,7 +382,9 @@ impl AofReader {
             if self.pos + str_len > self.data.len() {
                 return Err(StorageError::Corrupted("Unexpected end of AOF".to_string()));
             }
-            args.push(Bytes::copy_from_slice(&self.data[self.pos..self.pos + str_len]));
+            args.push(Bytes::copy_from_slice(
+                &self.data[self.pos..self.pos + str_len],
+            ));
             self.pos += str_len;
         }
 

@@ -3,12 +3,12 @@
 //! Redis Stack compatible TS.* commands.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
 use crate::types::{Aggregation, DuplicatePolicy, TimeSeries};
-use crate::Result;
 use bytes::Bytes;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -68,8 +68,8 @@ pub fn cmd_ts_create(
                 "DUPLICATE_POLICY" => {
                     i += 1;
                     let policy_str = cmd.get_str(i)?;
-                    duplicate_policy = DuplicatePolicy::from_str(policy_str)
-                        .ok_or(CommandError::SyntaxError)?;
+                    duplicate_policy =
+                        DuplicatePolicy::from_str(policy_str).ok_or(CommandError::SyntaxError)?;
                 }
                 "LABELS" => {
                     i += 1;
@@ -117,7 +117,10 @@ pub fn cmd_ts_add(
             cmd.get_u64(1)?
         };
 
-        let value: f64 = cmd.get_str(2)?.parse().map_err(|_| CommandError::NotFloat)?;
+        let value: f64 = cmd
+            .get_str(2)?
+            .parse()
+            .map_err(|_| CommandError::NotFloat)?;
 
         // Parse optional arguments
         let mut retention: Option<u64> = None;
@@ -198,7 +201,10 @@ pub fn cmd_ts_madd(
             } else {
                 cmd.get_u64(i + 1)?
             };
-            let value: f64 = cmd.get_str(i + 2)?.parse().map_err(|_| CommandError::NotFloat)?;
+            let value: f64 = cmd
+                .get_str(i + 2)?
+                .parse()
+                .map_err(|_| CommandError::NotFloat)?;
 
             let ts = series.entry(key).or_insert_with(TimeSeries::new);
             match ts.add(timestamp, value) {
@@ -270,12 +276,11 @@ pub fn cmd_ts_mget(
 
         for (key, ts) in series.iter() {
             if let Some(sample) = ts.get() {
-                let mut entry = vec![
-                    Frame::Bulk(Bytes::from(key.clone())),
-                ];
+                let mut entry = vec![Frame::Bulk(Bytes::from(key.clone()))];
 
                 if with_labels {
-                    let labels: Vec<Frame> = ts.labels()
+                    let labels: Vec<Frame> = ts
+                        .labels()
                         .iter()
                         .flat_map(|(k, v)| vec![Frame::Bulk(k.clone()), Frame::Bulk(v.clone())])
                         .collect();
@@ -431,7 +436,10 @@ pub fn cmd_ts_incrby(
     Box::pin(async move {
         cmd.require_args(2)?;
         let key = cmd.args[0].to_vec();
-        let value: f64 = cmd.get_str(1)?.parse().map_err(|_| CommandError::NotFloat)?;
+        let value: f64 = cmd
+            .get_str(1)?
+            .parse()
+            .map_err(|_| CommandError::NotFloat)?;
 
         let mut series = TIMESERIES.write();
         let ts = series.entry(key).or_insert_with(TimeSeries::new);
@@ -453,7 +461,10 @@ pub fn cmd_ts_decrby(
     Box::pin(async move {
         cmd.require_args(2)?;
         let key = cmd.args[0].to_vec();
-        let value: f64 = cmd.get_str(1)?.parse().map_err(|_| CommandError::NotFloat)?;
+        let value: f64 = cmd
+            .get_str(1)?
+            .parse()
+            .map_err(|_| CommandError::NotFloat)?;
 
         let mut series = TIMESERIES.write();
         let ts = series.entry(key).or_insert_with(TimeSeries::new);
@@ -501,7 +512,8 @@ pub fn cmd_ts_info(
         let ts = series.get(&key).ok_or(CommandError::NoSuchKey)?;
 
         let info = ts.info();
-        let labels: Vec<Frame> = info.labels
+        let labels: Vec<Frame> = info
+            .labels
             .iter()
             .flat_map(|(k, v)| vec![Frame::Bulk(k.clone()), Frame::Bulk(v.clone())])
             .collect();
@@ -603,8 +615,8 @@ pub fn cmd_ts_createrule(
             return Err(CommandError::SyntaxError.into());
         }
 
-        let aggregation = Aggregation::from_str(cmd.get_str(3)?)
-            .ok_or(CommandError::SyntaxError)?;
+        let aggregation =
+            Aggregation::from_str(cmd.get_str(3)?).ok_or(CommandError::SyntaxError)?;
         let bucket_duration = cmd.get_u64(4)?;
 
         let align_timestamp = if cmd.args.len() > 5 {
@@ -769,7 +781,8 @@ pub fn cmd_ts_mrange(
                 let mut entry = vec![Frame::Bulk(Bytes::from(key.clone()))];
 
                 if with_labels {
-                    let labels: Vec<Frame> = ts.labels()
+                    let labels: Vec<Frame> = ts
+                        .labels()
                         .iter()
                         .flat_map(|(k, v)| vec![Frame::Bulk(k.clone()), Frame::Bulk(v.clone())])
                         .collect();
@@ -780,10 +793,12 @@ pub fn cmd_ts_mrange(
 
                 let sample_frames: Vec<Frame> = samples
                     .iter()
-                    .map(|s| Frame::Array(vec![
-                        Frame::Integer(s.timestamp as i64),
-                        Frame::Bulk(format!("{}", s.value).into()),
-                    ]))
+                    .map(|s| {
+                        Frame::Array(vec![
+                            Frame::Integer(s.timestamp as i64),
+                            Frame::Bulk(format!("{}", s.value).into()),
+                        ])
+                    })
                     .collect();
                 entry.push(Frame::Array(sample_frames));
 
@@ -872,7 +887,8 @@ pub fn cmd_ts_mrevrange(
                 let mut entry = vec![Frame::Bulk(Bytes::from(key.clone()))];
 
                 if with_labels {
-                    let labels: Vec<Frame> = ts.labels()
+                    let labels: Vec<Frame> = ts
+                        .labels()
                         .iter()
                         .flat_map(|(k, v)| vec![Frame::Bulk(k.clone()), Frame::Bulk(v.clone())])
                         .collect();
@@ -883,10 +899,12 @@ pub fn cmd_ts_mrevrange(
 
                 let sample_frames: Vec<Frame> = samples
                     .iter()
-                    .map(|s| Frame::Array(vec![
-                        Frame::Integer(s.timestamp as i64),
-                        Frame::Bulk(format!("{}", s.value).into()),
-                    ]))
+                    .map(|s| {
+                        Frame::Array(vec![
+                            Frame::Integer(s.timestamp as i64),
+                            Frame::Bulk(format!("{}", s.value).into()),
+                        ])
+                    })
                     .collect();
                 entry.push(Frame::Array(sample_frames));
 

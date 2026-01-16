@@ -10,12 +10,12 @@
 //! This is marked as a TODO for future enhancement.
 
 use super::ParsedCommand;
+use crate::Result;
 use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
 use crate::types::Key;
-use crate::Result;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;

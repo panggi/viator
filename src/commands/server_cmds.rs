@@ -2,11 +2,11 @@
 
 use super::ParsedCommand;
 use crate::protocol::Frame;
-use crate::server::metrics::{format_bytes, get_memory_usage};
 use crate::server::ClientState;
+use crate::server::metrics::{format_bytes, get_memory_usage};
 use crate::storage::Db;
 use crate::types::Key;
-use crate::{Result, REDIS_VERSION, VERSION};
+use crate::{REDIS_VERSION, Result, VERSION};
 use bytes::Bytes;
 use std::future::Future;
 use std::pin::Pin;
@@ -33,9 +33,7 @@ pub fn cmd_echo(
     _db: Arc<Db>,
     _client: Arc<ClientState>,
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
-    Box::pin(async move {
-        Ok(Frame::Bulk(cmd.args[0].clone()))
-    })
+    Box::pin(async move { Ok(Frame::Bulk(cmd.args[0].clone())) })
 }
 
 /// INFO [section]
@@ -74,19 +72,22 @@ pub fn cmd_info(
             let (used_memory, used_memory_rss) = get_memory_usage();
             info.push_str("# Memory\r\n");
             info.push_str(&format!("used_memory:{}\r\n", used_memory));
-            info.push_str(&format!("used_memory_human:{}\r\n", format_bytes(used_memory)));
+            info.push_str(&format!(
+                "used_memory_human:{}\r\n",
+                format_bytes(used_memory)
+            ));
             info.push_str(&format!("used_memory_rss:{}\r\n", used_memory_rss));
-            info.push_str(&format!("used_memory_rss_human:{}\r\n", format_bytes(used_memory_rss)));
+            info.push_str(&format!(
+                "used_memory_rss_human:{}\r\n",
+                format_bytes(used_memory_rss)
+            ));
             info.push_str("\r\n");
         }
 
         if include_all || section == Some("stats") {
             let stats = db.stats();
             info.push_str("# Stats\r\n");
-            info.push_str(&format!(
-                "total_connections_received:{}\r\n",
-                1
-            ));
+            info.push_str(&format!("total_connections_received:{}\r\n", 1));
             info.push_str(&format!(
                 "keyspace_hits:{}\r\n",
                 stats.hits.load(std::sync::atomic::Ordering::Relaxed)
@@ -97,7 +98,9 @@ pub fn cmd_info(
             ));
             info.push_str(&format!(
                 "expired_keys:{}\r\n",
-                stats.expired_keys.load(std::sync::atomic::Ordering::Relaxed)
+                stats
+                    .expired_keys
+                    .load(std::sync::atomic::Ordering::Relaxed)
             ));
             info.push_str("\r\n");
         }
@@ -107,7 +110,10 @@ pub fn cmd_info(
             info.push_str("loading:0\r\n");
             info.push_str("vdb_changes_since_last_save:0\r\n");
             info.push_str("vdb_bgsave_in_progress:0\r\n");
-            info.push_str(&format!("vdb_last_save_time:{}\r\n", chrono::Utc::now().timestamp()));
+            info.push_str(&format!(
+                "vdb_last_save_time:{}\r\n",
+                chrono::Utc::now().timestamp()
+            ));
             info.push_str("vdb_last_bgsave_status:ok\r\n");
             info.push_str("vdb_last_bgsave_time_sec:0\r\n");
             info.push_str("vdb_current_bgsave_time_sec:-1\r\n");
@@ -168,7 +174,11 @@ pub fn cmd_info(
             info.push_str("# Keyspace\r\n");
             let keys = db.len();
             if keys > 0 {
-                info.push_str(&format!("db{}:keys={},expires=0\r\n", client.db_index(), keys));
+                info.push_str(&format!(
+                    "db{}:keys={},expires=0\r\n",
+                    client.db_index(),
+                    keys
+                ));
             }
             info.push_str("\r\n");
         }
@@ -183,9 +193,7 @@ pub fn cmd_dbsize(
     db: Arc<Db>,
     _client: Arc<ClientState>,
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
-    Box::pin(async move {
-        Ok(Frame::Integer(db.len() as i64))
-    })
+    Box::pin(async move { Ok(Frame::Integer(db.len() as i64)) })
 }
 
 /// FLUSHDB [ASYNC|SYNC]
@@ -325,38 +333,36 @@ pub fn cmd_memory(
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
         if cmd.args.is_empty() {
-            return Ok(Frame::Error("ERR wrong number of arguments for 'memory' command".to_string()));
+            return Ok(Frame::Error(
+                "ERR wrong number of arguments for 'memory' command".to_string(),
+            ));
         }
 
         let subcommand = cmd.get_str(0)?.to_uppercase();
 
         match subcommand.as_str() {
-            "DOCTOR" => {
-                Ok(Frame::Bulk(Bytes::from("Sam, I have no memory problems")))
-            }
-            "HELP" => {
-                Ok(Frame::Array(vec![
-                    Frame::bulk("MEMORY DOCTOR"),
-                    Frame::bulk("MEMORY HELP"),
-                    Frame::bulk("MEMORY MALLOC-SIZE"),
-                    Frame::bulk("MEMORY PURGE"),
-                    Frame::bulk("MEMORY STATS"),
-                    Frame::bulk("MEMORY USAGE key [SAMPLES count]"),
-                ]))
-            }
+            "DOCTOR" => Ok(Frame::Bulk(Bytes::from("Sam, I have no memory problems"))),
+            "HELP" => Ok(Frame::Array(vec![
+                Frame::bulk("MEMORY DOCTOR"),
+                Frame::bulk("MEMORY HELP"),
+                Frame::bulk("MEMORY MALLOC-SIZE"),
+                Frame::bulk("MEMORY PURGE"),
+                Frame::bulk("MEMORY STATS"),
+                Frame::bulk("MEMORY USAGE key [SAMPLES count]"),
+            ])),
             "MALLOC-SIZE" => {
                 // Return a stub value
                 Ok(Frame::Integer(0))
             }
-            "PURGE" => {
-                Ok(Frame::ok())
-            }
-            "STATS" => {
-                Ok(Frame::Bulk(Bytes::from("peak.allocated:0\ntotal.allocated:0\nstartup.allocated:0\nreplication.backlog:0\nclients.slaves:0\nclients.normal:0\naof.buffer:0")))
-            }
+            "PURGE" => Ok(Frame::ok()),
+            "STATS" => Ok(Frame::Bulk(Bytes::from(
+                "peak.allocated:0\ntotal.allocated:0\nstartup.allocated:0\nreplication.backlog:0\nclients.slaves:0\nclients.normal:0\naof.buffer:0",
+            ))),
             "USAGE" => {
                 if cmd.args.len() < 2 {
-                    return Ok(Frame::Error("ERR wrong number of arguments for 'memory usage' command".to_string()));
+                    return Ok(Frame::Error(
+                        "ERR wrong number of arguments for 'memory usage' command".to_string(),
+                    ));
                 }
 
                 let key = Key::from(cmd.args[1].clone());
@@ -369,7 +375,10 @@ pub fn cmd_memory(
                     None => Ok(Frame::Null),
                 }
             }
-            _ => Ok(Frame::Error(format!("ERR Unknown subcommand or wrong number of arguments for '{}'", subcommand))),
+            _ => Ok(Frame::Error(format!(
+                "ERR Unknown subcommand or wrong number of arguments for '{}'",
+                subcommand
+            ))),
         }
     })
 }
@@ -382,7 +391,9 @@ pub fn cmd_slowlog(
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
         if cmd.args.is_empty() {
-            return Ok(Frame::Error("ERR wrong number of arguments for 'slowlog' command".to_string()));
+            return Ok(Frame::Error(
+                "ERR wrong number of arguments for 'slowlog' command".to_string(),
+            ));
         }
 
         let subcommand = cmd.get_str(0)?.to_uppercase();
@@ -392,20 +403,17 @@ pub fn cmd_slowlog(
                 // Return empty slow log
                 Ok(Frame::Array(vec![]))
             }
-            "LEN" => {
-                Ok(Frame::Integer(0))
-            }
-            "RESET" => {
-                Ok(Frame::ok())
-            }
-            "HELP" => {
-                Ok(Frame::Array(vec![
-                    Frame::bulk("SLOWLOG GET [count]"),
-                    Frame::bulk("SLOWLOG LEN"),
-                    Frame::bulk("SLOWLOG RESET"),
-                ]))
-            }
-            _ => Ok(Frame::Error(format!("ERR Unknown subcommand or wrong number of arguments for '{}'", subcommand))),
+            "LEN" => Ok(Frame::Integer(0)),
+            "RESET" => Ok(Frame::ok()),
+            "HELP" => Ok(Frame::Array(vec![
+                Frame::bulk("SLOWLOG GET [count]"),
+                Frame::bulk("SLOWLOG LEN"),
+                Frame::bulk("SLOWLOG RESET"),
+            ])),
+            _ => Ok(Frame::Error(format!(
+                "ERR Unknown subcommand or wrong number of arguments for '{}'",
+                subcommand
+            ))),
         }
     })
 }
@@ -418,7 +426,9 @@ pub fn cmd_acl(
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
         if cmd.args.is_empty() {
-            return Ok(Frame::Error("ERR wrong number of arguments for 'acl' command".to_string()));
+            return Ok(Frame::Error(
+                "ERR wrong number of arguments for 'acl' command".to_string(),
+            ));
         }
 
         let subcommand = cmd.get_str(0)?.to_uppercase();
@@ -476,12 +486,18 @@ pub fn cmd_acl(
             }
             "GETUSER" => {
                 if cmd.args.len() < 2 {
-                    return Ok(Frame::Error("ERR wrong number of arguments for 'acl getuser' command".to_string()));
+                    return Ok(Frame::Error(
+                        "ERR wrong number of arguments for 'acl getuser' command".to_string(),
+                    ));
                 }
                 // Return user info (stub for default user)
                 Ok(Frame::Array(vec![
                     Frame::bulk("flags"),
-                    Frame::Array(vec![Frame::bulk("on"), Frame::bulk("allkeys"), Frame::bulk("allcommands")]),
+                    Frame::Array(vec![
+                        Frame::bulk("on"),
+                        Frame::bulk("allkeys"),
+                        Frame::bulk("allcommands"),
+                    ]),
                     Frame::bulk("passwords"),
                     Frame::Array(vec![]),
                     Frame::bulk("commands"),
@@ -494,44 +510,37 @@ pub fn cmd_acl(
             }
             "LIST" => {
                 // Return list of users
-                Ok(Frame::Array(vec![Frame::bulk("user default on nopass ~* &* +@all")]))
+                Ok(Frame::Array(vec![Frame::bulk(
+                    "user default on nopass ~* &* +@all",
+                )]))
             }
-            "LOAD" => {
-                Ok(Frame::ok())
-            }
+            "LOAD" => Ok(Frame::ok()),
             "LOG" => {
                 // Return empty log
                 Ok(Frame::Array(vec![]))
             }
-            "SAVE" => {
-                Ok(Frame::ok())
-            }
-            "SETUSER" => {
-                Ok(Frame::ok())
-            }
-            "USERS" => {
-                Ok(Frame::Array(vec![Frame::bulk("default")]))
-            }
-            "WHOAMI" => {
-                Ok(Frame::Bulk(Bytes::from("default")))
-            }
-            "HELP" => {
-                Ok(Frame::Array(vec![
-                    Frame::bulk("ACL CAT [category]"),
-                    Frame::bulk("ACL DELUSER username [username ...]"),
-                    Frame::bulk("ACL DRYRUN username command [arg ...]"),
-                    Frame::bulk("ACL GENPASS [bits]"),
-                    Frame::bulk("ACL GETUSER username"),
-                    Frame::bulk("ACL LIST"),
-                    Frame::bulk("ACL LOAD"),
-                    Frame::bulk("ACL LOG [count|RESET]"),
-                    Frame::bulk("ACL SAVE"),
-                    Frame::bulk("ACL SETUSER username [rule [rule ...]]"),
-                    Frame::bulk("ACL USERS"),
-                    Frame::bulk("ACL WHOAMI"),
-                ]))
-            }
-            _ => Ok(Frame::Error(format!("ERR Unknown subcommand or wrong number of arguments for '{}'", subcommand))),
+            "SAVE" => Ok(Frame::ok()),
+            "SETUSER" => Ok(Frame::ok()),
+            "USERS" => Ok(Frame::Array(vec![Frame::bulk("default")])),
+            "WHOAMI" => Ok(Frame::Bulk(Bytes::from("default"))),
+            "HELP" => Ok(Frame::Array(vec![
+                Frame::bulk("ACL CAT [category]"),
+                Frame::bulk("ACL DELUSER username [username ...]"),
+                Frame::bulk("ACL DRYRUN username command [arg ...]"),
+                Frame::bulk("ACL GENPASS [bits]"),
+                Frame::bulk("ACL GETUSER username"),
+                Frame::bulk("ACL LIST"),
+                Frame::bulk("ACL LOAD"),
+                Frame::bulk("ACL LOG [count|RESET]"),
+                Frame::bulk("ACL SAVE"),
+                Frame::bulk("ACL SETUSER username [rule [rule ...]]"),
+                Frame::bulk("ACL USERS"),
+                Frame::bulk("ACL WHOAMI"),
+            ])),
+            _ => Ok(Frame::Error(format!(
+                "ERR Unknown subcommand or wrong number of arguments for '{}'",
+                subcommand
+            ))),
         }
     })
 }
@@ -572,7 +581,9 @@ pub fn cmd_bgrewriteaof(
     _client: Arc<ClientState>,
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
-        Ok(Frame::Simple("Background append only file rewriting started".to_string()))
+        Ok(Frame::Simple(
+            "Background append only file rewriting started".to_string(),
+        ))
     })
 }
 
@@ -668,7 +679,10 @@ pub fn cmd_config(
                     ("activerehashing", "yes"),
                     ("activedefrag", "no"),
                     ("protected-mode", "yes"),
-                    ("client-output-buffer-limit", "normal 0 0 0 slave 268435456 67108864 60 pubsub 33554432 8388608 60"),
+                    (
+                        "client-output-buffer-limit",
+                        "normal 0 0 0 slave 268435456 67108864 60 pubsub 33554432 8388608 60",
+                    ),
                     ("hz", "10"),
                     ("dynamic-hz", "yes"),
                     ("aof-rewrite-incremental-fsync", "yes"),
@@ -694,20 +708,14 @@ pub fn cmd_config(
                 // Stub: acknowledge the set but don't actually persist
                 Ok(Frame::ok())
             }
-            "REWRITE" => {
-                Ok(Frame::ok())
-            }
-            "RESETSTAT" => {
-                Ok(Frame::ok())
-            }
-            "HELP" => {
-                Ok(Frame::Array(vec![
-                    Frame::bulk("CONFIG GET <pattern>"),
-                    Frame::bulk("CONFIG SET <parameter> <value>"),
-                    Frame::bulk("CONFIG REWRITE"),
-                    Frame::bulk("CONFIG RESETSTAT"),
-                ]))
-            }
+            "REWRITE" => Ok(Frame::ok()),
+            "RESETSTAT" => Ok(Frame::ok()),
+            "HELP" => Ok(Frame::Array(vec![
+                Frame::bulk("CONFIG GET <pattern>"),
+                Frame::bulk("CONFIG SET <parameter> <value>"),
+                Frame::bulk("CONFIG REWRITE"),
+                Frame::bulk("CONFIG RESETSTAT"),
+            ])),
             _ => Err(crate::error::CommandError::SyntaxError.into()),
         }
     })
@@ -803,9 +811,9 @@ pub fn cmd_latency(
         let subcommand = cmd.get_str(0)?.to_uppercase();
 
         match subcommand.as_str() {
-            "DOCTOR" => {
-                Ok(Frame::Bulk(Bytes::from("I have no latency reports to show you at this time.")))
-            }
+            "DOCTOR" => Ok(Frame::Bulk(Bytes::from(
+                "I have no latency reports to show you at this time.",
+            ))),
             "GRAPH" => {
                 if cmd.args.len() < 2 {
                     return Err(crate::error::CommandError::WrongArity {
@@ -834,19 +842,15 @@ pub fn cmd_latency(
                 // Return empty latest
                 Ok(Frame::Array(vec![]))
             }
-            "RESET" => {
-                Ok(Frame::ok())
-            }
-            "HELP" => {
-                Ok(Frame::Array(vec![
-                    Frame::bulk("LATENCY DOCTOR"),
-                    Frame::bulk("LATENCY GRAPH event"),
-                    Frame::bulk("LATENCY HISTOGRAM [command ...]"),
-                    Frame::bulk("LATENCY HISTORY event"),
-                    Frame::bulk("LATENCY LATEST"),
-                    Frame::bulk("LATENCY RESET [event ...]"),
-                ]))
-            }
+            "RESET" => Ok(Frame::ok()),
+            "HELP" => Ok(Frame::Array(vec![
+                Frame::bulk("LATENCY DOCTOR"),
+                Frame::bulk("LATENCY GRAPH event"),
+                Frame::bulk("LATENCY HISTOGRAM [command ...]"),
+                Frame::bulk("LATENCY HISTORY event"),
+                Frame::bulk("LATENCY LATEST"),
+                Frame::bulk("LATENCY RESET [event ...]"),
+            ])),
             _ => Err(crate::error::CommandError::SyntaxError.into()),
         }
     })
@@ -876,21 +880,17 @@ pub fn cmd_module(
                 }
                 .into())
             }
-            "UNLOAD" => {
-                Err(crate::error::CommandError::InvalidArgument {
-                    command: "MODULE UNLOAD".to_string(),
-                    arg: "no such module".to_string(),
-                }
-                .into())
+            "UNLOAD" => Err(crate::error::CommandError::InvalidArgument {
+                command: "MODULE UNLOAD".to_string(),
+                arg: "no such module".to_string(),
             }
-            "HELP" => {
-                Ok(Frame::Array(vec![
-                    Frame::bulk("MODULE LIST"),
-                    Frame::bulk("MODULE LOAD <path> [arg ...]"),
-                    Frame::bulk("MODULE LOADEX <path> [CONFIG name value ...] [ARGS arg ...]"),
-                    Frame::bulk("MODULE UNLOAD <name>"),
-                ]))
-            }
+            .into()),
+            "HELP" => Ok(Frame::Array(vec![
+                Frame::bulk("MODULE LIST"),
+                Frame::bulk("MODULE LOAD <path> [arg ...]"),
+                Frame::bulk("MODULE LOADEX <path> [CONFIG name value ...] [ARGS arg ...]"),
+                Frame::bulk("MODULE UNLOAD <name>"),
+            ])),
             _ => Err(crate::error::CommandError::SyntaxError.into()),
         }
     })
@@ -984,7 +984,9 @@ pub fn cmd_failover(
         }
 
         // In standalone mode, failover is not supported
-        Ok(Frame::Error("ERR FAILOVER requires connected replicas".to_string()))
+        Ok(Frame::Error(
+            "ERR FAILOVER requires connected replicas".to_string(),
+        ))
     })
 }
 
@@ -999,7 +1001,7 @@ pub fn cmd_role(
         // Return master role with no replicas
         Ok(Frame::Array(vec![
             Frame::bulk("master"),
-            Frame::Integer(0), // Replication offset
+            Frame::Integer(0),    // Replication offset
             Frame::Array(vec![]), // Empty list of replicas
         ]))
     })
@@ -1014,7 +1016,9 @@ pub fn cmd_psync(
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
         // Return FULLRESYNC with a new replication ID
-        Ok(Frame::Simple("FULLRESYNC 0000000000000000000000000000000000000000 0".to_string()))
+        Ok(Frame::Simple(
+            "FULLRESYNC 0000000000000000000000000000000000000000 0".to_string(),
+        ))
     })
 }
 
@@ -1025,7 +1029,5 @@ pub fn cmd_replconf(
     _db: Arc<Db>,
     _client: Arc<ClientState>,
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
-    Box::pin(async move {
-        Ok(Frame::ok())
-    })
+    Box::pin(async move { Ok(Frame::ok()) })
 }
