@@ -11,7 +11,7 @@ A complete Redis-compatible server implementation
 
 ## Status
 
-**Published on crates.io** - v0.1.2 complete Redis 8.4.0 feature parity. Verified with redis-cli 8.4.0. Suitable for testing and non-production workloads.
+**Published on crates.io** - v0.1.3 complete Redis 8.4.0 feature parity. Verified with redis-cli 8.4.0. Suitable for testing and non-production workloads.
 
 | Category | Status |
 |----------|--------|
