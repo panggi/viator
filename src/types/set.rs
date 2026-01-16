@@ -191,11 +191,12 @@ impl ViatorSet {
         }
 
         // Start with smallest set for efficiency
+        // SAFETY: sets is non-empty, verified by is_empty() check above
         let (smallest_idx, _) = sets
             .iter()
             .enumerate()
             .min_by_key(|(_, s)| s.len())
-            .expect("sets is non-empty, checked above");
+            .unwrap_or_else(|| unreachable!("sets verified non-empty above"));
 
         let mut result: HashSet<Bytes> = sets[smallest_idx].inner.clone();
 

@@ -166,18 +166,35 @@ impl PooledBuffer {
     }
 
     /// Get a mutable reference to the buffer.
+    ///
+    /// # Panics
+    /// Cannot panic in normal use - buffer is always Some until take() consumes self.
     pub fn as_mut(&mut self) -> &mut BytesMut {
-        self.buffer.as_mut().expect("buffer already taken")
+        // INVARIANT: buffer is Some from new() until take() consumes self
+        self.buffer
+            .as_mut()
+            .unwrap_or_else(|| unreachable!("PooledBuffer invariant violated: buffer is None"))
     }
 
     /// Take ownership of the buffer (it won't be returned to the pool).
+    ///
+    /// This consumes self, so the buffer cannot be accessed after this call.
     pub fn take(mut self) -> BytesMut {
-        self.buffer.take().expect("buffer already taken")
+        // INVARIANT: buffer is Some from new() until this method consumes self
+        self.buffer
+            .take()
+            .unwrap_or_else(|| unreachable!("PooledBuffer invariant violated: buffer is None"))
     }
 
     /// Get an immutable reference to the buffer.
+    ///
+    /// # Panics
+    /// Cannot panic in normal use - buffer is always Some until take() consumes self.
     pub fn as_ref(&self) -> &BytesMut {
-        self.buffer.as_ref().expect("buffer already taken")
+        // INVARIANT: buffer is Some from new() until take() consumes self
+        self.buffer
+            .as_ref()
+            .unwrap_or_else(|| unreachable!("PooledBuffer invariant violated: buffer is None"))
     }
 }
 

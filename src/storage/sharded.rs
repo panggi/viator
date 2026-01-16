@@ -143,10 +143,11 @@ impl ShardedStore {
     /// Create a new sharded store.
     pub fn new() -> Self {
         // Initialize all shards
+        // INVARIANT: Vec is created with exactly NUM_SHARDS elements
         let shards: Vec<Shard> = (0..NUM_SHARDS).map(|_| Shard::new()).collect();
         let shards: Box<[Shard; NUM_SHARDS]> = shards
             .try_into()
-            .expect("Vec length should match NUM_SHARDS");
+            .unwrap_or_else(|_| unreachable!("Vec created with exactly NUM_SHARDS elements"));
         Self { shards }
     }
 

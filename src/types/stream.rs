@@ -169,9 +169,10 @@ impl ViatorStream {
     /// Add an entry to the stream
     /// Returns the generated ID or None if the ID is invalid
     pub fn add(&mut self, id: StreamIdParsed, fields: Vec<(Bytes, Bytes)>) -> Option<StreamId> {
+        // SAFETY: System time before UNIX_EPOCH (1970) indicates misconfigured clock
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("system time is after UNIX_EPOCH")
+            .unwrap_or_else(|_| unreachable!("system clock is before UNIX_EPOCH - check system time"))
             .as_millis() as u64;
 
         let new_id = match id {

@@ -205,7 +205,10 @@ impl IoBackend {
 
 impl Default for IoBackend {
     fn default() -> Self {
-        Self::new(&IoUringConfig::default()).expect("Failed to create I/O backend")
+        // SAFETY: IoBackend::new() currently always returns Ok - it detects
+        // io_uring availability but doesn't fail on unavailability
+        Self::new(&IoUringConfig::default())
+            .unwrap_or_else(|e| unreachable!("IoBackend::new failed unexpectedly: {}", e))
     }
 }
 

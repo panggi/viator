@@ -387,8 +387,9 @@ mod itoa {
                 self.bytes[i] = b'-';
             }
 
-            // We only write ASCII digits and '-', so this is always valid UTF-8
-            std::str::from_utf8(&self.bytes[i..]).expect("itoa produces valid UTF-8")
+            // INVARIANT: itoa only writes ASCII digits and '-', always valid UTF-8
+            std::str::from_utf8(&self.bytes[i..])
+                .unwrap_or_else(|_| unreachable!("itoa buffer contains only ASCII digits"))
         }
     }
 }

@@ -221,18 +221,20 @@ impl ScalingBloomFilter {
         }
 
         // Check if we need a new filter
+        // INVARIANT: filters is never empty - constructor always adds one filter
         let last = self
             .filters
             .last()
-            .expect("filters always has at least one element");
+            .unwrap_or_else(|| unreachable!("ScalingBloomFilter invariant: filters is never empty"));
         if last.len() >= self.current_capacity() {
             // Check if we've hit the max_filters limit
             if self.filters.len() >= self.max_filters {
                 // Cannot expand further - filter is at capacity
                 // Still add to the last filter (may increase false positive rate)
+                // INVARIANT: filters is never empty
                 self.filters
                     .last_mut()
-                    .expect("filters always has at least one element")
+                    .unwrap_or_else(|| unreachable!("ScalingBloomFilter invariant: filters is never empty"))
                     .add(item);
                 self.total_items += 1;
                 return true;
@@ -245,9 +247,10 @@ impl ScalingBloomFilter {
         }
 
         // Add to the last filter
+        // INVARIANT: filters is never empty
         self.filters
             .last_mut()
-            .expect("filters always has at least one element")
+            .unwrap_or_else(|| unreachable!("ScalingBloomFilter invariant: filters is never empty"))
             .add(item);
         self.total_items += 1;
         true
@@ -257,10 +260,11 @@ impl ScalingBloomFilter {
     #[must_use]
     pub fn is_at_capacity(&self) -> bool {
         if self.filters.len() >= self.max_filters {
+            // INVARIANT: filters is never empty
             let last = self
                 .filters
                 .last()
-                .expect("filters always has at least one element");
+                .unwrap_or_else(|| unreachable!("ScalingBloomFilter invariant: filters is never empty"));
             last.len() >= self.current_capacity()
         } else {
             false
