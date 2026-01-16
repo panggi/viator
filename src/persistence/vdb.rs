@@ -18,11 +18,7 @@ use bytes::Bytes;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use tracing::warn;
 
-/// Flag to track if stream warning has been logged (avoid spam)
-static STREAM_WARNING_LOGGED: AtomicBool = AtomicBool::new(false);
 
 /// CRC64 polynomial (ECMA-182)
 const CRC64_POLY: u64 = 0xC96C5795D7870F42;
@@ -159,6 +155,7 @@ const VDB_TYPE_HASH_ZIPLIST: u8 = 13;
 
 // Viator-specific types
 const VDB_TYPE_VECTORSET: u8 = 20; // Custom type for vector sets
+const VDB_TYPE_STREAM: u8 = 21; // Stream type with full metadata
 
 // Length encoding
 const VDB_6BITLEN: u8 = 0;
@@ -315,14 +312,30 @@ impl VdbSaver {
                         }
                     }
                     ValueType::Stream => {
-                        // Stream persistence not yet implemented - log warning once
-                        if !STREAM_WARNING_LOGGED.swap(true, Ordering::Relaxed) {
-                            warn!(
-                                "Stream data type not yet supported in VDB persistence. \
-                                 Stream keys will NOT be saved. Use AOF for stream data."
-                            );
+                        if let Some(ref stream_export) = entry.stream_value {
+                            self.write_u8(VDB_TYPE_STREAM)?;
+                            self.write_string(&entry.key)?;
+                            // Write last_id (ms, seq)
+                            self.write_u64_le(stream_export.last_id.0)?;
+                            self.write_u64_le(stream_export.last_id.1)?;
+                            // Write entries_added
+                            self.write_u64_le(stream_export.entries_added)?;
+                            // Write number of entries
+                            self.write_length(stream_export.entries.len() as u64)?;
+                            // Write each entry
+                            for (ms, seq, fields) in &stream_export.entries {
+                                // Entry ID (ms, seq)
+                                self.write_u64_le(*ms)?;
+                                self.write_u64_le(*seq)?;
+                                // Number of fields
+                                self.write_length(fields.len() as u64)?;
+                                // Field-value pairs
+                                for (field, value) in fields {
+                                    self.write_string(field)?;
+                                    self.write_string(value)?;
+                                }
+                            }
                         }
-                        continue;
                     }
                     ValueType::VectorSet => {
                         if let Some(ref vs_export) = entry.vectorset_value {
@@ -615,6 +628,41 @@ impl VdbLoader {
                             }
                             db.set_hash_with_expiry(current_db, key, fields, expiry);
                         }
+                        VDB_TYPE_STREAM => {
+                            use crate::storage::StreamExport;
+
+                            // Read last_id (ms, seq)
+                            let last_id_ms = self.read_u64_le()?;
+                            let last_id_seq = self.read_u64_le()?;
+                            // Read entries_added
+                            let entries_added = self.read_u64_le()?;
+                            // Read number of entries
+                            let num_entries = self.read_length()? as usize;
+                            let mut entries = Vec::with_capacity(num_entries);
+
+                            for _ in 0..num_entries {
+                                // Entry ID (ms, seq)
+                                let ms = self.read_u64_le()?;
+                                let seq = self.read_u64_le()?;
+                                // Number of fields
+                                let num_fields = self.read_length()? as usize;
+                                let mut fields = Vec::with_capacity(num_fields);
+                                // Field-value pairs
+                                for _ in 0..num_fields {
+                                    let field = Bytes::from(self.read_string()?);
+                                    let value = Bytes::from(self.read_string()?);
+                                    fields.push((field, value));
+                                }
+                                entries.push((ms, seq, fields));
+                            }
+
+                            let export = StreamExport {
+                                last_id: (last_id_ms, last_id_seq),
+                                entries_added,
+                                entries,
+                            };
+                            db.set_stream_with_expiry(current_db, key, export, expiry);
+                        }
                         VDB_TYPE_VECTORSET => {
                             use crate::storage::VectorSetExport;
 
@@ -691,6 +739,13 @@ impl VdbLoader {
         self.reader.read_exact(&mut buf).map_err(StorageError::Io)?;
         self.crc64 = crc64_update(self.crc64, &buf);
         Ok(i64::from_le_bytes(buf))
+    }
+
+    fn read_u64_le(&mut self) -> Result<u64, StorageError> {
+        let mut buf = [0u8; 8];
+        self.reader.read_exact(&mut buf).map_err(StorageError::Io)?;
+        self.crc64 = crc64_update(self.crc64, &buf);
+        Ok(u64::from_le_bytes(buf))
     }
 
     fn read_f64(&mut self) -> Result<f64, StorageError> {

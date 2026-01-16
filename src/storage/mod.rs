@@ -10,6 +10,6 @@ mod expiry;
 
 pub use db::{
     Database, Db, DbEntry, DbStats, MemoryManager, MemoryStatus, ServerAuth, ServerStats,
-    SharedMemoryManager, SharedServerAuth, SharedServerStats, VectorSetExport,
+    SharedMemoryManager, SharedServerAuth, SharedServerStats, StreamExport, VectorSetExport,
 };
 pub use expiry::ExpiryManager;

@@ -94,6 +94,12 @@ impl ViatorValue {
         Self::VectorSet(Arc::new(parking_lot::RwLock::new(vs)))
     }
 
+    /// Create a stream value from an existing ViatorStream.
+    #[inline]
+    pub fn from_stream(stream: ViatorStream) -> Self {
+        Self::Stream(Arc::new(parking_lot::RwLock::new(stream)))
+    }
+
     /// Returns the type of this value.
     #[inline]
     pub fn value_type(&self) -> ValueType {

@@ -116,6 +116,20 @@ pub async fn rewrite_aof(db: &Arc<Database>, path: &Path) -> Result<()> {
 - Keeps client latency low even during persistence operations
 - Allows concurrent request handling during saves
 
+### Stream in AOF
+
+Streams are persisted using XADD commands with explicit IDs, plus XSETID to preserve metadata:
+
+```
+*6\r\n$4\r\nXADD\r\n$8\r\nmystream\r\n$15\r\n1234567890123-0\r\n$5\r\nfield\r\n$5\r\nvalue\r\n
+*5\r\n$6\r\nXSETID\r\n$8\r\nmystream\r\n$15\r\n1234567890123-0\r\n$12\r\nENTRIESADDED\r\n$1\r\n1\r\n
+```
+
+This ensures:
+- Entries are restored with their original IDs
+- `last_id` is preserved for correct ID generation after restart
+- `entries_added` counter is restored for accurate statistics
+
 ### VectorSet in AOF
 
 VectorSets are persisted using VADD commands:
@@ -174,7 +188,7 @@ Format: `--save "<seconds> <changes>"` - Save if N changes in M seconds.
 | SET | 2 | Set (hashtable or intset) |
 | ZSET | 3 | Sorted set (skiplist) |
 | HASH | 4 | Hash (hashtable or ziplist) |
-| STREAM | 15 | Stream with consumer groups |
+| STREAM | 21 | Stream with metadata (last_id, entries_added) |
 | VECTORSET | 20 | HNSW vector index |
 
 ### CRC64 Checksum
@@ -237,6 +251,28 @@ fn lzf_decompress(compressed: &[u8], expected_len: usize) -> Result<Vec<u8>> {
     Ok(output)
 }
 ```
+
+### Stream Persistence
+
+Streams are fully persisted with metadata to ensure correct ID generation after restart:
+
+```
++----------+----------------+----------------+---------+----------+
+| LAST_ID  | ENTRIES_ADDED  | ENTRY_COUNT    | ENTRIES | ...      |
+| (u64,u64)| (u64)          | (u32)          | (array) |          |
++----------+----------------+----------------+---------+----------+
+```
+
+**Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| last_id | (u64, u64) | Last generated ID (ms, seq) - critical for ID generation |
+| entries_added | u64 | Total entries ever added (including deleted) |
+| entry_count | u32 | Number of entries currently in stream |
+| Entries | Array | (id_ms, id_seq, field_count, fields...) |
+
+**VDB Type:** 21 (VDB_TYPE_STREAM)
 
 ### VectorSet Persistence
 

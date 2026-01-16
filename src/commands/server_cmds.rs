@@ -3,7 +3,7 @@
 use super::ParsedCommand;
 use crate::protocol::Frame;
 use crate::server::ClientState;
-use crate::server::metrics::{format_bytes, get_memory_usage};
+use crate::server::metrics::{format_bytes, get_cpu_usage, get_memory_usage};
 use crate::storage::Db;
 use crate::types::Key;
 use crate::{REDIS_VERSION, Result, VERSION};
@@ -200,11 +200,12 @@ pub fn cmd_info(
         }
 
         if include_all || section == Some("cpu") {
+            let cpu = get_cpu_usage();
             info.push_str("# CPU\r\n");
-            info.push_str("used_cpu_sys:0.000000\r\n");
-            info.push_str("used_cpu_user:0.000000\r\n");
-            info.push_str("used_cpu_sys_children:0.000000\r\n");
-            info.push_str("used_cpu_user_children:0.000000\r\n");
+            info.push_str(&format!("used_cpu_sys:{:.6}\r\n", cpu.sys));
+            info.push_str(&format!("used_cpu_user:{:.6}\r\n", cpu.user));
+            info.push_str(&format!("used_cpu_sys_children:{:.6}\r\n", cpu.sys_children));
+            info.push_str(&format!("used_cpu_user_children:{:.6}\r\n", cpu.user_children));
             info.push_str("\r\n");
         }
 

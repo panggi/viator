@@ -1005,6 +1005,8 @@ These commands return appropriate responses but don't fully implement the featur
 
 | Version | Date | Redis Target | Changes |
 |---------|------|--------------|---------|
+| 0.1.2 | 2026-01 | 8.4.0 | Stream persistence (VDB/AOF), real CPU metrics |
+| 0.1.1 | 2026-01 | 8.4.0 | Production hardening, panic-safe locks, backpressure |
 | 0.1.0 | 2026-01 | 8.4.0 | Full 8.4 compatibility, VectorSet, CRC64/LZF persistence, AUTH rate limiting |
 
 ---

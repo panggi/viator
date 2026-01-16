@@ -11,7 +11,7 @@ A complete Redis-compatible server implementation
 
 ## Status
 
-**Published on crates.io** - v0.1.1 production hardening release. Verified with redis-cli 8.4.0. Suitable for testing and non-production workloads.
+**Published on crates.io** - v0.1.2 complete Redis 8.4.0 feature parity. Verified with redis-cli 8.4.0. Suitable for testing and non-production workloads.
 
 | Category | Status |
 |----------|--------|
@@ -440,15 +440,6 @@ Viator targets Redis 8.4.0 protocol compatibility:
 | AOF Persistence | ✅ Full | Atomic rewrite, fsync policies |
 | Redis Stack | ✅ Full | JSON, TimeSeries, Bloom, Cuckoo, TopK, T-Digest, CMS |
 | Security | ✅ Full | ACL, TLS 1.3, AUTH rate limiting |
-
-## Known Limitations
-
-| Feature | Status | Details |
-|---------|--------|---------|
-| Stream Persistence | ⚠️ Not Yet | Stream data is not persisted to AOF/VDB. Stream keys will be lost on restart. |
-| CPU Metrics | ⚠️ Basic | INFO CPU section shows placeholder values |
-
-> **Note:** Stream commands (XADD, XREAD, XRANGE, etc.) work correctly in-memory. Only persistence is affected.
 
 ## Project Structure
 

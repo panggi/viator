@@ -1202,7 +1202,7 @@ pub struct DbEntry {
     /// Hash value (if type is Hash)
     pub hash_value: Option<Vec<(Bytes, Bytes)>>,
     /// Stream value (if type is Stream)
-    pub stream_value: Option<Vec<(String, Vec<(Bytes, Bytes)>)>>,
+    pub stream_value: Option<StreamExport>,
     /// VectorSet value (if type is VectorSet)
     /// Format: (metric, dim, elements: Vec<(name, vector, attrs)>)
     pub vectorset_value: Option<VectorSetExport>,
@@ -1217,6 +1217,17 @@ pub struct VectorSetExport {
     pub dim: usize,
     /// Elements: (name, vector, attributes)
     pub elements: Vec<(Bytes, Vec<f32>, Vec<(Bytes, Bytes)>)>,
+}
+
+/// Exported Stream data for persistence.
+#[derive(Debug, Clone)]
+pub struct StreamExport {
+    /// Last generated ID (ms, seq) - critical for ID generation
+    pub last_id: (u64, u64),
+    /// Total entries ever added (including deleted)
+    pub entries_added: u64,
+    /// Entries: (id_ms, id_seq, fields)
+    pub entries: Vec<(u64, u64, Vec<(Bytes, Bytes)>)>,
 }
 
 impl Database {
@@ -1284,13 +1295,17 @@ impl Database {
                 }
                 ViatorValue::Stream(stream) => {
                     let guard = stream.read();
-                    entry.stream_value = Some(
-                        guard
-                            .range(crate::types::StreamId::min(), crate::types::StreamId::max())
-                            .into_iter()
-                            .map(|e| (e.id.to_string(), e.fields))
-                            .collect(),
-                    );
+                    let last_id = guard.last_id();
+                    let entries: Vec<_> = guard
+                        .range(crate::types::StreamId::min(), crate::types::StreamId::max())
+                        .into_iter()
+                        .map(|e| (e.id.ms, e.id.seq, e.fields))
+                        .collect();
+                    entry.stream_value = Some(StreamExport {
+                        last_id: (last_id.ms, last_id.seq),
+                        entries_added: guard.entries_added(),
+                        entries,
+                    });
                 }
                 ViatorValue::VectorSet(vs) => {
                     let guard = vs.read();
@@ -1462,6 +1477,25 @@ impl Database {
 
         let db = &self.dbs[db_idx as usize];
         db.set_with_expiry(Key::from(key), ViatorValue::from_vectorset(vs), expiry);
+    }
+
+    /// Set a stream value with expiry (for VDB/AOF loading).
+    pub fn set_stream_with_expiry(
+        &self,
+        db_idx: DbIndex,
+        key: Bytes,
+        export: StreamExport,
+        expiry: Expiry,
+    ) {
+        use crate::types::ViatorStream;
+
+        if db_idx > MAX_DB_INDEX {
+            return;
+        }
+
+        let stream = ViatorStream::from_export(export);
+        let db = &self.dbs[db_idx as usize];
+        db.set_with_expiry(Key::from(key), ViatorValue::from_stream(stream), expiry);
     }
 }
 

@@ -134,7 +134,7 @@ src/
 │   ├── config.rs       # Server configuration
 │   ├── connection.rs   # Connection handling
 │   ├── state.rs        # ClientState (per-connection)
-│   ├── metrics.rs      # ServerMetrics (counters, latency)
+│   ├── metrics.rs      # ServerMetrics (counters, latency, CPU)
 │   ├── pubsub.rs       # PubSubHub (channel management)
 │   ├── watch.rs        # WatchRegistry (WATCH/UNWATCH)
 │   ├── rate_limit.rs   # Rate limiting per IP
@@ -513,6 +513,7 @@ pub struct VdbLoader {
 
 - **CRC64-ECMA Checksum**: Full file integrity validation using polynomial `0xC96C5795D7870F42`
 - **LZF Compression**: Transparent decompression of LZF-compressed strings
+- **Stream Persistence**: Full stream metadata (last_id, entries_added) preserved for ID continuity
 - **VectorSet Persistence**: HNSW vector indexes saved with VDB type 20
 - **Atomic Writes**: Temp file + rename pattern for crash safety
 
@@ -525,8 +526,8 @@ pub struct VdbLoader {
 | VDB_TYPE_SET | 2 |
 | VDB_TYPE_ZSET | 3 |
 | VDB_TYPE_HASH | 4 |
-| VDB_TYPE_STREAM | 15 |
 | VDB_TYPE_VECTORSET | 20 |
+| VDB_TYPE_STREAM | 21 |
 
 ---
 
@@ -808,6 +809,14 @@ pub struct ServerMetrics {
 
     // Latency histogram
     pub command_latency: LatencyHistogram,
+}
+
+// CPU metrics via getrusage()
+pub struct CpuUsage {
+    pub sys: f64,          // System CPU time (main process)
+    pub user: f64,         // User CPU time (main process)
+    pub sys_children: f64, // System CPU time (background tasks)
+    pub user_children: f64,// User CPU time (background tasks)
 }
 ```
 

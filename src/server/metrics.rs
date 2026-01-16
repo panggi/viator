@@ -139,6 +139,54 @@ fn get_memory_usage_posix() -> (usize, usize) {
     }
 }
 
+/// CPU time representation in seconds with microsecond precision.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CpuUsage {
+    /// System CPU time for the main process
+    pub sys: f64,
+    /// User CPU time for the main process
+    pub user: f64,
+    /// System CPU time for background children
+    pub sys_children: f64,
+    /// User CPU time for background children
+    pub user_children: f64,
+}
+
+/// Get current process CPU usage.
+///
+/// Returns CPU time in seconds for user/system of both the main process
+/// and its children (for background tasks like RDB/AOF saving).
+#[allow(unsafe_code)]
+pub fn get_cpu_usage() -> CpuUsage {
+    // SAFETY: zeroed() produces a valid libc::rusage struct (all-zeros is valid).
+    let mut rusage_self: libc::rusage = unsafe { std::mem::zeroed() };
+    let mut rusage_children: libc::rusage = unsafe { std::mem::zeroed() };
+
+    // SAFETY: getrusage is a safe POSIX call that fills the rusage struct.
+    let ret_self = unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut rusage_self) };
+    let ret_children = unsafe { libc::getrusage(libc::RUSAGE_CHILDREN, &mut rusage_children) };
+
+    let mut cpu = CpuUsage::default();
+
+    if ret_self == 0 {
+        cpu.sys = timeval_to_seconds(&rusage_self.ru_stime);
+        cpu.user = timeval_to_seconds(&rusage_self.ru_utime);
+    }
+
+    if ret_children == 0 {
+        cpu.sys_children = timeval_to_seconds(&rusage_children.ru_stime);
+        cpu.user_children = timeval_to_seconds(&rusage_children.ru_utime);
+    }
+
+    cpu
+}
+
+/// Convert libc::timeval to seconds as f64.
+#[inline]
+fn timeval_to_seconds(tv: &libc::timeval) -> f64 {
+    tv.tv_sec as f64 + (tv.tv_usec as f64 / 1_000_000.0)
+}
+
 /// Format bytes in human readable form.
 pub fn format_bytes(bytes: usize) -> String {
     const KB: usize = 1024;
@@ -493,6 +541,28 @@ mod tests {
         }
         // On unsupported platforms, just verify it doesn't panic
         let _ = (used, rss);
+    }
+
+    #[test]
+    fn test_cpu_usage() {
+        let cpu = get_cpu_usage();
+        // CPU times should be non-negative
+        assert!(cpu.sys >= 0.0, "System CPU time should be non-negative");
+        assert!(cpu.user >= 0.0, "User CPU time should be non-negative");
+        assert!(
+            cpu.sys_children >= 0.0,
+            "Children system CPU time should be non-negative"
+        );
+        assert!(
+            cpu.user_children >= 0.0,
+            "Children user CPU time should be non-negative"
+        );
+        // After running tests, we should have used some CPU
+        // (at least user time should be > 0)
+        assert!(
+            cpu.user > 0.0 || cpu.sys > 0.0,
+            "Should have used some CPU time running this test"
+        );
     }
 
     #[test]

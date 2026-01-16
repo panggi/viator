@@ -5,6 +5,21 @@ All notable changes to Viator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-01-16
+
+Complete Redis 8.4.0 feature parity release.
+
+### Added
+- **Stream Persistence**: Full AOF and VDB persistence for Stream data type
+  - VDB format includes last_id and entries_added metadata for correct ID generation after restart
+  - AOF format uses XADD with explicit IDs and XSETID for metadata preservation
+- **Real CPU Metrics**: INFO CPU section now reports actual process CPU times
+  - Uses `getrusage(RUSAGE_SELF)` and `getrusage(RUSAGE_CHILDREN)` for accurate system/user CPU time
+
+### Fixed
+- Stream data now survives server restart (previously lost on restart)
+- INFO CPU no longer shows placeholder 0.000000 values
+
 ## [0.1.1] - 2026-01-16
 
 Production hardening release.

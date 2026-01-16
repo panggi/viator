@@ -142,6 +142,30 @@ impl ViatorStream {
         }
     }
 
+    /// Restore a stream from persistence export data.
+    ///
+    /// This reconstructs the stream with all metadata intact, ensuring
+    /// that ID generation continues correctly after restore.
+    pub fn from_export(export: crate::storage::StreamExport) -> Self {
+        let mut entries = BTreeMap::new();
+        let mut first_entry_id = None;
+
+        for (ms, seq, fields) in export.entries {
+            let id = StreamId::new(ms, seq);
+            if first_entry_id.is_none() {
+                first_entry_id = Some(id);
+            }
+            entries.insert(id, fields);
+        }
+
+        Self {
+            entries,
+            last_id: StreamId::new(export.last_id.0, export.last_id.1),
+            entries_added: export.entries_added,
+            first_entry_id,
+        }
+    }
+
     /// Add an entry to the stream
     /// Returns the generated ID or None if the ID is invalid
     pub fn add(&mut self, id: StreamIdParsed, fields: Vec<(Bytes, Bytes)>) -> Option<StreamId> {

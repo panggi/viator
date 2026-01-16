@@ -17,10 +17,7 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-use tracing::warn;
 
-/// Flag to track if stream warning has been logged (avoid spam)
-static AOF_STREAM_WARNING_LOGGED: AtomicBool = AtomicBool::new(false);
 
 /// AOF fsync policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -259,14 +256,41 @@ impl AofWriter {
                         }
                     }
                     crate::types::ValueType::Stream => {
-                        // Stream persistence not yet implemented - log warning once
-                        if !AOF_STREAM_WARNING_LOGGED.swap(true, Ordering::Relaxed) {
-                            warn!(
-                                "Stream data type not yet supported in AOF persistence. \
-                                 Stream keys will NOT be saved."
+                        if let Some(ref stream_export) = entry.stream_value {
+                            // Write XADD for each entry with explicit ID
+                            // Format: XADD key <id> field1 value1 field2 value2 ...
+                            for (ms, seq, fields) in &stream_export.entries {
+                                let id_str = format!("{}-{}", ms, seq);
+                                let mut cmd = vec![
+                                    "XADD".to_string(),
+                                    key_str.to_string(),
+                                    id_str,
+                                ];
+                                // Add field-value pairs
+                                for (field, value) in fields {
+                                    cmd.push(String::from_utf8_lossy(field).to_string());
+                                    cmd.push(String::from_utf8_lossy(value).to_string());
+                                }
+                                let cmd_refs: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
+                                Self::write_command(&mut writer, &cmd_refs)?;
+                            }
+                            // Set the last_id using XSETID to preserve ID generation state
+                            // Format: XSETID key <last_id> [ENTRIESADDED entries_added]
+                            let last_id_str = format!(
+                                "{}-{}",
+                                stream_export.last_id.0, stream_export.last_id.1
                             );
+                            Self::write_command(
+                                &mut writer,
+                                &[
+                                    "XSETID",
+                                    &key_str,
+                                    &last_id_str,
+                                    "ENTRIESADDED",
+                                    &stream_export.entries_added.to_string(),
+                                ],
+                            )?;
                         }
-                        continue;
                     }
                     crate::types::ValueType::VectorSet => {
                         if let Some(ref vs_export) = entry.vectorset_value {
