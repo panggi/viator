@@ -102,10 +102,10 @@ impl PersistenceManager {
             })
             .await
             .map_err(|e| {
-                StorageError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("spawn_blocking panicked: {}", e),
-                ))
+                StorageError::Io(std::io::Error::other(format!(
+                    "spawn_blocking panicked: {}",
+                    e
+                )))
             })??;
         }
         Ok(())
@@ -155,10 +155,10 @@ impl PersistenceManager {
             })
             .await
             .map_err(|e| {
-                StorageError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("spawn_blocking panicked: {}", e),
-                ))
+                StorageError::Io(std::io::Error::other(format!(
+                    "spawn_blocking panicked: {}",
+                    e
+                )))
             })??;
         }
         Ok(())

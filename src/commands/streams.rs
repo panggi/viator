@@ -150,10 +150,8 @@ pub fn cmd_xadd(
         }
 
         // Check if stream exists when NOMKSTREAM is set
-        if nomkstream {
-            if db.get(&key).is_none() {
-                return Ok(Frame::Null);
-            }
+        if nomkstream && db.get(&key).is_none() {
+            return Ok(Frame::Null);
         }
 
         // Get or create stream

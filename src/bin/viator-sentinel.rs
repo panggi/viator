@@ -3,6 +3,8 @@
 //! Monitors Viator/Redis instances and provides automatic failover.
 //! Compatible with Redis Sentinel 8.4.0 protocol.
 
+#![allow(clippy::type_complexity)]
+
 use bytes::BytesMut;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -154,7 +156,7 @@ impl Sentinel {
         let mut state = self.state.write().unwrap();
         state.masters.insert(name.to_string(), config);
 
-        let key = format!("{}:{}", host, port);
+        let key = format!("{host}:{port}");
         state.instances.insert(key, InstanceInfo::new(host, port));
         state.replicas.insert(name.to_string(), Vec::new());
         state.sentinels.insert(name.to_string(), Vec::new());
@@ -166,7 +168,7 @@ impl Sentinel {
 
         let addr = format!("{}:{}", self.config.bind, self.config.port);
         let listener =
-            TcpListener::bind(&addr).map_err(|e| format!("Cannot bind to {}: {}", addr, e))?;
+            TcpListener::bind(&addr).map_err(|e| format!("Cannot bind to {addr}: {e}"))?;
 
         listener.set_nonblocking(true).ok();
 
@@ -182,8 +184,8 @@ impl Sentinel {
         let _running = &self.running;
 
         std::thread::spawn({
-            let state = state_clone.clone();
-            let config = config_clone.clone();
+            let state = state_clone;
+            let config = config_clone;
             move || {
                 monitor_loop(state, config);
             }
@@ -203,7 +205,7 @@ impl Sentinel {
                     std::thread::sleep(Duration::from_millis(100));
                 }
                 Err(e) => {
-                    eprintln!("Accept error: {}", e);
+                    eprintln!("Accept error: {e}");
                 }
             }
         }
@@ -225,47 +227,43 @@ fn monitor_loop(state: Arc<RwLock<SentinelState>>, config: SentinelConfig) {
 
         for (name, host, port) in masters {
             // Ping master
-            match ping_instance(&host, port) {
-                Ok(info) => {
-                    let mut s = state.write().unwrap();
-                    let key = format!("{}:{}", host, port);
-                    if let Some(inst) = s.instances.get_mut(&key) {
-                        inst.last_pong = Some(Instant::now());
-                        inst.state = InstanceState::Up;
-                        inst.role = info.role;
-                        inst.down_since = None;
-                    }
+            if let Ok(info) = ping_instance(&host, port) {
+                let mut s = state.write().unwrap();
+                let key = format!("{host}:{port}");
+                if let Some(inst) = s.instances.get_mut(&key) {
+                    inst.last_pong = Some(Instant::now());
+                    inst.state = InstanceState::Up;
+                    inst.role = info.role;
+                    inst.down_since = None;
+                }
 
-                    // Update replicas list
-                    if let Some(replicas) = s.replicas.get_mut(&name) {
-                        for replica_info in &info.replicas {
-                            let exists = replicas
-                                .iter()
-                                .any(|r| r.host == replica_info.0 && r.port == replica_info.1);
-                            if !exists {
-                                let mut inst = InstanceInfo::new(&replica_info.0, replica_info.1);
-                                inst.role = "slave".to_string();
-                                replicas.push(inst);
-                            }
+                // Update replicas list
+                if let Some(replicas) = s.replicas.get_mut(&name) {
+                    for replica_info in &info.replicas {
+                        let exists = replicas
+                            .iter()
+                            .any(|r| r.host == replica_info.0 && r.port == replica_info.1);
+                        if !exists {
+                            let mut inst = InstanceInfo::new(&replica_info.0, replica_info.1);
+                            inst.role = "slave".to_string();
+                            replicas.push(inst);
                         }
                     }
                 }
-                Err(_) => {
-                    let mut s = state.write().unwrap();
-                    let key = format!("{}:{}", host, port);
-                    if let Some(inst) = s.instances.get_mut(&key) {
-                        let elapsed = inst
-                            .last_pong
-                            .map(|t| t.elapsed().as_millis() as u64)
-                            .unwrap_or(inst.last_ping.elapsed().as_millis() as u64);
+            } else {
+                let mut s = state.write().unwrap();
+                let key = format!("{host}:{port}");
+                if let Some(inst) = s.instances.get_mut(&key) {
+                    let elapsed = inst
+                        .last_pong
+                        .map_or(inst.last_ping.elapsed().as_millis() as u64, |t| {
+                            t.elapsed().as_millis() as u64
+                        });
 
-                        if elapsed > config.down_after_milliseconds {
-                            if inst.state == InstanceState::Up {
-                                inst.state = InstanceState::SubjectivelyDown;
-                                inst.down_since = Some(Instant::now());
-                                eprintln!("+sdown master {} {}:{}", name, host, port);
-                            }
-                        }
+                    if elapsed > config.down_after_milliseconds && inst.state == InstanceState::Up {
+                        inst.state = InstanceState::SubjectivelyDown;
+                        inst.down_since = Some(Instant::now());
+                        eprintln!("+sdown master {name} {host}:{port}");
                     }
                 }
             }
@@ -280,35 +278,33 @@ fn monitor_loop(state: Arc<RwLock<SentinelState>>, config: SentinelConfig) {
             };
 
             for (rhost, rport) in replicas {
-                match ping_instance(&rhost, rport) {
-                    Ok(info) => {
-                        let mut s = state.write().unwrap();
-                        if let Some(replicas) = s.replicas.get_mut(&name) {
-                            if let Some(inst) = replicas
-                                .iter_mut()
-                                .find(|r| r.host == rhost && r.port == rport)
-                            {
-                                inst.last_pong = Some(Instant::now());
-                                inst.state = InstanceState::Up;
-                                inst.replica_offset = info.repl_offset;
-                            }
+                if let Ok(info) = ping_instance(&rhost, rport) {
+                    let mut s = state.write().unwrap();
+                    if let Some(replicas) = s.replicas.get_mut(&name) {
+                        if let Some(inst) = replicas
+                            .iter_mut()
+                            .find(|r| r.host == rhost && r.port == rport)
+                        {
+                            inst.last_pong = Some(Instant::now());
+                            inst.state = InstanceState::Up;
+                            inst.replica_offset = info.repl_offset;
                         }
                     }
-                    Err(_) => {
-                        let mut s = state.write().unwrap();
-                        if let Some(replicas) = s.replicas.get_mut(&name) {
-                            if let Some(inst) = replicas
-                                .iter_mut()
-                                .find(|r| r.host == rhost && r.port == rport)
-                            {
-                                let elapsed = inst
-                                    .last_pong
-                                    .map(|t| t.elapsed().as_millis() as u64)
-                                    .unwrap_or(inst.last_ping.elapsed().as_millis() as u64);
+                } else {
+                    let mut s = state.write().unwrap();
+                    if let Some(replicas) = s.replicas.get_mut(&name) {
+                        if let Some(inst) = replicas
+                            .iter_mut()
+                            .find(|r| r.host == rhost && r.port == rport)
+                        {
+                            let elapsed = inst
+                                .last_pong
+                                .map_or(inst.last_ping.elapsed().as_millis() as u64, |t| {
+                                    t.elapsed().as_millis() as u64
+                                });
 
-                                if elapsed > config.down_after_milliseconds {
-                                    inst.state = InstanceState::SubjectivelyDown;
-                                }
+                            if elapsed > config.down_after_milliseconds {
+                                inst.state = InstanceState::SubjectivelyDown;
                             }
                         }
                     }
@@ -329,7 +325,7 @@ struct PingInfo {
 
 /// Ping an instance and get info
 fn ping_instance(host: &str, port: u16) -> Result<PingInfo, String> {
-    let addr = format!("{}:{}", host, port);
+    let addr = format!("{host}:{port}");
     let mut stream = TcpStream::connect_timeout(
         &addr.parse().map_err(|_| "Invalid address")?,
         Duration::from_secs(2),
@@ -514,17 +510,15 @@ fn handle_command(
                     for (name, cfg) in &s.masters {
                         let inst_key = format!("{}:{}", cfg.host, cfg.port);
                         let inst = s.instances.get(&inst_key);
-                        let flags = inst
-                            .map(|i| match i.state {
-                                InstanceState::Up => "master",
-                                InstanceState::SubjectivelyDown => "master,s_down",
-                                InstanceState::ObjectivelyDown => "master,o_down",
-                                InstanceState::Down => "master,disconnected",
-                            })
-                            .unwrap_or("master");
+                        let flags = inst.map_or("master", |i| match i.state {
+                            InstanceState::Up => "master",
+                            InstanceState::SubjectivelyDown => "master,s_down",
+                            InstanceState::ObjectivelyDown => "master,o_down",
+                            InstanceState::Down => "master,disconnected",
+                        });
 
-                        let num_slaves = s.replicas.get(name).map(|r| r.len()).unwrap_or(0);
-                        let num_sentinels = s.sentinels.get(name).map(|r| r.len()).unwrap_or(0);
+                        let num_slaves = s.replicas.get(name).map_or(0, std::vec::Vec::len);
+                        let num_sentinels = s.sentinels.get(name).map_or(0, std::vec::Vec::len);
 
                         result.push_str(&format_master_info(
                             name,
@@ -550,17 +544,15 @@ fn handle_command(
                     if let Some(cfg) = s.masters.get(name) {
                         let inst_key = format!("{}:{}", cfg.host, cfg.port);
                         let inst = s.instances.get(&inst_key);
-                        let flags = inst
-                            .map(|i| match i.state {
-                                InstanceState::Up => "master",
-                                InstanceState::SubjectivelyDown => "master,s_down",
-                                InstanceState::ObjectivelyDown => "master,o_down",
-                                InstanceState::Down => "master,disconnected",
-                            })
-                            .unwrap_or("master");
+                        let flags = inst.map_or("master", |i| match i.state {
+                            InstanceState::Up => "master",
+                            InstanceState::SubjectivelyDown => "master,s_down",
+                            InstanceState::ObjectivelyDown => "master,o_down",
+                            InstanceState::Down => "master,disconnected",
+                        });
 
-                        let num_slaves = s.replicas.get(name).map(|r| r.len()).unwrap_or(0);
-                        let num_sentinels = s.sentinels.get(name).map(|r| r.len()).unwrap_or(0);
+                        let num_slaves = s.replicas.get(name).map_or(0, std::vec::Vec::len);
+                        let num_sentinels = s.sentinels.get(name).map_or(0, std::vec::Vec::len);
 
                         format_master_info(
                             name,
@@ -662,7 +654,7 @@ fn handle_command(
                     let s = state.read().unwrap();
 
                     if let Some(cfg) = s.masters.get(name) {
-                        let num_sentinels = s.sentinels.get(name).map(|r| r.len()).unwrap_or(0) + 1;
+                        let num_sentinels = s.sentinels.get(name).map_or(0, std::vec::Vec::len) + 1;
                         if num_sentinels as u32 >= cfg.quorum {
                             "+OK 1 usable Sentinels. Quorum is reachable.\r\n".to_string()
                         } else {
@@ -681,7 +673,7 @@ fn handle_command(
         }
 
         "INFO" => {
-            let section = args.get(0).map(|s| s.as_str()).unwrap_or("all");
+            let section = args.first().map_or("all", std::string::String::as_str);
             format_info(state, my_id, section)
         }
 
@@ -706,7 +698,7 @@ fn handle_command(
             std::process::exit(0);
         }
 
-        _ => format!("-ERR unknown command '{}'\r\n", cmd),
+        _ => format!("-ERR unknown command '{cmd}'\r\n"),
     }
 }
 
@@ -791,7 +783,7 @@ fn format_info(state: &Arc<RwLock<SentinelState>>, my_id: &str, section: &str) -
         info.push_str("# Server\r\n");
         info.push_str("viator_version:0.1.0\r\n");
         info.push_str("viator_mode:sentinel\r\n");
-        info.push_str(&format!("run_id:{}\r\n", my_id));
+        info.push_str(&format!("run_id:{my_id}\r\n"));
         info.push_str("\r\n");
     }
 
@@ -801,19 +793,18 @@ fn format_info(state: &Arc<RwLock<SentinelState>>, my_id: &str, section: &str) -
         info.push_str("sentinel_tilt:0\r\n");
         info.push_str("sentinel_running_scripts:0\r\n");
         info.push_str("sentinel_scripts_queue_length:0\r\n");
-        info.push_str(&format!("sentinel_simulate_failure_flags:0\r\n"));
+        info.push_str("sentinel_simulate_failure_flags:0\r\n");
 
         for (name, cfg) in &s.masters {
-            let num_slaves = s.replicas.get(name).map(|r| r.len()).unwrap_or(0);
-            let num_sentinels = s.sentinels.get(name).map(|r| r.len()).unwrap_or(0);
+            let num_slaves = s.replicas.get(name).map_or(0, std::vec::Vec::len);
+            let num_sentinels = s.sentinels.get(name).map_or(0, std::vec::Vec::len);
             let status = s
                 .instances
                 .get(&format!("{}:{}", cfg.host, cfg.port))
-                .map(|i| match i.state {
+                .map_or("unknown", |i| match i.state {
                     InstanceState::Up => "ok",
                     _ => "sdown",
-                })
-                .unwrap_or("unknown");
+                });
 
             info.push_str(&format!(
                 "master{}:name={},status={},address={}:{},slaves={},sentinels={}\r\n",
@@ -829,7 +820,7 @@ fn format_info(state: &Arc<RwLock<SentinelState>>, my_id: &str, section: &str) -
     }
 
     let len = info.len();
-    format!("${}\r\n{}\r\n", len, info)
+    format!("${len}\r\n{info}\r\n")
 }
 
 fn print_usage() {
@@ -869,7 +860,7 @@ fn parse_config_file(
     path: &str,
 ) -> Result<(SentinelConfig, Vec<(String, String, u16, u32)>), String> {
     let content =
-        std::fs::read_to_string(path).map_err(|e| format!("Cannot read config file: {}", e))?;
+        std::fs::read_to_string(path).map_err(|e| format!("Cannot read config file: {e}"))?;
 
     let mut config = SentinelConfig::default();
     let mut masters = Vec::new();
@@ -958,15 +949,13 @@ fn main() {
             }
             "--sentinel" => {
                 i += 1;
-                if i < args.len() && args[i] == "monitor" {
-                    if i + 4 < args.len() {
-                        let name = args[i + 1].clone();
-                        let host = args[i + 2].clone();
-                        let port: u16 = args[i + 3].parse().unwrap_or(6379);
-                        let quorum: u32 = args[i + 4].parse().unwrap_or(2);
-                        masters.push((name, host, port, quorum));
-                        i += 4;
-                    }
+                if i < args.len() && args[i] == "monitor" && i + 4 < args.len() {
+                    let name = args[i + 1].clone();
+                    let host = args[i + 2].clone();
+                    let port: u16 = args[i + 3].parse().unwrap_or(6379);
+                    let quorum: u32 = args[i + 4].parse().unwrap_or(2);
+                    masters.push((name, host, port, quorum));
+                    i += 4;
                 }
             }
             "--help" | "-h" => {
@@ -991,7 +980,7 @@ fn main() {
                 }
             }
             Err(e) => {
-                eprintln!("Error loading config: {}", e);
+                eprintln!("Error loading config: {e}");
                 std::process::exit(1);
             }
         }
@@ -1006,15 +995,12 @@ fn main() {
     let sentinel = Sentinel::new(config);
 
     for (name, host, port, quorum) in masters {
-        println!(
-            "Monitoring master '{}' at {}:{} (quorum: {})",
-            name, host, port, quorum
-        );
+        println!("Monitoring master '{name}' at {host}:{port} (quorum: {quorum})");
         sentinel.add_master(&name, &host, port, quorum);
     }
 
     if let Err(e) = sentinel.run() {
-        eprintln!("Error: {}", e);
+        eprintln!("Error: {e}");
         std::process::exit(1);
     }
 }

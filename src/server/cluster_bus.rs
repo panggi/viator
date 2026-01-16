@@ -434,7 +434,7 @@ impl Default for ClusterBusConfig {
 }
 
 /// Failover state for tracking replica promotion.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct FailoverState {
     /// Whether we're in the process of failing over
     pub in_progress: bool,
@@ -448,19 +448,6 @@ pub struct FailoverState {
     pub auth_epoch: u64,
     /// Replication offset (used for voting priority)
     pub replication_offset: u64,
-}
-
-impl Default for FailoverState {
-    fn default() -> Self {
-        Self {
-            in_progress: false,
-            target_master: None,
-            votes_received: HashSet::new(),
-            started_at: None,
-            auth_epoch: 0,
-            replication_offset: 0,
-        }
-    }
 }
 
 /// The cluster bus handles all inter-node communication.
@@ -1187,12 +1174,13 @@ impl ClusterBus {
 
             // Check if node has timed out
             if let Some(pong_time) = node.pong_received {
-                if now.duration_since(pong_time) > timeout_duration {
-                    if !node.flags.pfail && !node.flags.fail {
-                        node.flags.pfail = true;
-                        node.link_state = LinkState::Disconnected;
-                        warn!("Node {} marked as PFAIL (timeout)", node.id_string());
-                    }
+                if now.duration_since(pong_time) > timeout_duration
+                    && !node.flags.pfail
+                    && !node.flags.fail
+                {
+                    node.flags.pfail = true;
+                    node.link_state = LinkState::Disconnected;
+                    warn!("Node {} marked as PFAIL (timeout)", node.id_string());
                 }
             }
         }

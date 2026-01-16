@@ -1067,10 +1067,10 @@ pub fn cmd_cluster(
             "LINKS" => Ok(Frame::Array(vec![])),
 
             // Redis 8.2+ CLUSTER SLOT-STATS command
-            "SLOT-STATS" => handle_slot_stats(&cmd, &state),
+            "SLOT-STATS" => handle_slot_stats(&cmd, state),
 
             // Redis 8.4+ CLUSTER MIGRATION command for atomic slot migration
-            "MIGRATION" => handle_migration(&cmd, &state),
+            "MIGRATION" => handle_migration(&cmd, state),
 
             _ => Ok(Frame::Error(format!(
                 "ERR Unknown subcommand or wrong number of arguments for '{}'",

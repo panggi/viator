@@ -2,6 +2,8 @@
 //!
 //! This is the main entry point for the Viator server.
 
+#![allow(clippy::manual_c_str_literals)]
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -20,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     if cli.version {
-        println!("Viator version {}", VERSION);
+        println!("Viator version {VERSION}");
         return Ok(());
     }
 
@@ -32,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
                 cfg
             }
             Err(e) => {
-                eprintln!("Error loading config file: {}", e);
+                eprintln!("Error loading config file: {e}");
                 std::process::exit(1);
             }
         }
@@ -85,7 +87,7 @@ async fn main() -> anyhow::Result<()> {
     if let Some(ref pidfile) = config.pidfile {
         let pid = std::process::id();
         if let Err(e) = std::fs::write(pidfile, pid.to_string()) {
-            eprintln!("Warning: Failed to write PID file: {}", e);
+            eprintln!("Warning: Failed to write PID file: {e}");
         }
     }
 
@@ -288,7 +290,7 @@ fn parse_args(args: &[String]) -> anyhow::Result<CliArgs> {
                 cli.version = true;
             }
             arg if arg.starts_with('-') => {
-                eprintln!("Unknown option: {}", arg);
+                eprintln!("Unknown option: {arg}");
                 cli.help = true;
             }
             _ => {}
@@ -325,7 +327,7 @@ fn parse_memory_arg(value: &str) -> Option<usize> {
 fn daemonize(config: &Config) -> anyhow::Result<()> {
     // Fork and exit parent
     match unsafe { libc::fork() } {
-        -1 => return Err(anyhow::anyhow!("Fork failed")),
+        -1 => Err(anyhow::anyhow!("Fork failed")),
         0 => {
             // Child process continues
             // Create new session
@@ -343,7 +345,7 @@ fn daemonize(config: &Config) -> anyhow::Result<()> {
                 libc::close(2); // stderr
 
                 // Redirect to /dev/null
-                libc::open(b"/dev/null\0".as_ptr() as *const i8, libc::O_RDWR);
+                libc::open(b"/dev/null\0".as_ptr().cast::<i8>(), libc::O_RDWR);
                 libc::dup(0);
                 libc::dup(0);
             }
@@ -359,7 +361,7 @@ fn daemonize(config: &Config) -> anyhow::Result<()> {
 
 fn print_banner() {
     println!(
-        r#"
+        r"
            :::     :::  :::::::::::      :::      :::::::::::  ::::::::   :::::::::
           :+:     :+:      :+:         :+: :+:       :+:     :+:    :+:  :+:    :+:
          +:+     +:+      +:+        +:+   +:+      +:+     +:+    +:+  +:+    +:+
@@ -372,7 +374,7 @@ fn print_banner() {
 
     PID: {}
     https://github.com/panggi/viator
-"#,
+",
         VERSION,
         std::process::id()
     );
@@ -380,7 +382,7 @@ fn print_banner() {
 
 fn print_help() {
     println!(
-        r#"Viator {} - A high-performance key-value store
+        r"Viator {VERSION} - A high-performance key-value store
 
 USAGE:
     viator [OPTIONS]
@@ -417,7 +419,6 @@ SIGNALS:
     SIGHUP          Reload configuration (if --config specified)
 
 For more information, visit: https://github.com/panggi/viator
-"#,
-        VERSION
+"
     );
 }

@@ -1053,7 +1053,7 @@ pub fn cmd_zmpop(
             if let Some(value) = db.get(key) {
                 if let Some(zset) = value.as_zset() {
                     let mut guard = zset.write();
-                    if guard.len() > 0 {
+                    if !guard.is_empty() {
                         let entries = match direction.as_str() {
                             "MIN" => guard.pop_min(count),
                             "MAX" => guard.pop_max(count),
@@ -1076,7 +1076,7 @@ pub fn cmd_zmpop(
 
                             if value
                                 .as_zset()
-                                .map(|z| z.read().len() == 0)
+                                .map(|z| z.read().is_empty())
                                 .unwrap_or(false)
                             {
                                 db.delete(key);
@@ -1381,10 +1381,8 @@ pub fn cmd_zintercard(
             .collect();
 
         let mut limit: usize = 0;
-        if cmd.args.len() > 1 + numkeys {
-            if cmd.get_str(1 + numkeys)?.to_uppercase() == "LIMIT" {
-                limit = cmd.get_u64(2 + numkeys)? as usize;
-            }
+        if cmd.args.len() > 1 + numkeys && cmd.get_str(1 + numkeys)?.to_uppercase() == "LIMIT" {
+            limit = cmd.get_u64(2 + numkeys)? as usize;
         }
 
         // Get first set
@@ -1730,7 +1728,7 @@ pub fn cmd_zremrangebylex(
             guard.remove(&member);
         }
 
-        let is_empty = guard.len() == 0;
+        let is_empty = guard.is_empty();
         drop(guard);
 
         if is_empty {
@@ -1790,7 +1788,7 @@ pub fn cmd_zremrangebyrank(
             guard.remove(&member);
         }
 
-        let is_empty = guard.len() == 0;
+        let is_empty = guard.is_empty();
         drop(guard);
 
         if is_empty {
@@ -1833,7 +1831,7 @@ pub fn cmd_zremrangebyscore(
             guard.remove(&member);
         }
 
-        let is_empty = guard.len() == 0;
+        let is_empty = guard.is_empty();
         drop(guard);
 
         if is_empty {

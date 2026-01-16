@@ -380,20 +380,17 @@ impl SearchIndex {
                         let key = field_name.clone();
                         self.numeric_index
                             .entry(key)
-                            .or_insert_with(BTreeMap::new)
+                            .or_default()
                             .entry(*n as i64)
-                            .or_insert_with(HashSet::new)
+                            .or_default()
                             .insert(doc_id.to_string());
                     }
                     (FieldType::Tag, FieldValue::Tag(tags)) => {
-                        let field_tags = self
-                            .tag_index
-                            .entry(field_name.clone())
-                            .or_insert_with(DashMap::new);
+                        let field_tags = self.tag_index.entry(field_name.clone()).or_default();
                         for tag in tags {
                             field_tags
                                 .entry(tag.to_lowercase())
-                                .or_insert_with(HashSet::new)
+                                .or_default()
                                 .insert(doc_id.to_string());
                         }
                     }

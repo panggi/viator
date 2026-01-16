@@ -574,30 +574,24 @@ fn execute_script(db: &Arc<Db>, script: &str, keys: Vec<Bytes>, argv: Vec<Bytes>
                 Frame::Bulk(b) => {
                     let s = lua_ctx
                         .create_string(b.as_ref())
-                        .map_err(|e| mlua::Error::external(e))?;
+                        .map_err(mlua::Error::external)?;
                     Ok(Value::String(s))
                 }
                 Frame::Simple(s) => {
-                    let t = lua_ctx
-                        .create_table()
-                        .map_err(|e| mlua::Error::external(e))?;
-                    t.set("ok", s).map_err(|e| mlua::Error::external(e))?;
+                    let t = lua_ctx.create_table().map_err(mlua::Error::external)?;
+                    t.set("ok", s).map_err(mlua::Error::external)?;
                     Ok(Value::Table(t))
                 }
                 Frame::Error(e) => {
-                    let t = lua_ctx
-                        .create_table()
-                        .map_err(|e| mlua::Error::external(e))?;
-                    t.set("err", e).map_err(|e| mlua::Error::external(e))?;
+                    let t = lua_ctx.create_table().map_err(mlua::Error::external)?;
+                    t.set("err", e).map_err(mlua::Error::external)?;
                     Ok(Value::Table(t))
                 }
                 Frame::Array(arr) => {
-                    let t = lua_ctx
-                        .create_table()
-                        .map_err(|e| mlua::Error::external(e))?;
+                    let t = lua_ctx.create_table().map_err(mlua::Error::external)?;
                     for (i, frame) in arr.into_iter().enumerate() {
                         let val = frame_to_lua_value(lua_ctx, frame)?;
-                        t.set(i + 1, val).map_err(|e| mlua::Error::external(e))?;
+                        t.set(i + 1, val).map_err(mlua::Error::external)?;
                     }
                     Ok(Value::Table(t))
                 }

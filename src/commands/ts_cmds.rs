@@ -155,7 +155,7 @@ pub fn cmd_ts_add(
         }
 
         let mut series = TIMESERIES.write();
-        let ts = series.entry(key).or_insert_with(TimeSeries::new);
+        let ts = series.entry(key).or_default();
 
         if let Some(ret) = retention {
             ts.set_retention(ret);
@@ -206,7 +206,7 @@ pub fn cmd_ts_madd(
                 .parse()
                 .map_err(|_| CommandError::NotFloat)?;
 
-            let ts = series.entry(key).or_insert_with(TimeSeries::new);
+            let ts = series.entry(key).or_default();
             match ts.add(timestamp, value) {
                 Ok(actual_ts) => results.push(Frame::Integer(actual_ts as i64)),
                 Err(_) => results.push(Frame::error("TSDB: duplicate timestamp")),
@@ -442,7 +442,7 @@ pub fn cmd_ts_incrby(
             .map_err(|_| CommandError::NotFloat)?;
 
         let mut series = TIMESERIES.write();
-        let ts = series.entry(key).or_insert_with(TimeSeries::new);
+        let ts = series.entry(key).or_default();
 
         match ts.incr(value) {
             Ok(timestamp) => Ok(Frame::Integer(timestamp as i64)),
@@ -467,7 +467,7 @@ pub fn cmd_ts_decrby(
             .map_err(|_| CommandError::NotFloat)?;
 
         let mut series = TIMESERIES.write();
-        let ts = series.entry(key).or_insert_with(TimeSeries::new);
+        let ts = series.entry(key).or_default();
 
         match ts.decr(value) {
             Ok(timestamp) => Ok(Frame::Integer(timestamp as i64)),

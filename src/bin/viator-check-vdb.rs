@@ -3,6 +3,8 @@
 //! A tool for checking and validating Viator VDB dump files.
 //! Verifies file integrity, checksums, and reports any corruption.
 
+#![allow(clippy::needless_range_loop)]
+
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::PathBuf;
@@ -31,7 +33,7 @@ fn crc64_table() -> [u64; 256] {
 fn crc64_update(table: &[u64; 256], crc: u64, data: &[u8]) -> u64 {
     let mut crc = crc;
     for byte in data {
-        let idx = ((crc ^ (*byte as u64)) & 0xFF) as usize;
+        let idx = ((crc ^ u64::from(*byte)) & 0xFF) as usize;
         crc = table[idx] ^ (crc >> 8);
     }
     crc
@@ -93,7 +95,7 @@ struct VdbChecker {
 
 impl VdbChecker {
     fn new(path: &PathBuf, verbose: bool) -> Result<Self, String> {
-        let file = File::open(path).map_err(|e| format!("Cannot open file: {}", e))?;
+        let file = File::open(path).map_err(|e| format!("Cannot open file: {e}"))?;
         Ok(Self {
             reader: BufReader::new(file),
             crc64: 0,
@@ -137,10 +139,10 @@ impl VdbChecker {
         let encoding = (first & 0xC0) >> 6;
 
         match encoding {
-            VDB_6BITLEN => Ok((first & 0x3F) as u64),
+            VDB_6BITLEN => Ok(u64::from(first & 0x3F)),
             VDB_14BITLEN => {
                 let second = self.read_byte()?;
-                Ok((((first & 0x3F) as u64) << 8) | (second as u64))
+                Ok((u64::from(first & 0x3F) << 8) | u64::from(second))
             }
             VDB_ENCVAL => {
                 // Special encoding - return the type
@@ -152,7 +154,9 @@ impl VdbChecker {
             _ => {
                 if first == VDB_32BITLEN {
                     let buf = self.read_bytes(4)?;
-                    Ok(u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as u64)
+                    Ok(u64::from(u32::from_be_bytes([
+                        buf[0], buf[1], buf[2], buf[3],
+                    ])))
                 } else if first == VDB_64BITLEN {
                     let buf = self.read_bytes(8)?;
                     Ok(u64::from_be_bytes([
@@ -203,15 +207,15 @@ impl VdbChecker {
             }
         } else {
             let len = match encoding {
-                VDB_6BITLEN => (first & 0x3F) as u64,
+                VDB_6BITLEN => u64::from(first & 0x3F),
                 VDB_14BITLEN => {
                     let second = self.read_byte()?;
-                    (((first & 0x3F) as u64) << 8) | (second as u64)
+                    (u64::from(first & 0x3F) << 8) | u64::from(second)
                 }
                 _ => {
                     if first == VDB_32BITLEN {
                         let buf = self.read_bytes(4)?;
-                        u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as u64
+                        u64::from(u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]))
                     } else if first == VDB_64BITLEN {
                         let buf = self.read_bytes(8)?;
                         u64::from_be_bytes([
@@ -288,13 +292,12 @@ impl VdbChecker {
 
         if &magic != b"VIATR" && &magic != b"REDIS" {
             return Err(format!(
-                "Invalid magic header: expected 'VIATR' or 'REDIS', got '{}'",
-                magic_str
+                "Invalid magic header: expected 'VIATR' or 'REDIS', got '{magic_str}'"
             ));
         }
 
         if self.verbose {
-            println!("[offset 0] Magic: {}", magic_str);
+            println!("[offset 0] Magic: {magic_str}");
         }
 
         // Check version
@@ -302,14 +305,14 @@ impl VdbChecker {
         let version_str = String::from_utf8_lossy(&version_bytes);
         let version: u32 = version_str
             .parse()
-            .map_err(|_| format!("Invalid version: {}", version_str))?;
+            .map_err(|_| format!("Invalid version: {version_str}"))?;
 
         if version > 12 {
-            return Err(format!("Unsupported VDB version: {}", version));
+            return Err(format!("Unsupported VDB version: {version}"));
         }
 
         if self.verbose {
-            println!("[offset 5] Version: {}", version);
+            println!("[offset 5] Version: {version}");
         }
 
         #[allow(unused_assignments)]
@@ -339,7 +342,7 @@ impl VdbChecker {
                         self.databases.push(current_db);
                     }
                     if self.verbose {
-                        println!("[offset {}] Selecting DB {}", offset, current_db);
+                        println!("[offset {offset}] Selecting DB {current_db}");
                     }
                 }
                 VDB_OPCODE_RESIZEDB => {
@@ -347,8 +350,7 @@ impl VdbChecker {
                     let expires_size = self.read_length()?;
                     if self.verbose {
                         println!(
-                            "[offset {}] DB resize: {} keys, {} expires",
-                            offset, db_size, expires_size
+                            "[offset {offset}] DB resize: {db_size} keys, {expires_size} expires"
                         );
                     }
                 }
@@ -362,7 +364,7 @@ impl VdbChecker {
                 }
                 VDB_OPCODE_EOF => {
                     if self.verbose {
-                        println!("[offset {}] EOF marker", offset);
+                        println!("[offset {offset}] EOF marker");
                     }
                     break;
                 }
@@ -377,10 +379,10 @@ impl VdbChecker {
                         VDB_TYPE_LIST | VDB_TYPE_LIST_QUICKLIST => self.list_keys += 1,
                         VDB_TYPE_SET | VDB_TYPE_SET_INTSET => self.set_keys += 1,
                         VDB_TYPE_ZSET | VDB_TYPE_ZSET_2 | VDB_TYPE_ZSET_ZIPLIST => {
-                            self.zset_keys += 1
+                            self.zset_keys += 1;
                         }
                         VDB_TYPE_HASH | VDB_TYPE_HASH_ZIPLIST | VDB_TYPE_HASH_ZIPMAP => {
-                            self.hash_keys += 1
+                            self.hash_keys += 1;
                         }
                         _ => self.other_keys += 1,
                     }
@@ -404,13 +406,12 @@ impl VdbChecker {
         let mut stored_crc_bytes = [0u8; 8];
         self.reader
             .read_exact(&mut stored_crc_bytes)
-            .map_err(|e| format!("Cannot read CRC64: {}", e))?;
+            .map_err(|e| format!("Cannot read CRC64: {e}"))?;
         let stored_crc = u64::from_le_bytes(stored_crc_bytes);
 
         if stored_crc != 0 && stored_crc != computed_crc {
             return Err(format!(
-                "CRC64 mismatch: stored={:016x}, computed={:016x}",
-                stored_crc, computed_crc
+                "CRC64 mismatch: stored={stored_crc:016x}, computed={computed_crc:016x}"
             ));
         }
 
@@ -479,19 +480,18 @@ fn main() {
                 file_path = Some(PathBuf::from(arg));
             }
             _ => {
-                eprintln!("Unknown option: {}", arg);
+                eprintln!("Unknown option: {arg}");
                 std::process::exit(1);
             }
         }
     }
 
-    let path = match file_path {
-        Some(p) => p,
-        None => {
-            eprintln!("Error: No VDB file specified");
-            print_usage();
-            std::process::exit(1);
-        }
+    let path = if let Some(p) = file_path {
+        p
+    } else {
+        eprintln!("Error: No VDB file specified");
+        print_usage();
+        std::process::exit(1);
     };
 
     if !path.exists() {
@@ -503,12 +503,12 @@ fn main() {
     let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
 
     println!("Checking VDB file: {}", path.display());
-    println!("File size: {} bytes", file_size);
+    println!("File size: {file_size} bytes");
 
     let mut checker = match VdbChecker::new(&path, verbose) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("Error: {e}");
             std::process::exit(1);
         }
     };
@@ -519,7 +519,7 @@ fn main() {
             println!("\n\x1b[32mVDB file is valid.\x1b[0m");
         }
         Err(e) => {
-            eprintln!("\n\x1b[31mVDB file is CORRUPTED: {}\x1b[0m", e);
+            eprintln!("\n\x1b[31mVDB file is CORRUPTED: {e}\x1b[0m");
             std::process::exit(1);
         }
     }

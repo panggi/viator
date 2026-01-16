@@ -3,6 +3,8 @@
 //! These tests verify invariants that should always hold,
 //! helping find edge cases that unit tests might miss.
 
+#![allow(dead_code)]
+
 use proptest::prelude::*;
 
 /// Generate arbitrary Redis keys
@@ -26,7 +28,7 @@ proptest! {
     /// SET followed by GET should return the same value
     #[test]
     #[ignore] // Run with: cargo test property -- --ignored
-    fn prop_set_get_roundtrip(key in arb_key(), value in arb_value()) {
+    fn prop_set_get_roundtrip(key in arb_key(), _value in arb_value()) {
         // This would connect to a running server and verify:
         // SET key value -> GET key == value
         // For now, we just verify the key and value are valid
@@ -65,7 +67,7 @@ proptest! {
     #[ignore]
     fn prop_sorted_set_score_accuracy(
         score in prop::num::f64::NORMAL,
-        member in arb_key()
+        _member in arb_key()
     ) {
         // ZADD zset score member -> ZSCORE zset member == score
         prop_assert!(score.is_finite());
@@ -92,7 +94,7 @@ proptest! {
     #[ignore]
     fn prop_hash_set_get_roundtrip(
         field in arb_key(),
-        value in arb_value()
+        _value in arb_value()
     ) {
         // HSET hash field value -> HGET hash field == value
         prop_assert!(!field.is_empty());
@@ -170,7 +172,7 @@ mod resp_properties {
         /// Any valid integer should encode and decode correctly
         #[test]
         fn prop_integer_roundtrip(n in any::<i64>()) {
-            let encoded = format!(":{}\r\n", n);
+            let encoded = format!(":{n}\r\n");
             prop_assert!(encoded.starts_with(':'));
             prop_assert!(encoded.ends_with("\r\n"));
         }

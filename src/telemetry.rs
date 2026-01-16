@@ -12,7 +12,6 @@
 
 use opentelemetry::KeyValue;
 use opentelemetry::trace::TracerProvider;
-use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{Resource, runtime};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 

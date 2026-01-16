@@ -666,9 +666,7 @@ pub fn cmd_ft_hybrid(
                     )
                 } else {
                     // Try parsing as comma-separated string
-                    std::str::from_utf8(blob)
-                        .ok()
-                        .map(|s| parse_vector_query(s))
+                    std::str::from_utf8(blob).ok().map(parse_vector_query)
                 }
             })
         });

@@ -550,7 +550,7 @@ fn set_int_to_bits(data: &mut Vec<u8>, offset: usize, bits: u8, value: i64) {
     let value = value as u64;
 
     // Ensure data is large enough
-    let end_byte = (offset + bits as usize + 7) / 8;
+    let end_byte = (offset + bits as usize).div_ceil(8);
     if data.len() < end_byte {
         data.resize(end_byte, 0);
     }

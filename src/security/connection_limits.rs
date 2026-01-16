@@ -32,9 +32,10 @@ pub const DEFAULT_OUTPUT_BUFFER_HARD_LIMIT: usize = 512 * 1024 * 1024;
 pub const DEFAULT_SOFT_LIMIT_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Client type for different buffer limit profiles.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ClientType {
     /// Normal clients
+    #[default]
     Normal,
     /// Replica/slave connections
     Replica,
@@ -42,12 +43,6 @@ pub enum ClientType {
     PubSub,
     /// Master connection (when this server is a replica)
     Master,
-}
-
-impl Default for ClientType {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 /// Output buffer limits configuration.

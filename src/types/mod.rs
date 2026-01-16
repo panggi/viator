@@ -68,9 +68,10 @@ pub fn current_timestamp_ms() -> Timestamp {
 }
 
 /// Expiration time representation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Expiry {
     /// No expiration
+    #[default]
     Never,
     /// Expire at specific timestamp (milliseconds since epoch)
     At(Timestamp),
@@ -146,12 +147,6 @@ impl Expiry {
     #[must_use]
     pub fn ttl_seconds(&self) -> Option<i64> {
         self.ttl_millis().map(|ms| ms / 1000)
-    }
-}
-
-impl Default for Expiry {
-    fn default() -> Self {
-        Self::Never
     }
 }
 

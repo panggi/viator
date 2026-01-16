@@ -350,11 +350,11 @@ pub fn cmd_hsetnx(
         let hash = value.as_hash().unwrap();
         let mut hash = hash.write();
 
-        let inserted = if hash.contains_key(&field) {
-            false
-        } else {
-            hash.insert(field, val);
+        let inserted = if let std::collections::hash_map::Entry::Vacant(e) = hash.entry(field) {
+            e.insert(val);
             true
+        } else {
+            false
         };
 
         drop(hash);

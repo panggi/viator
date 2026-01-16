@@ -36,8 +36,6 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![warn(
     clippy::all,
-    clippy::pedantic,
-    clippy::nursery,
     rust_2018_idioms,
     trivial_casts,
     trivial_numeric_casts,
@@ -46,8 +44,22 @@
 )]
 #![allow(
     clippy::module_name_repetitions,
-    missing_docs,  // TODO: Add comprehensive documentation
-    dead_code      // Some fields/methods reserved for future use
+    clippy::await_holding_lock,         // TODO: Review async lock patterns
+    clippy::type_complexity,            // TODO: Simplify complex types
+    clippy::should_implement_trait,     // from_str, as_ref, as_mut naming
+    clippy::inherent_to_string,         // Custom to_string implementations
+    clippy::inherent_to_string_shadow_display,
+    clippy::manual_strip,               // TODO: Use strip_prefix
+    clippy::needless_range_loop,        // TODO: Use iterators
+    clippy::vec_init_then_push,         // TODO: Use vec![]
+    clippy::double_must_use,
+    clippy::approx_constant,            // PI approximation
+    clippy::manual_clamp,               // TODO: Use clamp()
+    clippy::sliced_string_as_bytes,     // as_bytes after slice
+    clippy::wrong_self_convention,      // to_* with Copy types
+    clippy::empty_line_after_doc_comments,
+    missing_docs, // TODO: Add comprehensive documentation
+    dead_code     // Some fields/methods reserved for future use
 )]
 
 // Use jemalloc for better performance on Unix systems

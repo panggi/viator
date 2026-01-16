@@ -307,11 +307,11 @@ impl AofWriter {
     /// Write a command in RESP format.
     fn write_command<W: Write>(writer: &mut W, args: &[&str]) -> Result<(), StorageError> {
         // Array header
-        write!(writer, "*{}\r\n", args.len()).map_err(|e| StorageError::Io(e))?;
+        write!(writer, "*{}\r\n", args.len()).map_err(StorageError::Io)?;
 
         // Each argument as bulk string
         for arg in args {
-            write!(writer, "${}\r\n{}\r\n", arg.len(), arg).map_err(|e| StorageError::Io(e))?;
+            write!(writer, "${}\r\n{}\r\n", arg.len(), arg).map_err(StorageError::Io)?;
         }
 
         Ok(())

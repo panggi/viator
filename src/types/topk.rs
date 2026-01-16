@@ -77,7 +77,7 @@ impl TopK {
             hash ^= u64::from(byte);
             hash = hash.wrapping_mul(0x100000001b3);
         }
-        let fp = (hash as u32) & 0xFFFFFFFF;
+        let fp = hash as u32;
         if fp == 0 { 1 } else { fp }
     }
 
@@ -126,8 +126,8 @@ impl TopK {
         }
 
         // Update top-k heap
-        let dropped = self.update_heap(item_bytes, max_count);
-        dropped
+
+        self.update_heap(item_bytes, max_count)
     }
 
     /// Update the min-heap with item count.

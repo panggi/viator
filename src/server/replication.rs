@@ -24,24 +24,20 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 /// Replication role.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ReplicationRole {
     /// This server is a master
+    #[default]
     Master,
     /// This server is a replica
     Replica,
 }
 
-impl Default for ReplicationRole {
-    fn default() -> Self {
-        Self::Master
-    }
-}
-
 /// Replication state for a replica.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ReplicaState {
     /// Initial state
+    #[default]
     None,
     /// Connecting to master
     Connecting,
@@ -53,12 +49,6 @@ pub enum ReplicaState {
     ReceivingRdb,
     /// Online and receiving commands
     Online,
-}
-
-impl Default for ReplicaState {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 /// Replication backlog for partial resync.

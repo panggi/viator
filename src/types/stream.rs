@@ -338,8 +338,8 @@ impl ViatorStream {
         let base = size_of::<Self>();
         let entries: usize = self
             .entries
-            .iter()
-            .map(|(_, fields)| 16 + fields.iter().map(|(k, v)| k.len() + v.len()).sum::<usize>())
+            .values()
+            .map(|fields| 16 + fields.iter().map(|(k, v)| k.len() + v.len()).sum::<usize>())
             .sum();
         base + entries
     }

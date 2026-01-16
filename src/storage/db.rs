@@ -690,13 +690,7 @@ impl Db {
         let target = rng.gen_range(0..len);
 
         // Iterate to find the key at that position
-        if let Some(key) = self
-            .data
-            .iter()
-            .skip(target)
-            .next()
-            .map(|r| r.key().clone())
-        {
+        if let Some(key) = self.data.iter().nth(target).map(|r| r.key().clone()) {
             self.data.remove(&key);
             self.expires.remove(&key);
             self.access_times.remove(&key);
@@ -718,13 +712,7 @@ impl Db {
         let mut rng = rand::thread_rng();
         let target = rng.gen_range(0..len);
 
-        if let Some(key) = self
-            .expires
-            .iter()
-            .skip(target)
-            .next()
-            .map(|r| r.key().clone())
-        {
+        if let Some(key) = self.expires.iter().nth(target).map(|r| r.key().clone()) {
             self.data.remove(&key);
             self.expires.remove(&key);
             self.access_times.remove(&key);
@@ -778,7 +766,7 @@ impl Db {
         // Sample random keys and find the least recently used
         for _ in 0..SAMPLE_SIZE.min(len) {
             let target = rng.gen_range(0..len);
-            if let Some(entry) = self.data.iter().skip(target).next() {
+            if let Some(entry) = self.data.iter().nth(target) {
                 let key = entry.key();
                 let access_time = self.access_times.get(key).map(|r| *r).unwrap_or(0);
                 if access_time < oldest_time {
@@ -816,7 +804,7 @@ impl Db {
         // Sample random volatile keys and find the least recently used
         for _ in 0..SAMPLE_SIZE.min(len) {
             let target = rng.gen_range(0..len);
-            if let Some(entry) = self.expires.iter().skip(target).next() {
+            if let Some(entry) = self.expires.iter().nth(target) {
                 let key = entry.key();
                 let access_time = self.access_times.get(key).map(|r| *r).unwrap_or(0);
                 if access_time < oldest_time {

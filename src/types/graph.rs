@@ -190,7 +190,7 @@ impl Graph {
         for label in &labels {
             self.label_index
                 .entry(label.clone())
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(id);
         }
 
@@ -198,7 +198,7 @@ impl Graph {
         for (key, value) in &properties {
             self.property_index
                 .entry((String::new(), key.clone(), value.clone()))
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(id);
         }
 

@@ -23,7 +23,7 @@ pub struct QueuedCommand {
 }
 
 /// Pub/Sub subscription info.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct PubSubState {
     /// Subscribed channels with their receivers
     pub channel_receivers:
@@ -31,15 +31,6 @@ pub struct PubSubState {
     /// Subscribed patterns with their receivers
     pub pattern_receivers:
         std::collections::HashMap<Bytes, broadcast::Receiver<super::pubsub::PubSubMessage>>,
-}
-
-impl Default for PubSubState {
-    fn default() -> Self {
-        Self {
-            channel_receivers: std::collections::HashMap::new(),
-            pattern_receivers: std::collections::HashMap::new(),
-        }
-    }
 }
 
 impl PubSubState {

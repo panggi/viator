@@ -586,10 +586,8 @@ impl ClusterManager {
         let mut owners = self.slot_owners.write();
 
         for &slot in slots {
-            if slot < CLUSTER_SLOTS {
-                if owners[slot as usize] == Some(self.my_id) {
-                    owners[slot as usize] = None;
-                }
+            if slot < CLUSTER_SLOTS && owners[slot as usize] == Some(self.my_id) {
+                owners[slot as usize] = None;
             }
         }
 

@@ -427,7 +427,7 @@ pub fn cmd_bzpopmin(
 
                             if value
                                 .as_zset()
-                                .map(|z| z.read().len() == 0)
+                                .map(|z| z.read().is_empty())
                                 .unwrap_or(false)
                             {
                                 db.delete(key);
@@ -494,7 +494,7 @@ pub fn cmd_bzpopmax(
 
                             if value
                                 .as_zset()
-                                .map(|z| z.read().len() == 0)
+                                .map(|z| z.read().is_empty())
                                 .unwrap_or(false)
                             {
                                 db.delete(key);
@@ -572,7 +572,7 @@ pub fn cmd_bzmpop(
                 if let Some(value) = db.get(key) {
                     if let Some(zset) = value.as_zset() {
                         let mut guard = zset.write();
-                        if guard.len() > 0 {
+                        if !guard.is_empty() {
                             let entries = match direction.as_str() {
                                 "MIN" => guard.pop_min(count),
                                 "MAX" => guard.pop_max(count),
@@ -595,7 +595,7 @@ pub fn cmd_bzmpop(
 
                                 if value
                                     .as_zset()
-                                    .map(|z| z.read().len() == 0)
+                                    .map(|z| z.read().is_empty())
                                     .unwrap_or(false)
                                 {
                                     db.delete(key);

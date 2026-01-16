@@ -76,11 +76,11 @@ impl InstanceConnection {
                 self.stream = Some(stream);
 
                 // Authenticate if needed
-                if self.auth_pass.is_some() || self.auth_user.is_some() {
-                    if !self.authenticate().await {
-                        self.stream = None;
-                        return false;
-                    }
+                if (self.auth_pass.is_some() || self.auth_user.is_some())
+                    && !self.authenticate().await
+                {
+                    self.stream = None;
+                    return false;
                 }
 
                 self.reachable = true;
@@ -109,7 +109,7 @@ impl InstanceConnection {
                 user.len(),
                 user,
                 self.auth_pass.as_ref().map(|p| p.len()).unwrap_or(0),
-                self.auth_pass.as_ref().map(|p| p.as_str()).unwrap_or("")
+                self.auth_pass.as_deref().unwrap_or("")
             )
         } else if let Some(ref pass) = self.auth_pass {
             format!("*2\r\n$4\r\nAUTH\r\n${}\r\n{}\r\n", pass.len(), pass)
@@ -504,14 +504,11 @@ impl SentinelMonitor {
             let sentinel_addr = sentinel_info.addr;
 
             // Send SENTINEL IS-MASTER-DOWN-BY-ADDR to the sentinel
-            match self
+            if let Some(true) = self
                 .send_is_master_down_query(sentinel_addr, master_addr)
                 .await
             {
-                Some(true) => {
-                    votes += 1;
-                }
-                _ => {}
+                votes += 1;
             }
         }
 

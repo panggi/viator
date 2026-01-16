@@ -284,7 +284,7 @@ impl VectorSet {
 
     /// Find similar elements to a query vector.
     pub fn search(&self, query: &[f32], count: usize) -> Vec<(Bytes, f32)> {
-        if self.dim.map_or(false, |d| d != query.len()) {
+        if self.dim.is_some_and(|d| d != query.len()) {
             return vec![];
         }
 

@@ -69,11 +69,11 @@ impl Stats {
         // Sort latencies for percentile calculation
         latencies.sort();
 
-        let avg = if !latencies.is_empty() {
+        let avg = if latencies.is_empty() {
+            Duration::ZERO
+        } else {
             let sum: Duration = latencies.iter().sum();
             sum / latencies.len() as u32
-        } else {
-            Duration::ZERO
         };
 
         let p50 = latencies
@@ -89,16 +89,16 @@ impl Stats {
             .copied()
             .unwrap_or(Duration::ZERO);
 
-        println!("====== {} ======", test_name);
+        println!("====== {test_name} ======");
         println!(
             "  {} requests completed in {:.2} seconds",
             completed,
             total_time.as_secs_f64()
         );
         if errors > 0 {
-            println!("  {} errors", errors);
+            println!("  {errors} errors");
         }
-        println!("  {:.2} requests per second\n", rps);
+        println!("  {rps:.2} requests per second\n");
         println!("Latency by percentile distribution:");
         println!(
             "  50.000% <= {:.3} milliseconds",
@@ -223,7 +223,7 @@ fn run_client(
     let mut stream = match TcpStream::connect(&addr) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Failed to connect to {}: {}", addr, e);
+            eprintln!("Failed to connect to {addr}: {e}");
             return;
         }
     };
@@ -379,7 +379,7 @@ fn main() {
             "-t" => {
                 i += 1;
                 if i < args.len() {
-                    config.tests = args[i].split(',').map(|s| s.to_uppercase()).collect();
+                    config.tests = args[i].split(',').map(str::to_uppercase).collect();
                 }
             }
             "-q" => {
@@ -404,7 +404,7 @@ fn main() {
     // Test connection first
     let addr = format!("{}:{}", config.host, config.port);
     if TcpStream::connect(&addr).is_err() {
-        eprintln!("Error: Could not connect to Viator at {}", addr);
+        eprintln!("Error: Could not connect to Viator at {addr}");
         eprintln!("Make sure the server is running.");
         std::process::exit(1);
     }
@@ -450,13 +450,13 @@ fn main() {
             "SET" => {
                 let data = data_ref.to_string();
                 run_benchmark(&config, "SET", move |i| {
-                    let key = format!("key:{:012}", i);
+                    let key = format!("key:{i:012}");
                     encode_command(&["SET", &key, &data])
                 });
             }
             "GET" => {
                 run_benchmark(&config, "GET", |i| {
-                    let key = format!("key:{:012}", i);
+                    let key = format!("key:{i:012}");
                     encode_command(&["GET", &key])
                 });
             }
@@ -483,14 +483,14 @@ fn main() {
             }
             "SADD" => {
                 run_benchmark(&config, "SADD", |i| {
-                    let member = format!("member:{}", i);
+                    let member = format!("member:{i}");
                     encode_command(&["SADD", "myset", &member])
                 });
             }
             "HSET" => {
                 let data = data_ref.to_string();
                 run_benchmark(&config, "HSET", move |i| {
-                    let field = format!("field:{}", i);
+                    let field = format!("field:{i}");
                     encode_command(&["HSET", "myhash", &field, &data])
                 });
             }
@@ -500,7 +500,7 @@ fn main() {
             "ZADD" => {
                 run_benchmark(&config, "ZADD", |i| {
                     let score = (i % 1000).to_string();
-                    let member = format!("member:{}", i);
+                    let member = format!("member:{i}");
                     encode_command(&["ZADD", "myzset", &score, &member])
                 });
             }

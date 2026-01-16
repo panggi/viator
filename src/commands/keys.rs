@@ -915,7 +915,7 @@ fn serialize_value(value: &ViatorValue) -> Vec<u8> {
             buf.put_u32_le(items.len() as u32);
             for item in items {
                 buf.put_u32_le(item.len() as u32);
-                buf.extend_from_slice(&item);
+                buf.extend_from_slice(item);
             }
         }
         ViatorValue::Set(set) => {
@@ -925,7 +925,7 @@ fn serialize_value(value: &ViatorValue) -> Vec<u8> {
             buf.put_u32_le(members.len() as u32);
             for item in members {
                 buf.put_u32_le(item.len() as u32);
-                buf.extend_from_slice(&item);
+                buf.extend_from_slice(item);
             }
         }
         ViatorValue::Hash(hash) => {

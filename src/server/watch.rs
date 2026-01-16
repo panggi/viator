@@ -85,13 +85,13 @@ impl WatchRegistry {
         // Add to key -> clients mapping
         self.watched_keys
             .entry(key.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(client_id);
 
         // Add to client -> keys mapping
         self.client_watches
             .entry(client_id)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(key);
 
         self.stats.watch_count.fetch_add(1, Ordering::Relaxed);

@@ -21,7 +21,7 @@ impl BloomFilter {
     pub fn new(capacity: usize, error_rate: f64) -> Self {
         let num_bits = Self::optimal_num_bits(capacity, error_rate);
         let num_hashes = Self::optimal_num_hashes(num_bits, capacity);
-        let num_words = (num_bits + 63) / 64;
+        let num_words = num_bits.div_ceil(64);
 
         Self {
             bits: vec![0u64; num_words],
@@ -34,7 +34,7 @@ impl BloomFilter {
     /// Create a Bloom filter with specific parameters.
     #[must_use]
     pub fn with_params(num_bits: usize, num_hashes: u32) -> Self {
-        let num_words = (num_bits + 63) / 64;
+        let num_words = num_bits.div_ceil(64);
         Self {
             bits: vec![0u64; num_words],
             num_bits,

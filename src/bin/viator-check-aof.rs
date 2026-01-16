@@ -21,7 +21,7 @@ struct AofChecker {
 
 impl AofChecker {
     fn new(path: &PathBuf, verbose: bool) -> Result<Self, String> {
-        let file = File::open(path).map_err(|e| format!("Cannot open file: {}", e))?;
+        let file = File::open(path).map_err(|e| format!("Cannot open file: {e}"))?;
         Ok(Self {
             path: path.clone(),
             reader: BufReader::new(file),
@@ -163,7 +163,7 @@ impl AofChecker {
         let file_size = std::fs::metadata(&self.path).map(|m| m.len()).unwrap_or(0);
 
         println!("Checking AOF file: {}", self.path.display());
-        println!("File size: {} bytes", file_size);
+        println!("File size: {file_size} bytes");
 
         let mut is_valid = true;
         let mut first_error: Option<String> = None;
@@ -192,7 +192,7 @@ impl AofChecker {
                 }
                 Err(e) => {
                     if first_error.is_none() {
-                        first_error = Some(format!("Error at offset {}: {}", cmd_start, e));
+                        first_error = Some(format!("Error at offset {cmd_start}: {e}"));
                     }
                     is_valid = false;
 
@@ -200,9 +200,8 @@ impl AofChecker {
                     if self.try_recover() {
                         self.total_commands += 1;
                         continue;
-                    } else {
-                        break;
                     }
+                    break;
                 }
             }
         }
@@ -213,7 +212,7 @@ impl AofChecker {
         println!("Last valid byte offset: {}", self.last_valid_position);
 
         if let Some(err) = first_error {
-            println!("\nFirst error: {}", err);
+            println!("\nFirst error: {err}");
         }
 
         Ok(is_valid)
@@ -251,10 +250,10 @@ impl AofChecker {
         let file = OpenOptions::new()
             .write(true)
             .open(&self.path)
-            .map_err(|e| format!("Cannot open file for writing: {}", e))?;
+            .map_err(|e| format!("Cannot open file for writing: {e}"))?;
 
         file.set_len(self.last_valid_position)
-            .map_err(|e| format!("Cannot truncate file: {}", e))?;
+            .map_err(|e| format!("Cannot truncate file: {e}"))?;
 
         println!("Truncated file to {} bytes", self.last_valid_position);
         Ok(())
@@ -299,19 +298,18 @@ fn main() {
                 file_path = Some(PathBuf::from(arg));
             }
             _ => {
-                eprintln!("Unknown option: {}", arg);
+                eprintln!("Unknown option: {arg}");
                 std::process::exit(1);
             }
         }
     }
 
-    let path = match file_path {
-        Some(p) => p,
-        None => {
-            eprintln!("Error: No AOF file specified");
-            print_usage();
-            std::process::exit(1);
-        }
+    let path = if let Some(p) = file_path {
+        p
+    } else {
+        eprintln!("Error: No AOF file specified");
+        print_usage();
+        std::process::exit(1);
     };
 
     if !path.exists() {
@@ -322,7 +320,7 @@ fn main() {
     let mut checker = match AofChecker::new(&path, verbose) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("Error: {e}");
             std::process::exit(1);
         }
     };
@@ -341,7 +339,7 @@ fn main() {
                         println!("\x1b[32mAOF file has been repaired.\x1b[0m");
                     }
                     Err(e) => {
-                        eprintln!("\x1b[31mFailed to repair: {}\x1b[0m", e);
+                        eprintln!("\x1b[31mFailed to repair: {e}\x1b[0m");
                         std::process::exit(1);
                     }
                 }
@@ -351,7 +349,7 @@ fn main() {
             }
         }
         Err(e) => {
-            eprintln!("\n\x1b[31mError checking AOF: {}\x1b[0m", e);
+            eprintln!("\n\x1b[31mError checking AOF: {e}\x1b[0m");
             std::process::exit(1);
         }
     }

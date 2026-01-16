@@ -1,6 +1,5 @@
 //! Benchmark for RESP protocol parsing.
 
-use bytes::Bytes;
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 
 fn benchmark_parsing(c: &mut Criterion) {

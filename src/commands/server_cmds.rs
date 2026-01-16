@@ -55,7 +55,7 @@ pub fn cmd_info(
             info.push_str(&format!("redis_rs_version:{VERSION}\r\n"));
             info.push_str("viator_mode:standalone\r\n");
             info.push_str(&format!("os:{}\r\n", std::env::consts::OS));
-            info.push_str(&format!("arch_bits:{}\r\n", size_of::<usize>() * 8));
+            info.push_str(&format!("arch_bits:{}\r\n", (usize::BITS as usize)));
             info.push_str(&format!("tcp_port:{}\r\n", 6379));
             info.push_str("\r\n");
         }

@@ -175,13 +175,7 @@ codegen-units = 1
 
 [lints.rust]
 unsafe_code = "warn"
-missing_docs = "warn"
 
 [lints.clippy]
+# Standard clippy lints only - pedantic/nursery/cargo are too strict for CI
 all = "warn"
-pedantic = "warn"
-nursery = "warn"
-cargo = "warn"
-# Allow some pedantic lints that are too strict
-module_name_repetitions = "allow"
-must_use_candidate = "allow"

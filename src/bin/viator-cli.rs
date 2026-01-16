@@ -3,6 +3,8 @@
 //! A full-featured CLI client compatible with Redis 8.4.0 protocol.
 //! Supports interactive mode, single commands, pipe mode, and more.
 
+#![allow(clippy::manual_strip)]
+
 use bytes::{Buf, BytesMut};
 use std::io::{self, BufRead, Read, Write};
 use std::net::TcpStream;
@@ -55,7 +57,7 @@ impl Connection {
     fn connect(config: &Config) -> Result<Self, String> {
         let addr = format!("{}:{}", config.host, config.port);
         let stream = TcpStream::connect(&addr)
-            .map_err(|e| format!("Could not connect to Viator at {}: {}", addr, e))?;
+            .map_err(|e| format!("Could not connect to Viator at {addr}: {e}"))?;
 
         stream.set_nodelay(true).ok();
 
@@ -72,7 +74,7 @@ impl Connection {
         // AUTH if password set
         if let Some(ref password) = config.password {
             let response = conn.execute(&["AUTH", password])?;
-            if response.starts_with("-") {
+            if response.starts_with('-') {
                 return Err(format!("AUTH failed: {}", response.trim()));
             }
         }
@@ -81,7 +83,7 @@ impl Connection {
         if config.database > 0 {
             let db_str = config.database.to_string();
             let response = conn.execute(&["SELECT", &db_str])?;
-            if response.starts_with("-") {
+            if response.starts_with('-') {
                 return Err(format!("SELECT failed: {}", response.trim()));
             }
         }
@@ -93,13 +95,13 @@ impl Connection {
         let cmd = encode_command(args);
         self.stream
             .write_all(&cmd)
-            .map_err(|e| format!("Write error: {}", e))?;
+            .map_err(|e| format!("Write error: {e}"))?;
 
         self.read_response()
     }
 
     fn execute_raw(&mut self, args: &[String]) -> Result<String, String> {
-        let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let refs: Vec<&str> = args.iter().map(std::string::String::as_str).collect();
         self.execute(&refs)
     }
 
@@ -111,7 +113,7 @@ impl Connection {
             let n = self
                 .stream
                 .read(&mut temp)
-                .map_err(|e| format!("Read error: {}", e))?;
+                .map_err(|e| format!("Read error: {e}"))?;
 
             if n == 0 {
                 return Err("Connection closed".to_string());
@@ -163,7 +165,7 @@ fn parse_response(buf: &[u8]) -> Result<Option<String>, String> {
             // Integer
             if let Some(end) = find_crlf(buf) {
                 let s = String::from_utf8_lossy(&buf[1..end]).to_string();
-                return Ok(Some(format!("(integer) {}", s)));
+                return Ok(Some(format!("(integer) {s}")));
             }
         }
         b'$' => {
@@ -183,7 +185,7 @@ fn parse_response(buf: &[u8]) -> Result<Option<String>, String> {
                 if buf.len() >= total {
                     let data = &buf[data_start..data_end];
                     let s = String::from_utf8_lossy(data).to_string();
-                    return Ok(Some(format!("\"{}\"", s)));
+                    return Ok(Some(format!("\"{s}\"")));
                 }
             }
         }
@@ -291,12 +293,7 @@ fn parse_array(buf: &[u8]) -> Result<Option<String>, String> {
 }
 
 fn find_crlf(buf: &[u8]) -> Option<usize> {
-    for i in 0..buf.len().saturating_sub(1) {
-        if buf[i] == b'\r' && buf[i + 1] == b'\n' {
-            return Some(i);
-        }
-    }
-    None
+    (0..buf.len().saturating_sub(1)).find(|&i| buf[i] == b'\r' && buf[i + 1] == b'\n')
 }
 
 /// Interactive REPL mode
@@ -307,7 +304,7 @@ fn run_interactive(config: &Config) -> Result<(), String> {
     let _db_prompt = if config.database > 0 {
         format!("{}:{}[{}]> ", config.host, config.port, config.database)
     } else {
-        prompt.clone()
+        prompt
     };
 
     let mut current_db = config.database;
@@ -323,7 +320,7 @@ fn run_interactive(config: &Config) -> Result<(), String> {
             format!("{}:{}> ", config.host, config.port)
         };
 
-        print!("{}", current_prompt);
+        print!("{current_prompt}");
         io::stdout().flush().ok();
 
         let mut input = String::new();
@@ -366,17 +363,17 @@ fn run_interactive(config: &Config) -> Result<(), String> {
         for _ in 0..config.repeat {
             match conn.execute_raw(&args) {
                 Ok(response) => {
-                    println!("{}", response);
+                    println!("{response}");
 
                     // Track database changes
-                    if args[0].to_uppercase() == "SELECT" && !response.starts_with("-") {
+                    if args[0].to_uppercase() == "SELECT" && !response.starts_with('-') {
                         if let Some(db) = args.get(1) {
                             current_db = db.parse().unwrap_or(0);
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("(error) {}", e);
+                    eprintln!("(error) {e}");
                     // Try to reconnect
                     match Connection::connect(config) {
                         Ok(new_conn) => {
@@ -384,7 +381,7 @@ fn run_interactive(config: &Config) -> Result<(), String> {
                             eprintln!("Reconnected.");
                         }
                         Err(e) => {
-                            eprintln!("Reconnection failed: {}", e);
+                            eprintln!("Reconnection failed: {e}");
                         }
                     }
                 }
@@ -458,10 +455,10 @@ fn run_command(config: &Config, args: &[String]) -> Result<(), String> {
     for _ in 0..config.repeat {
         match conn.execute_raw(args) {
             Ok(response) => {
-                println!("{}", response);
+                println!("{response}");
             }
             Err(e) => {
-                eprintln!("(error) {}", e);
+                eprintln!("(error) {e}");
                 return Err(e);
             }
         }
@@ -480,7 +477,7 @@ fn run_pipe(config: &Config) -> Result<(), String> {
     let stdin = io::stdin();
 
     for line in stdin.lock().lines() {
-        let line = line.map_err(|e| format!("Read error: {}", e))?;
+        let line = line.map_err(|e| format!("Read error: {e}"))?;
         let line = line.trim();
 
         if line.is_empty() || line.starts_with('#') {
@@ -494,10 +491,10 @@ fn run_pipe(config: &Config) -> Result<(), String> {
 
         match conn.execute_raw(&args) {
             Ok(response) => {
-                println!("{}", response);
+                println!("{response}");
             }
             Err(e) => {
-                eprintln!("(error) {}", e);
+                eprintln!("(error) {e}");
             }
         }
     }
@@ -524,12 +521,12 @@ fn run_monitor(config: &Config) -> Result<(), String> {
                     if line.starts_with('+') {
                         println!("{}", &line[1..]);
                     } else {
-                        println!("{}", line);
+                        println!("{line}");
                     }
                 }
             }
             Err(e) => {
-                eprintln!("Error: {}", e);
+                eprintln!("Error: {e}");
                 break;
             }
         }
@@ -550,7 +547,7 @@ fn run_subscribe(config: &Config, channels: &[String]) -> Result<(), String> {
     let cmd = encode_command(&args);
     conn.stream
         .write_all(&cmd)
-        .map_err(|e| format!("Write error: {}", e))?;
+        .map_err(|e| format!("Write error: {e}"))?;
 
     println!(
         "Subscribed to {} channel(s). Press Ctrl+C to exit.",
@@ -574,7 +571,7 @@ fn run_subscribe(config: &Config, channels: &[String]) -> Result<(), String> {
                 }
             }
             Err(e) => {
-                eprintln!("Error: {}", e);
+                eprintln!("Error: {e}");
                 break;
             }
         }
@@ -639,10 +636,10 @@ fn parse_pubsub_message(buf: &[u8]) -> Result<Option<(String, usize)>, String> {
         let content = &lines[2];
 
         let output = match msg_type.as_str() {
-            "message" => format!("{}> {}", channel, content),
-            "subscribe" => format!("Subscribed to '{}' ({} subscribers)", channel, content),
-            "unsubscribe" => format!("Unsubscribed from '{}' ({} subscribers)", channel, content),
-            _ => format!("{}: {} - {}", msg_type, channel, content),
+            "message" => format!("{channel}> {content}"),
+            "subscribe" => format!("Subscribed to '{channel}' ({content} subscribers)"),
+            "unsubscribe" => format!("Unsubscribed from '{channel}' ({content} subscribers)"),
+            _ => format!("{msg_type}: {channel} - {content}"),
         };
 
         return Ok(Some((output, pos)));
@@ -863,7 +860,7 @@ fn main() {
     };
 
     if let Err(e) = result {
-        eprintln!("Error: {}", e);
+        eprintln!("Error: {e}");
         std::process::exit(1);
     }
 }
@@ -894,7 +891,7 @@ fn run_scan(config: &Config, pattern: &str) -> Result<(), String> {
                     if let Some(key) = line.split(')').nth(1) {
                         let key = key.trim().trim_matches('"');
                         if !key.is_empty() {
-                            println!("{}", key);
+                            println!("{key}");
                             total += 1;
                         }
                     }
@@ -907,6 +904,6 @@ fn run_scan(config: &Config, pattern: &str) -> Result<(), String> {
         }
     }
 
-    eprintln!("\n({} keys)", total);
+    eprintln!("\n({total} keys)");
     Ok(())
 }

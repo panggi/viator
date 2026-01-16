@@ -972,13 +972,13 @@ pub fn cmd_msetex(
                     if pttl > 0 {
                         Expiry::from_millis(pttl)
                     } else {
-                        expiry.clone()
+                        expiry
                     }
                 } else {
-                    expiry.clone()
+                    expiry
                 }
             } else {
-                expiry.clone()
+                expiry
             };
 
             db.set_with_expiry(key, ViatorValue::string(value), final_expiry);

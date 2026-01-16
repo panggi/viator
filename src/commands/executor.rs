@@ -522,7 +522,6 @@ impl CommandExecutor {
     /// Handle INFO command with access to Database for accurate metrics.
     async fn handle_info(&self, cmd: &ParsedCommand) -> Result<Frame> {
         use crate::server::metrics::{format_bytes, get_memory_usage};
-        use std::mem::size_of;
 
         let section = cmd.args.first().and_then(|s| std::str::from_utf8(s).ok());
         let mut info = String::new();
@@ -534,7 +533,7 @@ impl CommandExecutor {
             info.push_str(&format!("viator_version:{}\r\n", crate::VERSION));
             info.push_str("viator_mode:standalone\r\n");
             info.push_str(&format!("os:{}\r\n", std::env::consts::OS));
-            info.push_str(&format!("arch_bits:{}\r\n", size_of::<usize>() * 8));
+            info.push_str(&format!("arch_bits:{}\r\n", (usize::BITS as usize)));
             info.push_str("tcp_port:6379\r\n");
             info.push_str("\r\n");
         }

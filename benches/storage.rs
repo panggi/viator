@@ -3,7 +3,6 @@
 //! Tests the core storage layer performance under various conditions.
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use std::sync::Arc;
 
 // Note: Adjust imports based on your actual module structure
 // use redis_rs::storage::{Database, Db};
@@ -14,7 +13,7 @@ fn bench_single_thread_ops(c: &mut Criterion) {
     let mut group = c.benchmark_group("single_thread");
 
     // Placeholder - replace with actual Database usage
-    for size in [64, 256, 1024, 4096].iter() {
+    for size in &[64, 256, 1024, 4096] {
         group.throughput(Throughput::Bytes(*size as u64));
 
         group.bench_with_input(BenchmarkId::new("set", size), size, |b, &size| {
@@ -22,7 +21,7 @@ fn bench_single_thread_ops(c: &mut Criterion) {
             let mut i = 0u64;
             b.iter(|| {
                 i += 1;
-                let key = format!("key:{}", i);
+                let key = format!("key:{i}");
                 black_box((&key, &value));
             });
         });
@@ -36,7 +35,7 @@ fn bench_concurrent_access(c: &mut Criterion) {
     let mut group = c.benchmark_group("concurrent");
 
     // Test with different thread counts
-    for num_threads in [1, 2, 4, 8].iter() {
+    for num_threads in &[1, 2, 4, 8] {
         group.bench_with_input(
             BenchmarkId::new("read_heavy", num_threads),
             num_threads,
@@ -132,7 +131,7 @@ fn bench_memory(c: &mut Criterion) {
     let mut group = c.benchmark_group("memory");
 
     // Test allocation overhead for different key sizes
-    for key_len in [8, 32, 128, 512].iter() {
+    for key_len in &[8, 32, 128, 512] {
         group.bench_with_input(
             BenchmarkId::new("key_allocation", key_len),
             key_len,

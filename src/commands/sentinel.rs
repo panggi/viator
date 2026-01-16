@@ -661,7 +661,7 @@ fn handle_monitor(cmd: &ParsedCommand, state: &SentinelState) -> Result<Frame> {
 
     let addr: SocketAddr = format!("{}:{}", ip, port)
         .parse()
-        .map_err(|e| crate::error::Error::AddrParse(e))?;
+        .map_err(crate::error::Error::AddrParse)?;
 
     let mut config = MasterConfig::new(name.to_string(), addr);
     config.quorum = quorum;
@@ -905,7 +905,7 @@ fn handle_is_master_down(cmd: &ParsedCommand, state: &SentinelState) -> Result<F
     // Find the master by address
     let target_addr: SocketAddr = format!("{}:{}", ip, port)
         .parse()
-        .map_err(|e| crate::error::Error::AddrParse(e))?;
+        .map_err(crate::error::Error::AddrParse)?;
 
     let mut found_master = None;
     for entry in state.masters.iter() {
