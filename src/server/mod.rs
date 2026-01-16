@@ -37,7 +37,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, Semaphore};
 use tracing::{error, info, warn};
 
 /// The main Redis server.
@@ -69,6 +69,8 @@ pub struct Server {
     buffer_pool: Arc<BufferPool>,
     /// Rate limit statistics
     rate_limit_stats: Arc<RateLimitStats>,
+    /// Connection semaphore for backpressure (limits concurrent connections)
+    connection_semaphore: Arc<Semaphore>,
 }
 
 impl Server {
@@ -89,6 +91,7 @@ impl Server {
         let rate_limiter = ConnectionRateLimiter::new(RateLimitConfig::default());
         let buffer_pool = Arc::new(BufferPool::new());
         let rate_limit_stats = Arc::new(RateLimitStats::default());
+        let connection_semaphore = Arc::new(Semaphore::new(config.max_clients));
 
         Self {
             config,
@@ -104,6 +107,7 @@ impl Server {
             rate_limiter,
             buffer_pool,
             rate_limit_stats,
+            connection_semaphore,
         }
     }
 
@@ -150,13 +154,15 @@ impl Server {
                             }
                             self.rate_limit_stats.record_connection_allowed();
 
-                            // Check connection limit
-                            let current = self.connection_count.load(Ordering::Relaxed);
-                            if current >= self.config.max_clients as u64 {
-                                warn!("Max clients reached, rejecting connection from {}", peer_addr);
-                                self.metrics.connection_rejected();
-                                continue;
-                            }
+                            // Acquire connection permit (provides backpressure)
+                            let permit = match self.connection_semaphore.clone().try_acquire_owned() {
+                                Ok(permit) => permit,
+                                Err(_) => {
+                                    warn!("Max clients reached, rejecting connection from {}", peer_addr);
+                                    self.metrics.connection_rejected();
+                                    continue;
+                                }
+                            };
 
                             self.connection_count.fetch_add(1, Ordering::Relaxed);
                             self.total_connections.fetch_add(1, Ordering::Relaxed);
@@ -167,6 +173,9 @@ impl Server {
                             let conn_id = self.total_connections.load(Ordering::Relaxed);
 
                             tokio::spawn(async move {
+                                // permit is held for the duration of the connection
+                                let _permit = permit;
+
                                 let mut connection = Connection::new(
                                     socket,
                                     peer_addr,
@@ -184,6 +193,7 @@ impl Server {
                                 server.connection_count.fetch_sub(1, Ordering::Relaxed);
                                 server.metrics.connection_closed();
                                 server.database.connection_closed(); // Track in Database for INFO command
+                                // _permit is dropped here, releasing the semaphore slot
                             });
                         }
                         Err(e) => {
