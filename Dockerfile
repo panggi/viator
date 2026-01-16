@@ -38,8 +38,12 @@ RUN useradd -r -s /bin/false viator
 # Create directories
 RUN mkdir -p /data /etc/viator && chown viator:viator /data
 
-# Copy binary
+# Copy binaries
 COPY --from=builder /build/target/release/viator /usr/local/bin/viator
+COPY --from=builder /build/target/release/viator-cli /usr/local/bin/viator-cli
+COPY --from=builder /build/target/release/viator-check-vdb /usr/local/bin/viator-check-vdb
+COPY --from=builder /build/target/release/viator-check-aof /usr/local/bin/viator-check-aof
+COPY --from=builder /build/target/release/viator-benchmark /usr/local/bin/viator-benchmark
 
 # Copy default config
 COPY viator.conf /etc/viator/viator.conf
