@@ -50,3 +50,8 @@ fuzz/corpus/
 *.local.toml
 .serena/
 CLAUDE.md
+
+# Fuzz artifacts
+fuzz/target/
+fuzz/Cargo.lock
+dump.rdb
