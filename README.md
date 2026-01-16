@@ -2,6 +2,7 @@
 
 A complete Redis-compatible server implementation
 
+[![Crates.io](https://img.shields.io/crates/v/viator.svg)](https://crates.io/crates/viator)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Redis Compatible](https://img.shields.io/badge/redis-8.4.0-red.svg)](https://redis.io/)
@@ -10,7 +11,7 @@ A complete Redis-compatible server implementation
 
 ## Status
 
-**Beta Ready** - Verified with viator-cli 8.4.0. All critical issues resolved. Suitable for testing and non-production workloads.
+**Published on crates.io** - v0.1.1 production hardening release. Verified with redis-cli 8.4.0. Suitable for testing and non-production workloads.
 
 | Category | Status |
 |----------|--------|
