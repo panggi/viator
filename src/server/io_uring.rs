@@ -212,26 +212,263 @@ impl Default for IoBackend {
     }
 }
 
-// Note: Full io_uring implementation would require the `io-uring` crate
-// and significant integration with the connection handling code.
-// This module provides the foundation and configuration for that integration.
-//
-// A complete implementation would include:
-// 1. Ring buffer management for submissions/completions
-// 2. Fixed buffer registration for zero-copy I/O
-// 3. Multi-shot accept for efficient connection handling
-// 4. Batched read/write operations
-// 5. Integration with tokio's runtime for hybrid operation
+/// io_uring server runtime for Linux.
+///
+/// This module provides a high-performance server implementation using io_uring
+/// for async I/O operations. It uses a thread-per-core model with SO_REUSEPORT
+/// for optimal performance.
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+pub mod runtime {
+    use super::*;
+    use crate::commands::{CommandExecutor, ParsedCommand};
+    use crate::protocol::{Frame, RespParser};
+    use crate::server::metrics::ServerMetrics;
+    use crate::server::ClientState;
+    use crate::storage::Database;
+    use bytes::BytesMut;
+    use std::net::SocketAddr;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tokio_uring::net::{TcpListener, TcpStream};
+    use tracing::{debug, error, info, trace, warn};
 
-// Note: Full io_uring server runtime implementation is planned for a future release.
-// The runtime module would provide:
-// - Multi-threaded server with per-worker io_uring instances
-// - SO_REUSEPORT for load balancing across workers
-// - Batched read/write operations
-// - Integration with the existing command executor
-//
-// For now, this module provides detection and configuration primitives that can be
-// used to prepare for io_uring integration.
+    /// Buffer size for reading from socket.
+    const READ_BUFFER_SIZE: usize = 64 * 1024;
+
+    /// Initial write buffer capacity.
+    const WRITE_BUFFER_INITIAL: usize = 16 * 1024;
+
+    /// Configuration for the io_uring server.
+    #[derive(Debug, Clone)]
+    pub struct IoUringServerConfig {
+        /// Address to bind to
+        pub bind_addr: SocketAddr,
+        /// Number of worker threads (defaults to CPU count)
+        pub workers: usize,
+        /// io_uring configuration
+        pub uring_config: IoUringConfig,
+    }
+
+    impl Default for IoUringServerConfig {
+        fn default() -> Self {
+            Self {
+                bind_addr: "127.0.0.1:6379"
+                    .parse()
+                    .expect("valid default bind address"),
+                workers: num_cpus(),
+                uring_config: IoUringConfig::high_throughput(),
+            }
+        }
+    }
+
+    fn num_cpus() -> usize {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+    }
+
+    /// Start the io_uring server.
+    ///
+    /// This function blocks and runs the server until shutdown.
+    pub fn start_server(
+        config: IoUringServerConfig,
+        database: Arc<Database>,
+        executor: Arc<CommandExecutor>,
+    ) -> io::Result<()> {
+        info!(
+            "Starting io_uring server on {} with {} workers",
+            config.bind_addr, config.workers
+        );
+
+        // Create shared metrics
+        let metrics = Arc::new(ServerMetrics::new());
+
+        // Connection ID counter shared across workers
+        let next_conn_id = Arc::new(AtomicU64::new(1));
+
+        // Start worker threads, each with its own io_uring instance
+        let handles: Vec<_> = (0..config.workers)
+            .map(|worker_id| {
+                let config = config.clone();
+                let database = database.clone();
+                let executor = executor.clone();
+                let metrics = metrics.clone();
+                let next_conn_id = next_conn_id.clone();
+
+                std::thread::spawn(move || {
+                    tokio_uring::start(async move {
+                        if let Err(e) =
+                            run_worker(worker_id, &config, database, executor, metrics, next_conn_id)
+                                .await
+                        {
+                            error!("Worker {} failed: {}", worker_id, e);
+                        }
+                    });
+                })
+            })
+            .collect();
+
+        // Wait for all workers
+        for handle in handles {
+            handle
+                .join()
+                .map_err(|_| io::Error::new(io::ErrorKind::Other, "Worker thread panicked"))?;
+        }
+
+        Ok(())
+    }
+
+    async fn run_worker(
+        worker_id: usize,
+        config: &IoUringServerConfig,
+        database: Arc<Database>,
+        executor: Arc<CommandExecutor>,
+        metrics: Arc<ServerMetrics>,
+        next_conn_id: Arc<AtomicU64>,
+    ) -> io::Result<()> {
+        // Each worker binds with SO_REUSEPORT
+        let listener = TcpListener::bind(config.bind_addr)?;
+
+        info!("Worker {} listening on {}", worker_id, config.bind_addr);
+
+        loop {
+            match listener.accept().await {
+                Ok((stream, peer_addr)) => {
+                    let conn_id = next_conn_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let database = database.clone();
+                    let executor = executor.clone();
+                    let metrics = metrics.clone();
+
+                    debug!(
+                        "Worker {} accepted connection {} from {}",
+                        worker_id, conn_id, peer_addr
+                    );
+
+                    tokio_uring::spawn(async move {
+                        if let Err(e) =
+                            handle_connection(stream, conn_id, database, executor, metrics).await
+                        {
+                            if !is_connection_reset(&e) {
+                                warn!("Connection {} error: {}", conn_id, e);
+                            }
+                        }
+                        debug!("Connection {} closed", conn_id);
+                    });
+                }
+                Err(e) => {
+                    error!("Worker {} accept error: {}", worker_id, e);
+                }
+            }
+        }
+    }
+
+    async fn handle_connection(
+        stream: TcpStream,
+        conn_id: u64,
+        database: Arc<Database>,
+        executor: Arc<CommandExecutor>,
+        metrics: Arc<ServerMetrics>,
+    ) -> io::Result<()> {
+        let mut read_buf = vec![0u8; READ_BUFFER_SIZE];
+        let mut parser = RespParser::new();
+        let mut write_buffer = BytesMut::with_capacity(WRITE_BUFFER_INITIAL);
+
+        // Create client state with proper arguments
+        let client = Arc::new(ClientState::new(
+            conn_id,
+            database.server_stats().clone(),
+            metrics.clone(),
+        ));
+
+        loop {
+            // Check if connection should close
+            if client.is_closed() {
+                break;
+            }
+
+            // Read data using io_uring
+            let (result, buf) = stream.read(read_buf).await;
+            read_buf = buf;
+
+            let n = match result {
+                Ok(0) => {
+                    trace!("Connection {} closed by peer", conn_id);
+                    return Ok(());
+                }
+                Ok(n) => n,
+                Err(e) => return Err(e),
+            };
+
+            trace!("Connection {} read {} bytes", conn_id, n);
+
+            // Add data to parser
+            parser.extend(&read_buf[..n]);
+
+            // Process all complete frames
+            loop {
+                match parser.parse() {
+                    Ok(Some(frame)) => {
+                        // Parse command
+                        let cmd = match ParsedCommand::from_frame(frame) {
+                            Ok(cmd) => cmd,
+                            Err(e) => {
+                                let error_frame = Frame::error(format!("ERR {}", e));
+                                error_frame.serialize(&mut write_buffer);
+                                continue;
+                            }
+                        };
+
+                        trace!("Connection {} executing: {}", conn_id, cmd.name);
+
+                        // Execute command
+                        let response = match executor.execute(cmd, client.clone()).await {
+                            Ok(frame) => frame,
+                            Err(e) => Frame::error(format!("ERR {}", e)),
+                        };
+
+                        // Serialize response
+                        response.serialize(&mut write_buffer);
+                    }
+                    Ok(None) => {
+                        // No more complete frames, flush writes if any
+                        if !write_buffer.is_empty() {
+                            let data = write_buffer.split().freeze().to_vec();
+                            let (result, _) = stream.write_all(data).await;
+                            result?;
+                        }
+                        // Periodically trim parser buffer
+                        parser.maybe_trim();
+                        break;
+                    }
+                    Err(e) => {
+                        // Protocol error
+                        let error_frame = Frame::error(format!("ERR {}", e));
+                        error_frame.serialize(&mut write_buffer);
+
+                        // Flush error response
+                        if !write_buffer.is_empty() {
+                            let data = write_buffer.split().freeze().to_vec();
+                            let (result, _) = stream.write_all(data).await;
+                            result?;
+                        }
+
+                        parser.clear();
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn is_connection_reset(e: &io::Error) -> bool {
+        matches!(
+            e.kind(),
+            io::ErrorKind::ConnectionReset | io::ErrorKind::BrokenPipe
+        )
+    }
+}
 
 #[cfg(test)]
 mod tests {
