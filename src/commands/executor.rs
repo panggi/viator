@@ -175,13 +175,13 @@ impl CommandExecutor {
                                 Err(_) => {
                                     return Ok(Frame::error(
                                         "ERR value is not an integer or out of range",
-                                    ))
+                                    ));
                                 }
                             },
                             Err(_) => {
                                 return Ok(Frame::error(
                                     "ERR value is not an integer or out of range",
-                                ))
+                                ));
                             }
                         },
                         None => 0,
@@ -189,9 +189,7 @@ impl CommandExecutor {
                     let new_value = match current.checked_add(1) {
                         Some(n) => n,
                         None => {
-                            return Ok(Frame::error(
-                                "ERR increment or decrement would overflow",
-                            ))
+                            return Ok(Frame::error("ERR increment or decrement would overflow"));
                         }
                     };
                     db.set_fast(key, ViatorValue::string(new_value.to_string()));

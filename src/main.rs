@@ -130,9 +130,7 @@ async fn main() -> anyhow::Result<()> {
 
     info!(
         "Viator {} starting on {}:{}",
-        VERSION,
-        config.bind,
-        config.port,
+        VERSION, config.bind, config.port,
     );
 
     // Run the server

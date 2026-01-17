@@ -39,7 +39,7 @@ RUN useradd -r -s /bin/false viator
 RUN mkdir -p /data /etc/viator && chown viator:viator /data
 
 # Copy binaries
-COPY --from=builder /build/target/release/viator /usr/local/bin/viator
+COPY --from=builder /build/target/release/viator-server /usr/local/bin/viator-server
 COPY --from=builder /build/target/release/viator-cli /usr/local/bin/viator-cli
 COPY --from=builder /build/target/release/viator-check-vdb /usr/local/bin/viator-check-vdb
 COPY --from=builder /build/target/release/viator-check-aof /usr/local/bin/viator-check-aof
@@ -62,5 +62,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD echo "PING" | nc -q1 localhost 6379 | grep -q PONG || exit 1
 
 # Default command
-ENTRYPOINT ["/usr/local/bin/viator"]
+ENTRYPOINT ["/usr/local/bin/viator-server"]
 CMD ["--config", "/etc/viator/viator.conf"]

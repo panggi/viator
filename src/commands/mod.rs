@@ -64,8 +64,7 @@ impl ParsedCommand {
         // First element is the command name
         let name_frame = iter.next().ok_or(CommandError::SyntaxError)?;
         let name_bytes = name_frame.to_bytes().ok_or(CommandError::SyntaxError)?;
-        let name_str = std::str::from_utf8(&name_bytes)
-            .map_err(|_| CommandError::SyntaxError)?;
+        let name_str = std::str::from_utf8(&name_bytes).map_err(|_| CommandError::SyntaxError)?;
         // Fast path: avoid allocation if command is already uppercase (common case)
         let name = if name_str.bytes().all(|b| !b.is_ascii_lowercase()) {
             name_str.to_string()
