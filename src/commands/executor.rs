@@ -263,9 +263,10 @@ impl CommandExecutor {
 
         // Handle CLIENT PAUSE/UNPAUSE specially (needs access to Database for pause state)
         if cmd.name == "CLIENT" && !cmd.args.is_empty() {
-            let subcommand = std::str::from_utf8(cmd.args.first().map(|b| b.as_ref()).unwrap_or(b""))
-                .unwrap_or("")
-                .to_uppercase();
+            let subcommand =
+                std::str::from_utf8(cmd.args.first().map(|b| b.as_ref()).unwrap_or(b""))
+                    .unwrap_or("")
+                    .to_uppercase();
             if subcommand == "PAUSE" {
                 return self.handle_client_pause(&cmd).await;
             }
@@ -348,9 +349,18 @@ impl CommandExecutor {
         // - SUBSCRIBE, UNSUBSCRIBE, PSUBSCRIBE, PUNSUBSCRIBE (pub/sub - already subscribed clients)
         let pause_exempt = matches!(
             cmd.name.as_str(),
-            "CLIENT" | "PING" | "ECHO" | "QUIT" | "RESET" | "DEBUG" |
-            "SUBSCRIBE" | "UNSUBSCRIBE" | "PSUBSCRIBE" | "PUNSUBSCRIBE" |
-            "SSUBSCRIBE" | "SUNSUBSCRIBE"
+            "CLIENT"
+                | "PING"
+                | "ECHO"
+                | "QUIT"
+                | "RESET"
+                | "DEBUG"
+                | "SUBSCRIBE"
+                | "UNSUBSCRIBE"
+                | "PSUBSCRIBE"
+                | "PUNSUBSCRIBE"
+                | "SSUBSCRIBE"
+                | "SUNSUBSCRIBE"
         );
 
         if !pause_exempt {
@@ -780,9 +790,7 @@ impl CommandExecutor {
         // Validate timeout range (Redis limits to reasonable values)
         if timeout_ms > 365 * 24 * 60 * 60 * 1000 {
             // 1 year max
-            return Ok(Frame::error(
-                "ERR timeout is out of range",
-            ));
+            return Ok(Frame::error("ERR timeout is out of range"));
         }
 
         // Parse mode (optional second argument)

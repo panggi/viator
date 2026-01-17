@@ -259,7 +259,12 @@ fn import_hash(
         let value_str = val.as_str().ok_or("Expected string value in hash")?;
         send_command(
             stream,
-            &[b"HSET", key.as_bytes(), field.as_bytes(), value_str.as_bytes()],
+            &[
+                b"HSET",
+                key.as_bytes(),
+                field.as_bytes(),
+                value_str.as_bytes(),
+            ],
         )?;
     }
     Ok(())
@@ -297,7 +302,12 @@ fn import_zset(
         let score_str = score.to_string();
         send_command(
             stream,
-            &[b"ZADD", key.as_bytes(), score_str.as_bytes(), value.as_bytes()],
+            &[
+                b"ZADD",
+                key.as_bytes(),
+                score_str.as_bytes(),
+                value.as_bytes(),
+            ],
         )?;
     }
     Ok(())
@@ -336,12 +346,7 @@ fn import_stream(
         let mut args: Vec<&[u8]> = vec![b"XADD", key.as_bytes(), id.as_bytes()];
         let field_strings: Vec<String> = fields
             .iter()
-            .flat_map(|(k, v)| {
-                vec![
-                    k.clone(),
-                    v.as_str().unwrap_or_default().to_string(),
-                ]
-            })
+            .flat_map(|(k, v)| vec![k.clone(), v.as_str().unwrap_or_default().to_string()])
             .collect();
         let field_bytes: Vec<&[u8]> = field_strings.iter().map(|s| s.as_bytes()).collect();
         args.extend(field_bytes);
@@ -354,12 +359,7 @@ fn import_stream(
 }
 
 /// Set TTL on a key
-fn set_ttl(
-    stream: &mut TcpStream,
-    key: &str,
-    ttl_ms: i64,
-    dry_run: bool,
-) -> Result<(), String> {
+fn set_ttl(stream: &mut TcpStream, key: &str, ttl_ms: i64, dry_run: bool) -> Result<(), String> {
     if ttl_ms <= 0 {
         return Ok(());
     }
@@ -377,7 +377,10 @@ fn set_ttl(
     }
 
     let expire_str = expire_at.to_string();
-    send_command(stream, &[b"PEXPIREAT", key.as_bytes(), expire_str.as_bytes()])?;
+    send_command(
+        stream,
+        &[b"PEXPIREAT", key.as_bytes(), expire_str.as_bytes()],
+    )?;
     Ok(())
 }
 
@@ -409,13 +412,46 @@ fn import_entry(
             config.replace,
             config.dry_run,
         )?,
-        "list" => import_list(stream, &entry.key, &entry.value, config.replace, config.dry_run)?,
-        "set" => import_set(stream, &entry.key, &entry.value, config.replace, config.dry_run)?,
-        "hash" => import_hash(stream, &entry.key, &entry.value, config.replace, config.dry_run)?,
-        "zset" => import_zset(stream, &entry.key, &entry.value, config.replace, config.dry_run)?,
-        "stream" => import_stream(stream, &entry.key, &entry.value, config.replace, config.dry_run)?,
+        "list" => import_list(
+            stream,
+            &entry.key,
+            &entry.value,
+            config.replace,
+            config.dry_run,
+        )?,
+        "set" => import_set(
+            stream,
+            &entry.key,
+            &entry.value,
+            config.replace,
+            config.dry_run,
+        )?,
+        "hash" => import_hash(
+            stream,
+            &entry.key,
+            &entry.value,
+            config.replace,
+            config.dry_run,
+        )?,
+        "zset" => import_zset(
+            stream,
+            &entry.key,
+            &entry.value,
+            config.replace,
+            config.dry_run,
+        )?,
+        "stream" => import_stream(
+            stream,
+            &entry.key,
+            &entry.value,
+            config.replace,
+            config.dry_run,
+        )?,
         other => {
-            eprintln!("Warning: Unknown type '{}' for key '{}', skipping", other, entry.key);
+            eprintln!(
+                "Warning: Unknown type '{}' for key '{}', skipping",
+                other, entry.key
+            );
             return Ok(());
         }
     }
@@ -620,12 +656,7 @@ fn main() {
         }
 
         if config.verbose {
-            println!(
-                "[{}] {} ({})",
-                entry.db,
-                entry.key,
-                entry.data_type
-            );
+            println!("[{}] {} ({})", entry.db, entry.key, entry.data_type);
         }
 
         // Import the entry

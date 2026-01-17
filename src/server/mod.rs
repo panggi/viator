@@ -21,7 +21,9 @@ pub use cluster::{ClusterManager, ClusterState, SharedClusterManager, Slot, Slot
 pub use cluster_bus::{ClusterBus, ClusterBusConfig, SharedClusterBus};
 pub use config::{Config, ConfigError, LogLevel};
 pub use connection::Connection;
-pub use latency::{LatencyEvent, LatencyGuard, LatencyMonitor, LatencySample, SharedLatencyMonitor};
+pub use latency::{
+    LatencyEvent, LatencyGuard, LatencyMonitor, LatencySample, SharedLatencyMonitor,
+};
 pub use metrics::ServerMetrics;
 pub use pubsub::{PubSubHub, SharedPubSubHub};
 pub use rate_limit::{ConnectionRateLimiter, RateLimitConfig, RateLimitStats};

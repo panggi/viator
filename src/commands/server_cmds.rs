@@ -411,10 +411,10 @@ pub fn cmd_debug(
                     "bits:64 robj:{} sdshdr:{} dictEntry:{} dictht:{}\n\
                      skiplistNode:{} skiplist:{} quicklist:{} quicklistNode:{}\n\
                      client:{} cluster:{} clusterNode:{}\n",
-                    std::mem::size_of::<ViatorValue>(),
+                    size_of::<ViatorValue>(),
                     32, // Approximate SDS header
-                    std::mem::size_of::<(Key, ViatorValue)>(),
-                    std::mem::size_of::<std::collections::HashMap<Key, ViatorValue>>(),
+                    size_of::<(Key, ViatorValue)>(),
+                    size_of::<std::collections::HashMap<Key, ViatorValue>>(),
                     64, // Approximate skiplist node
                     32, // Approximate skiplist
                     48, // Approximate quicklist
@@ -657,7 +657,9 @@ fn deserialize_length(data: &[u8], pos: &mut usize) -> Option<usize> {
             if *pos + 4 > data.len() {
                 return None;
             }
-            let len = u32::from_be_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]]) as usize;
+            let len =
+                u32::from_be_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]])
+                    as usize;
             *pos += 4;
             Some(len)
         }
@@ -752,12 +754,16 @@ pub fn cmd_restore(
 
         // Check if key exists and REPLACE not specified
         if db.get(&key).is_some() && !replace {
-            return Ok(Frame::Error("BUSYKEY Target key name already exists.".to_string()));
+            return Ok(Frame::Error(
+                "BUSYKEY Target key name already exists.".to_string(),
+            ));
         }
 
         // Verify minimum length (type + version + crc)
         if serialized.len() < 10 {
-            return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+            return Ok(Frame::Error(
+                "ERR DUMP payload version or checksum are wrong".to_string(),
+            ));
         }
 
         // Verify CRC
@@ -774,7 +780,9 @@ pub fn cmd_restore(
         ]);
         let computed_crc = compute_crc64(&serialized[..payload_len]);
         if stored_crc != computed_crc {
-            return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+            return Ok(Frame::Error(
+                "ERR DUMP payload version or checksum are wrong".to_string(),
+            ));
         }
 
         // Parse type byte
@@ -787,10 +795,16 @@ pub fn cmd_restore(
                 // String
                 let len = match deserialize_length(data, &mut pos) {
                     Some(l) => l,
-                    None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                    None => {
+                        return Ok(Frame::Error(
+                            "ERR DUMP payload version or checksum are wrong".to_string(),
+                        ));
+                    }
                 };
                 if pos + len > data.len() {
-                    return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+                    return Ok(Frame::Error(
+                        "ERR DUMP payload version or checksum are wrong".to_string(),
+                    ));
                 }
                 let s = Bytes::copy_from_slice(&data[pos..pos + len]);
                 ViatorValue::String(s)
@@ -799,7 +813,11 @@ pub fn cmd_restore(
                 // List
                 let count = match deserialize_length(data, &mut pos) {
                     Some(c) => c,
-                    None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                    None => {
+                        return Ok(Frame::Error(
+                            "ERR DUMP payload version or checksum are wrong".to_string(),
+                        ));
+                    }
                 };
                 let list = ViatorValue::new_list();
                 let list_ref = list.as_list().unwrap();
@@ -807,10 +825,16 @@ pub fn cmd_restore(
                 for _ in 0..count {
                     let len = match deserialize_length(data, &mut pos) {
                         Some(l) => l,
-                        None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                        None => {
+                            return Ok(Frame::Error(
+                                "ERR DUMP payload version or checksum are wrong".to_string(),
+                            ));
+                        }
                     };
                     if pos + len > data.len() {
-                        return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+                        return Ok(Frame::Error(
+                            "ERR DUMP payload version or checksum are wrong".to_string(),
+                        ));
                     }
                     guard.push_back(Bytes::copy_from_slice(&data[pos..pos + len]));
                     pos += len;
@@ -822,7 +846,11 @@ pub fn cmd_restore(
                 // Set
                 let count = match deserialize_length(data, &mut pos) {
                     Some(c) => c,
-                    None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                    None => {
+                        return Ok(Frame::Error(
+                            "ERR DUMP payload version or checksum are wrong".to_string(),
+                        ));
+                    }
                 };
                 let set = ViatorValue::new_set();
                 let set_ref = set.as_set().unwrap();
@@ -830,10 +858,16 @@ pub fn cmd_restore(
                 for _ in 0..count {
                     let len = match deserialize_length(data, &mut pos) {
                         Some(l) => l,
-                        None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                        None => {
+                            return Ok(Frame::Error(
+                                "ERR DUMP payload version or checksum are wrong".to_string(),
+                            ));
+                        }
                     };
                     if pos + len > data.len() {
-                        return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+                        return Ok(Frame::Error(
+                            "ERR DUMP payload version or checksum are wrong".to_string(),
+                        ));
                     }
                     guard.add(Bytes::copy_from_slice(&data[pos..pos + len]));
                     pos += len;
@@ -845,7 +879,11 @@ pub fn cmd_restore(
                 // Sorted Set
                 let count = match deserialize_length(data, &mut pos) {
                     Some(c) => c,
-                    None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                    None => {
+                        return Ok(Frame::Error(
+                            "ERR DUMP payload version or checksum are wrong".to_string(),
+                        ));
+                    }
                 };
                 let zset = ViatorValue::new_zset();
                 let zset_ref = zset.as_zset().unwrap();
@@ -853,16 +891,28 @@ pub fn cmd_restore(
                 for _ in 0..count {
                     let len = match deserialize_length(data, &mut pos) {
                         Some(l) => l,
-                        None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                        None => {
+                            return Ok(Frame::Error(
+                                "ERR DUMP payload version or checksum are wrong".to_string(),
+                            ));
+                        }
                     };
                     if pos + len + 8 > data.len() {
-                        return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+                        return Ok(Frame::Error(
+                            "ERR DUMP payload version or checksum are wrong".to_string(),
+                        ));
                     }
                     let member = Bytes::copy_from_slice(&data[pos..pos + len]);
                     pos += len;
                     let score = f64::from_be_bytes([
-                        data[pos], data[pos + 1], data[pos + 2], data[pos + 3],
-                        data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7],
+                        data[pos],
+                        data[pos + 1],
+                        data[pos + 2],
+                        data[pos + 3],
+                        data[pos + 4],
+                        data[pos + 5],
+                        data[pos + 6],
+                        data[pos + 7],
                     ]);
                     pos += 8;
                     guard.add(member, score);
@@ -874,7 +924,11 @@ pub fn cmd_restore(
                 // Hash
                 let count = match deserialize_length(data, &mut pos) {
                     Some(c) => c,
-                    None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                    None => {
+                        return Ok(Frame::Error(
+                            "ERR DUMP payload version or checksum are wrong".to_string(),
+                        ));
+                    }
                 };
                 let hash = ViatorValue::new_hash();
                 let hash_ref = hash.as_hash().unwrap();
@@ -882,20 +936,32 @@ pub fn cmd_restore(
                 for _ in 0..count {
                     let field_len = match deserialize_length(data, &mut pos) {
                         Some(l) => l,
-                        None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                        None => {
+                            return Ok(Frame::Error(
+                                "ERR DUMP payload version or checksum are wrong".to_string(),
+                            ));
+                        }
                     };
                     if pos + field_len > data.len() {
-                        return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+                        return Ok(Frame::Error(
+                            "ERR DUMP payload version or checksum are wrong".to_string(),
+                        ));
                     }
                     let field = Bytes::copy_from_slice(&data[pos..pos + field_len]);
                     pos += field_len;
 
                     let value_len = match deserialize_length(data, &mut pos) {
                         Some(l) => l,
-                        None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                        None => {
+                            return Ok(Frame::Error(
+                                "ERR DUMP payload version or checksum are wrong".to_string(),
+                            ));
+                        }
                     };
                     if pos + value_len > data.len() {
-                        return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+                        return Ok(Frame::Error(
+                            "ERR DUMP payload version or checksum are wrong".to_string(),
+                        ));
                     }
                     let value = Bytes::copy_from_slice(&data[pos..pos + value_len]);
                     pos += value_len;
@@ -909,11 +975,17 @@ pub fn cmd_restore(
                 // Stream (simplified - create empty stream)
                 let _count = match deserialize_length(data, &mut pos) {
                     Some(c) => c,
-                    None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                    None => {
+                        return Ok(Frame::Error(
+                            "ERR DUMP payload version or checksum are wrong".to_string(),
+                        ));
+                    }
                 };
                 // Skip to last ID
                 if pos + 16 > data.len() {
-                    return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+                    return Ok(Frame::Error(
+                        "ERR DUMP payload version or checksum are wrong".to_string(),
+                    ));
                 }
                 ViatorValue::new_stream()
             }
@@ -921,12 +993,18 @@ pub fn cmd_restore(
                 // Vector Set (simplified - create empty)
                 let _count = match deserialize_length(data, &mut pos) {
                     Some(c) => c,
-                    None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                    None => {
+                        return Ok(Frame::Error(
+                            "ERR DUMP payload version or checksum are wrong".to_string(),
+                        ));
+                    }
                 };
                 ViatorValue::new_vectorset()
             }
             _ => {
-                return Ok(Frame::Error("ERR Unknown value type in DUMP payload".to_string()));
+                return Ok(Frame::Error(
+                    "ERR Unknown value type in DUMP payload".to_string(),
+                ));
             }
         };
 
@@ -1027,11 +1105,15 @@ pub fn cmd_memory(
 
                 // Check for expired keys backlog
                 let stats = db.stats();
-                if stats.expired_keys.load(std::sync::atomic::Ordering::Relaxed) > 10_000 {
+                if stats
+                    .expired_keys
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    > 10_000
+                {
                     issues_found += 1;
                     report.push_str(
                         "* Large number of expired keys processed.\n\
-                         Consider reviewing TTL settings and expiry patterns.\n\n"
+                         Consider reviewing TTL settings and expiry patterns.\n\n",
                     );
                 }
 

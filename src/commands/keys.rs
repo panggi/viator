@@ -646,7 +646,7 @@ pub fn cmd_sort(
         // Helper function to expand a pattern with an element value
         fn expand_pattern(pattern: &str, element: &[u8]) -> (Key, Option<String>) {
             let elem_str = std::str::from_utf8(element).unwrap_or("");
-            
+
             // Check for hash field access (pattern->field)
             if let Some(arrow_pos) = pattern.find("->") {
                 let key_pattern = &pattern[..arrow_pos];
@@ -662,12 +662,12 @@ pub fn cmd_sort(
         // Helper function to get value from pattern
         fn get_pattern_value(db: &Db, pattern: &str, element: &[u8]) -> Option<Bytes> {
             let (key, field) = expand_pattern(pattern, element);
-            
+
             if pattern == "#" {
                 // # means return the element itself
                 return Some(Bytes::copy_from_slice(element));
             }
-            
+
             match db.get(&key) {
                 Some(value) => {
                     if let Some(field_name) = field {
@@ -707,20 +707,28 @@ pub fn cmd_sort(
 
                 if alpha {
                     elements_with_sort_key.sort_by(|a, b| {
-                        let sa = a.1.as_ref().map(|v| std::str::from_utf8(v).unwrap_or("")).unwrap_or("");
-                        let sb = b.1.as_ref().map(|v| std::str::from_utf8(v).unwrap_or("")).unwrap_or("");
+                        let sa =
+                            a.1.as_ref()
+                                .map(|v| std::str::from_utf8(v).unwrap_or(""))
+                                .unwrap_or("");
+                        let sb =
+                            b.1.as_ref()
+                                .map(|v| std::str::from_utf8(v).unwrap_or(""))
+                                .unwrap_or("");
                         if desc { sb.cmp(sa) } else { sa.cmp(sb) }
                     });
                 } else {
                     elements_with_sort_key.sort_by(|a, b| {
-                        let na: f64 = a.1.as_ref()
-                            .and_then(|v| std::str::from_utf8(v).ok())
-                            .and_then(|s| s.parse().ok())
-                            .unwrap_or(0.0);
-                        let nb: f64 = b.1.as_ref()
-                            .and_then(|v| std::str::from_utf8(v).ok())
-                            .and_then(|s| s.parse().ok())
-                            .unwrap_or(0.0);
+                        let na: f64 =
+                            a.1.as_ref()
+                                .and_then(|v| std::str::from_utf8(v).ok())
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(0.0);
+                        let nb: f64 =
+                            b.1.as_ref()
+                                .and_then(|v| std::str::from_utf8(v).ok())
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(0.0);
                         if desc {
                             nb.partial_cmp(&na).unwrap_or(std::cmp::Ordering::Equal)
                         } else {

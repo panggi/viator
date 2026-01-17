@@ -210,7 +210,8 @@ impl ConsumerGroup {
     /// Get or create a consumer
     pub fn get_or_create_consumer(&mut self, name: &Bytes) -> &mut StreamConsumer {
         if !self.consumers.contains_key(name) {
-            self.consumers.insert(name.clone(), StreamConsumer::new(name.clone()));
+            self.consumers
+                .insert(name.clone(), StreamConsumer::new(name.clone()));
         }
         self.consumers.get_mut(name).unwrap()
     }
@@ -222,14 +223,15 @@ impl ConsumerGroup {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
-        self.pel.insert(id, PendingEntry::new(id, consumer.clone(), now));
-        
+        self.pel
+            .insert(id, PendingEntry::new(id, consumer.clone(), now));
+
         if let Some(c) = self.consumers.get_mut(consumer) {
             c.pending_count += 1;
             c.last_delivery = now;
             c.touch();
         }
-        
+
         self.entries_read += 1;
     }
 
@@ -287,10 +289,11 @@ impl ConsumerGroup {
 
                 // Update or insert the PEL entry
                 let delivery_time = set_time.unwrap_or(now);
-                let entry = self.pel.entry(*id).or_insert_with(|| {
-                    PendingEntry::new(*id, new_consumer.clone(), delivery_time)
-                });
-                
+                let entry = self
+                    .pel
+                    .entry(*id)
+                    .or_insert_with(|| PendingEntry::new(*id, new_consumer.clone(), delivery_time));
+
                 entry.consumer = new_consumer.clone();
                 entry.delivery_time = delivery_time;
                 if let Some(rc) = set_retrycount {
@@ -347,7 +350,7 @@ impl ConsumerGroup {
                     c.pending_count = c.pending_count.saturating_sub(1);
                 }
             }
-            
+
             if let Some(entry) = self.pel.get_mut(id) {
                 entry.consumer = new_consumer.clone();
                 entry.delivery_time = now;
@@ -363,11 +366,18 @@ impl ConsumerGroup {
     }
 
     /// Get pending entries info
-    pub fn pending_summary(&self) -> (usize, Option<StreamId>, Option<StreamId>, Vec<(Bytes, usize)>) {
+    pub fn pending_summary(
+        &self,
+    ) -> (
+        usize,
+        Option<StreamId>,
+        Option<StreamId>,
+        Vec<(Bytes, usize)>,
+    ) {
         let count = self.pel.len();
         let min_id = self.pel.keys().next().copied();
         let max_id = self.pel.keys().next_back().copied();
-        
+
         // Count per consumer
         let mut consumer_counts: HashMap<Bytes, usize> = HashMap::new();
         for entry in self.pel.values() {
@@ -388,9 +398,7 @@ impl ConsumerGroup {
     ) -> Vec<&PendingEntry> {
         self.pel
             .range(start..=end)
-            .filter(|(_, entry)| {
-                consumer_filter.map_or(true, |c| &entry.consumer == c)
-            })
+            .filter(|(_, entry)| consumer_filter.is_none_or(|c| entry.consumer == *c))
             .take(count)
             .map(|(_, entry)| entry)
             .collect()
@@ -658,19 +666,21 @@ impl ViatorStream {
 
     /// Create a new consumer group
     /// Returns true if created, false if group already exists
-    pub fn create_group(&mut self, name: Bytes, last_delivered_id: StreamId, mkstream: bool) -> Result<bool, &'static str> {
+    pub fn create_group(
+        &mut self,
+        name: Bytes,
+        last_delivered_id: StreamId,
+        _mkstream: bool,
+    ) -> Result<bool, &'static str> {
         if self.consumer_groups.contains_key(&name) {
             return Ok(false);
         }
 
-        // Validate that the ID exists (unless it's 0-0 or $ for last)
-        if last_delivered_id != StreamId::min() && last_delivered_id != self.last_id {
-            if !self.entries.contains_key(&last_delivered_id) && !mkstream {
-                // ID doesn't exist but we allow it (Redis does too)
-            }
-        }
+        // Note: We allow any ID for last_delivered_id (Redis does too)
+        // No validation needed - the ID will be used as a starting point
 
-        self.consumer_groups.insert(name.clone(), ConsumerGroup::new(name, last_delivered_id));
+        self.consumer_groups
+            .insert(name.clone(), ConsumerGroup::new(name, last_delivered_id));
         Ok(true)
     }
 
@@ -712,7 +722,9 @@ impl ViatorStream {
             if let Some(consumer) = group.consumers.remove(consumer_name) {
                 // Remove all pending entries for this consumer
                 let pending_count = consumer.pending_count;
-                group.pel.retain(|_, entry| entry.consumer != *consumer_name);
+                group
+                    .pel
+                    .retain(|_, entry| entry.consumer != *consumer_name);
                 return Some(pending_count);
             }
         }
@@ -731,21 +743,22 @@ impl ViatorStream {
         noack: bool,
     ) -> Option<Vec<StreamEntry>> {
         let group = self.consumer_groups.get_mut(group_name)?;
-        
+
         // Ensure consumer exists
         group.get_or_create_consumer(consumer_name);
 
         // Determine what to read
         let is_new_only = after_id == StreamId::max();
-        
+
         let entries = if is_new_only {
             // Read new entries (after last_delivered_id)
             let start_id = StreamId::new(
                 group.last_delivered_id.ms,
                 group.last_delivered_id.seq.saturating_add(1),
             );
-            
-            let entries: Vec<StreamEntry> = self.entries
+
+            let entries: Vec<StreamEntry> = self
+                .entries
                 .range(start_id..)
                 .take(count.unwrap_or(usize::MAX))
                 .map(|(id, fields)| StreamEntry::new(*id, fields.clone()))
@@ -767,14 +780,15 @@ impl ViatorStream {
         } else {
             // Read pending entries (after specified ID)
             // This returns entries from PEL that belong to this consumer
-            let entries: Vec<StreamEntry> = group.pel
+            let entries: Vec<StreamEntry> = group
+                .pel
                 .range(after_id..)
                 .filter(|(_, pending)| pending.consumer == *consumer_name)
                 .take(count.unwrap_or(usize::MAX))
                 .filter_map(|(id, _)| {
-                    self.entries.get(id).map(|fields| {
-                        StreamEntry::new(*id, fields.clone())
-                    })
+                    self.entries
+                        .get(id)
+                        .map(|fields| StreamEntry::new(*id, fields.clone()))
                 })
                 .collect();
 
@@ -786,7 +800,9 @@ impl ViatorStream {
 
     /// Get an entry by ID (for use with claimed entries)
     pub fn get_entry(&self, id: &StreamId) -> Option<StreamEntry> {
-        self.entries.get(id).map(|fields| StreamEntry::new(*id, fields.clone()))
+        self.entries
+            .get(id)
+            .map(|fields| StreamEntry::new(*id, fields.clone()))
     }
 }
 

@@ -263,7 +263,8 @@ pub fn cmd_client(
                                 ));
                             }
 
-                            client.enable_tracking(redirect, bcast, prefixes, optin, optout, noloop);
+                            client
+                                .enable_tracking(redirect, bcast, prefixes, optin, optout, noloop);
                             Ok(Frame::ok())
                         }
                         "OFF" => {

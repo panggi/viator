@@ -350,7 +350,9 @@ impl LatencyMonitor {
         if histories.is_empty() {
             output.push_str("I have no latency reports to analyze.\n");
             output.push_str("Either the server is very fast or the latency monitor is disabled.\n");
-            output.push_str("Use CONFIG SET latency-monitor-threshold <milliseconds> to enable it.\n");
+            output.push_str(
+                "Use CONFIG SET latency-monitor-threshold <milliseconds> to enable it.\n",
+            );
             return output;
         }
 
@@ -361,11 +363,7 @@ impl LatencyMonitor {
             if let Some(history) = histories.get(event) {
                 if history.max_latency_ms > 0 {
                     let avg = if history.total_events > 0 {
-                        history
-                            .samples
-                            .iter()
-                            .map(|s| s.latency_ms)
-                            .sum::<u64>()
+                        history.samples.iter().map(|s| s.latency_ms).sum::<u64>()
                             / history.samples.len() as u64
                     } else {
                         0
@@ -588,10 +586,7 @@ mod tests {
 
         // Record more samples than the buffer size
         for i in 0..LATENCY_HISTORY_SIZE + 50 {
-            monitor.record(
-                LatencyEvent::Command,
-                Duration::from_millis(i as u64),
-            );
+            monitor.record(LatencyEvent::Command, Duration::from_millis(i as u64));
         }
 
         let history = monitor.get_history(LatencyEvent::Command);

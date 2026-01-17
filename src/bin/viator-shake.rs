@@ -3,11 +3,13 @@
 //! A tool for migrating data between Viator/Redis instances.
 //! Supports full sync using SCAN+DUMP/RESTORE or key-by-key copy.
 
+#![allow(unsafe_code)] // Required for signal handling
+
 use std::collections::HashSet;
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 /// Configuration for the migration
@@ -104,10 +106,7 @@ impl MigrationStats {
     fn print_summary(&self) {
         let elapsed = self.start_time.elapsed();
         println!("\n\nMigration Summary:");
-        println!(
-            "  Duration: {:.2} seconds",
-            elapsed.as_secs_f64()
-        );
+        println!("  Duration: {:.2} seconds", elapsed.as_secs_f64());
         println!(
             "  Keys scanned: {}",
             self.keys_scanned.load(Ordering::Relaxed)
@@ -171,9 +170,7 @@ impl RespValue {
     fn as_i64(&self) -> Option<i64> {
         match self {
             RespValue::Integer(i) => Some(*i),
-            RespValue::BulkString(Some(data)) => {
-                std::str::from_utf8(data).ok()?.parse().ok()
-            }
+            RespValue::BulkString(Some(data)) => std::str::from_utf8(data).ok()?.parse().ok(),
             _ => None,
         }
     }
@@ -200,8 +197,8 @@ struct RedisConn {
 impl RedisConn {
     fn connect(host: &str, port: u16) -> Result<Self, String> {
         let addr = format!("{host}:{port}");
-        let stream = TcpStream::connect(&addr)
-            .map_err(|e| format!("Failed to connect to {addr}: {e}"))?;
+        let stream =
+            TcpStream::connect(&addr).map_err(|e| format!("Failed to connect to {addr}: {e}"))?;
         stream.set_nodelay(true).ok();
         stream.set_read_timeout(Some(Duration::from_secs(30))).ok();
         stream.set_write_timeout(Some(Duration::from_secs(30))).ok();
@@ -502,22 +499,15 @@ fn migrate_database(
             count_str.as_bytes(),
         ])?;
 
-        let arr = scan_resp
-            .as_array()
-            .ok_or("Invalid SCAN response")?;
+        let arr = scan_resp.as_array().ok_or("Invalid SCAN response")?;
 
         if arr.len() < 2 {
             return Err("Invalid SCAN response structure".to_string());
         }
 
-        cursor = arr[0]
-            .as_str()
-            .ok_or("Invalid cursor")?
-            .to_string();
+        cursor = arr[0].as_str().ok_or("Invalid cursor")?.to_string();
 
-        let keys = arr[1]
-            .as_array()
-            .ok_or("Invalid keys array")?;
+        let keys = arr[1].as_array().ok_or("Invalid keys array")?;
 
         for key_val in keys {
             let key = key_val.as_bytes().ok_or("Invalid key")?;
@@ -585,22 +575,15 @@ fn migrate_database_dry_run(
             count_str.as_bytes(),
         ])?;
 
-        let arr = scan_resp
-            .as_array()
-            .ok_or("Invalid SCAN response")?;
+        let arr = scan_resp.as_array().ok_or("Invalid SCAN response")?;
 
         if arr.len() < 2 {
             return Err("Invalid SCAN response structure".to_string());
         }
 
-        cursor = arr[0]
-            .as_str()
-            .ok_or("Invalid cursor")?
-            .to_string();
+        cursor = arr[0].as_str().ok_or("Invalid cursor")?.to_string();
 
-        let keys = arr[1]
-            .as_array()
-            .ok_or("Invalid keys array")?;
+        let keys = arr[1].as_array().ok_or("Invalid keys array")?;
 
         for key_val in keys {
             let key = key_val.as_bytes().ok_or("Invalid key")?;
@@ -610,12 +593,18 @@ fn migrate_database_dry_run(
             let dump_resp = source.command(&[b"DUMP", key])?;
             match dump_resp {
                 RespValue::BulkString(Some(data)) => {
-                    stats.bytes_transferred.fetch_add(data.len() as u64, Ordering::Relaxed);
+                    stats
+                        .bytes_transferred
+                        .fetch_add(data.len() as u64, Ordering::Relaxed);
                     stats.keys_migrated.fetch_add(1, Ordering::Relaxed);
 
                     if config.verbose {
                         let key_str = String::from_utf8_lossy(key);
-                        println!("  [DRY-RUN] Would migrate: {} ({} bytes)", key_str, data.len());
+                        println!(
+                            "  [DRY-RUN] Would migrate: {} ({} bytes)",
+                            key_str,
+                            data.len()
+                        );
                     }
                 }
                 RespValue::BulkString(None) => {
@@ -867,10 +856,7 @@ fn main() {
         }
     };
 
-    println!(
-        "\nStarting migration of {} database(s)...",
-        databases.len()
-    );
+    println!("\nStarting migration of {} database(s)...", databases.len());
     println!("Pattern: {}", config.pattern);
     if config.replace {
         println!("Mode: REPLACE existing keys");
@@ -893,7 +879,8 @@ fn main() {
                 eprintln!("\nError during dry-run for database {}: {}", db, e);
             }
         } else if let Some(ref mut dest_conn) = dest {
-            if let Err(e) = migrate_database(&mut source, dest_conn, db, &config, &stats, &running) {
+            if let Err(e) = migrate_database(&mut source, dest_conn, db, &config, &stats, &running)
+            {
                 eprintln!("\nError migrating database {}: {}", db, e);
             }
         }

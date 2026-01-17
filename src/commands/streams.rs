@@ -368,9 +368,8 @@ pub fn cmd_xread(
             .collect();
 
         // Calculate deadline for blocking
-        let deadline = block_ms.map(|ms| {
-            std::time::Instant::now() + std::time::Duration::from_millis(ms)
-        });
+        let deadline =
+            block_ms.map(|ms| std::time::Instant::now() + std::time::Duration::from_millis(ms));
 
         // Blocking loop - keep trying until we get results or timeout
         loop {
@@ -763,10 +762,12 @@ pub fn cmd_xgroup(
                 let key = Key::from(cmd.args[1].clone());
                 let group_name = cmd.args[2].clone();
                 let id_str = cmd.get_str(3)?;
-                
+
                 // Check for MKSTREAM option
                 let mkstream = cmd.args.iter().skip(4).any(|a| {
-                    std::str::from_utf8(a).map(|s| s.to_uppercase() == "MKSTREAM").unwrap_or(false)
+                    std::str::from_utf8(a)
+                        .map(|s| s.to_uppercase() == "MKSTREAM")
+                        .unwrap_or(false)
                 });
 
                 // Parse the ID
@@ -778,21 +779,28 @@ pub fn cmd_xgroup(
                     } else if mkstream {
                         StreamId::min()
                     } else {
-                        return Ok(Frame::Error("ERR The XGROUP subcommand requires the key to exist".to_string()));
+                        return Ok(Frame::Error(
+                            "ERR The XGROUP subcommand requires the key to exist".to_string(),
+                        ));
                     }
                 } else if id_str == "0" || id_str == "0-0" {
                     StreamId::min()
                 } else {
                     match StreamId::parse(id_str) {
                         Some(StreamIdParsed::Exact(id)) => id,
-                        Some(StreamIdParsed::Partial { ms, seq }) => StreamId::new(ms, seq.unwrap_or(0)),
+                        Some(StreamIdParsed::Partial { ms, seq }) => {
+                            StreamId::new(ms, seq.unwrap_or(0))
+                        }
                         _ => return Ok(Frame::Error("ERR Invalid stream ID".to_string())),
                     }
                 };
 
                 // Create stream if MKSTREAM and doesn't exist
                 if mkstream && db.get(&key).is_none() {
-                    db.set(key.clone(), ViatorValue::Stream(Arc::new(RwLock::new(ViatorStream::new()))));
+                    db.set(
+                        key.clone(),
+                        ViatorValue::Stream(Arc::new(RwLock::new(ViatorStream::new()))),
+                    );
                 }
 
                 // Get or create the stream and add the consumer group
@@ -801,11 +809,15 @@ pub fn cmd_xgroup(
                     let mut guard = stream.write();
                     match guard.create_group(group_name, last_delivered_id, mkstream) {
                         Ok(true) => Ok(Frame::ok()),
-                        Ok(false) => Ok(Frame::Error("BUSYGROUP Consumer Group name already exists".to_string())),
+                        Ok(false) => Ok(Frame::Error(
+                            "BUSYGROUP Consumer Group name already exists".to_string(),
+                        )),
                         Err(e) => Ok(Frame::Error(format!("ERR {}", e))),
                     }
                 } else {
-                    Ok(Frame::Error("ERR The XGROUP subcommand requires the key to exist".to_string()))
+                    Ok(Frame::Error(
+                        "ERR The XGROUP subcommand requires the key to exist".to_string(),
+                    ))
                 }
             }
             "CREATECONSUMER" => {
@@ -825,7 +837,9 @@ pub fn cmd_xgroup(
                         Ok(Frame::Error("NOGROUP No such consumer group".to_string()))
                     }
                 } else {
-                    Ok(Frame::Error("ERR The XGROUP subcommand requires the key to exist".to_string()))
+                    Ok(Frame::Error(
+                        "ERR The XGROUP subcommand requires the key to exist".to_string(),
+                    ))
                 }
             }
             "DELCONSUMER" => {
@@ -842,7 +856,9 @@ pub fn cmd_xgroup(
                         None => Ok(Frame::Integer(0)),
                     }
                 } else {
-                    Ok(Frame::Error("ERR The XGROUP subcommand requires the key to exist".to_string()))
+                    Ok(Frame::Error(
+                        "ERR The XGROUP subcommand requires the key to exist".to_string(),
+                    ))
                 }
             }
             "DESTROY" => {
@@ -871,12 +887,16 @@ pub fn cmd_xgroup(
                     if let Some(v) = db.get_typed(&key, ValueType::Stream)? {
                         v.as_stream().unwrap().read().last_id()
                     } else {
-                        return Ok(Frame::Error("ERR The XGROUP subcommand requires the key to exist".to_string()));
+                        return Ok(Frame::Error(
+                            "ERR The XGROUP subcommand requires the key to exist".to_string(),
+                        ));
                     }
                 } else {
                     match StreamId::parse(id_str) {
                         Some(StreamIdParsed::Exact(id)) => id,
-                        Some(StreamIdParsed::Partial { ms, seq }) => StreamId::new(ms, seq.unwrap_or(0)),
+                        Some(StreamIdParsed::Partial { ms, seq }) => {
+                            StreamId::new(ms, seq.unwrap_or(0))
+                        }
                         _ => return Ok(Frame::Error("ERR Invalid stream ID".to_string())),
                     }
                 };
@@ -890,7 +910,9 @@ pub fn cmd_xgroup(
                         Ok(Frame::Error("NOGROUP No such consumer group".to_string()))
                     }
                 } else {
-                    Ok(Frame::Error("ERR The XGROUP subcommand requires the key to exist".to_string()))
+                    Ok(Frame::Error(
+                        "ERR The XGROUP subcommand requires the key to exist".to_string(),
+                    ))
                 }
             }
             "HELP" => Ok(Frame::Array(vec![
@@ -1073,7 +1095,10 @@ pub fn cmd_xclaim(
                                             vec![Frame::Bulk(k.clone()), Frame::Bulk(v.clone())]
                                         })
                                         .collect();
-                                    Frame::Array(vec![Frame::bulk(entry.id.to_string()), Frame::Array(fields)])
+                                    Frame::Array(vec![
+                                        Frame::bulk(entry.id.to_string()),
+                                        Frame::Array(fields),
+                                    ])
                                 })
                             })
                             .collect();
@@ -1143,12 +1168,8 @@ pub fn cmd_xpending(
                             .unwrap_or(0);
 
                         // Get detailed entries
-                        let pending_entries = group.pending_entries(
-                            start,
-                            end,
-                            count,
-                            consumer_filter.as_ref(),
-                        );
+                        let pending_entries =
+                            group.pending_entries(start, end, count, consumer_filter.as_ref());
 
                         // Filter by idle time if specified
                         let entries: Vec<Frame> = pending_entries
@@ -1267,12 +1288,8 @@ pub fn cmd_xautoclaim(
                 let mut guard = stream.write();
 
                 if let Some(group) = guard.get_group_mut(&group_name) {
-                    let (claimed_ids, next_id) = group.autoclaim(
-                        min_idle_time,
-                        start_id,
-                        count,
-                        &consumer_name,
-                    );
+                    let (claimed_ids, next_id) =
+                        group.autoclaim(min_idle_time, start_id, count, &consumer_name);
 
                     let next_id_str = if next_id == StreamId::min() {
                         "0-0".to_string()
@@ -1305,7 +1322,10 @@ pub fn cmd_xautoclaim(
                                             vec![Frame::Bulk(k.clone()), Frame::Bulk(v.clone())]
                                         })
                                         .collect();
-                                    Frame::Array(vec![Frame::bulk(entry.id.to_string()), Frame::Array(fields)])
+                                    Frame::Array(vec![
+                                        Frame::bulk(entry.id.to_string()),
+                                        Frame::Array(fields),
+                                    ])
                                 })
                             })
                             .collect();
@@ -1427,9 +1447,8 @@ pub fn cmd_xreadgroup(
             .collect();
 
         // Calculate deadline for blocking
-        let deadline = block_ms.map(|ms| {
-            std::time::Instant::now() + std::time::Duration::from_millis(ms)
-        });
+        let deadline =
+            block_ms.map(|ms| std::time::Instant::now() + std::time::Duration::from_millis(ms));
 
         // Blocking loop - keep trying until we get results or timeout
         loop {
@@ -1444,13 +1463,9 @@ pub fn cmd_xreadgroup(
                     let mut guard = stream.write();
 
                     // Use read_group for proper consumer group handling with PEL
-                    if let Some(entries) = guard.read_group(
-                        &group_name,
-                        &consumer_name,
-                        *after_id,
-                        count,
-                        noack,
-                    ) {
+                    if let Some(entries) =
+                        guard.read_group(&group_name, &consumer_name, *after_id, count, noack)
+                    {
                         if !entries.is_empty() {
                             let stream_entries: Vec<Frame> = entries
                                 .into_iter()

@@ -355,19 +355,20 @@ impl Db {
     #[inline]
     fn update_lfu_counter(&self, key: &Key) {
         let current = self.access_freq.get(key).map(|r| *r).unwrap_or(5); // Start at 5 like Redis
-        
+
         // Redis LFU: lfu_log_factor determines decay rate
         // Probability of increment = 1 / (old_count * lfu_log_factor + 1)
         // With factor=10 (default), probability starts at ~10% and decreases
         let lfu_log_factor = 10.0_f64;
         let base_val = (current.saturating_sub(5)) as f64;
         let probability = 1.0 / (base_val * lfu_log_factor + 1.0);
-        
+
         // Use thread-local random for performance
         let mut rng = rand::thread_rng();
         let random: f64 = rng.gen_range(0.0..1.0);
         if random < probability && current < 255 {
-            self.access_freq.insert(key.clone(), current.saturating_add(1));
+            self.access_freq
+                .insert(key.clone(), current.saturating_add(1));
         }
     }
 
@@ -1232,7 +1233,9 @@ impl Db {
         let mut hasher = Xxh3::new();
 
         // Collect keys and sort for deterministic hash
-        let mut keys: Vec<_> = self.data.iter()
+        let mut keys: Vec<_> = self
+            .data
+            .iter()
             .filter(|kv| !kv.value().is_expired())
             .map(|kv| kv.key().clone())
             .collect();
@@ -1392,7 +1395,7 @@ pub struct Database {
     /// Save on shutdown flag (for SHUTDOWN SAVE vs NOSAVE)
     save_on_shutdown: std::sync::atomic::AtomicBool,
     /// Client pause end time (Unix timestamp in milliseconds, 0 = not paused)
-    client_pause_until: std::sync::atomic::AtomicU64,
+    client_pause_until: AtomicU64,
     /// Whether client pause only affects write commands (true = WRITE mode, false = ALL mode)
     client_pause_write_only: std::sync::atomic::AtomicBool,
 }
@@ -1426,7 +1429,7 @@ impl Database {
             server_stats,
             shutdown_requested: std::sync::atomic::AtomicBool::new(false),
             save_on_shutdown: std::sync::atomic::AtomicBool::new(true), // Default: save before shutdown
-            client_pause_until: std::sync::atomic::AtomicU64::new(0),
+            client_pause_until: AtomicU64::new(0),
             client_pause_write_only: std::sync::atomic::AtomicBool::new(false),
         }
     }
@@ -1512,7 +1515,8 @@ impl Database {
             .as_millis() as u64;
         let pause_until = now_ms.saturating_add(timeout_ms);
         self.client_pause_until.store(pause_until, Ordering::SeqCst);
-        self.client_pause_write_only.store(write_only, Ordering::SeqCst);
+        self.client_pause_write_only
+            .store(write_only, Ordering::SeqCst);
     }
 
     /// Unpause all clients immediately.
@@ -1960,7 +1964,6 @@ impl Database {
         let db = &self.dbs[db_idx as usize];
         db.set_with_expiry(Key::from(key), ViatorValue::from_stream(stream), expiry);
     }
-
 }
 
 #[cfg(test)]

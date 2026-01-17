@@ -572,14 +572,16 @@ impl ClientState {
 
             if exceeded_at == 0 {
                 // First time exceeding soft limit
-                self.output_buffer_soft_exceeded_at.store(now, Ordering::Relaxed);
+                self.output_buffer_soft_exceeded_at
+                    .store(now, Ordering::Relaxed);
             } else if now - exceeded_at >= soft_seconds {
                 // Soft limit exceeded for too long
                 return Err("output buffer soft limit exceeded for too long");
             }
         } else {
             // Under soft limit, reset timer
-            self.output_buffer_soft_exceeded_at.store(0, Ordering::Relaxed);
+            self.output_buffer_soft_exceeded_at
+                .store(0, Ordering::Relaxed);
         }
 
         Ok(())
@@ -599,9 +601,12 @@ impl ClientState {
 
     /// Set output buffer limits.
     pub fn set_output_buffer_limits(&self, soft_limit: u64, hard_limit: u64, soft_seconds: u64) {
-        self.output_buffer_soft_limit.store(soft_limit, Ordering::Relaxed);
-        self.output_buffer_hard_limit.store(hard_limit, Ordering::Relaxed);
-        self.output_buffer_soft_seconds.store(soft_seconds, Ordering::Relaxed);
+        self.output_buffer_soft_limit
+            .store(soft_limit, Ordering::Relaxed);
+        self.output_buffer_hard_limit
+            .store(hard_limit, Ordering::Relaxed);
+        self.output_buffer_soft_seconds
+            .store(soft_seconds, Ordering::Relaxed);
     }
 
     /// Get total memory usage for this client.
@@ -615,9 +620,12 @@ impl ClientState {
         // Transaction queue memory
         let transaction_mem = {
             let queue = self.transaction_queue.read();
-            queue.iter().map(|cmd| {
-                cmd.name.len() as u64 + cmd.args.iter().map(|a| a.len() as u64).sum::<u64>()
-            }).sum::<u64>()
+            queue
+                .iter()
+                .map(|cmd| {
+                    cmd.name.len() as u64 + cmd.args.iter().map(|a| a.len() as u64).sum::<u64>()
+                })
+                .sum::<u64>()
         };
 
         // Watched keys memory
@@ -725,9 +733,10 @@ impl ClientState {
         // Check BCAST mode prefixes
         if tracking.bcast && !tracking.prefixes.is_empty() {
             let key_bytes = key.as_bytes();
-            return tracking.prefixes.iter().any(|prefix| {
-                key_bytes.starts_with(prefix.as_ref())
-            });
+            return tracking
+                .prefixes
+                .iter()
+                .any(|prefix| key_bytes.starts_with(prefix.as_ref()));
         }
 
         true

@@ -43,13 +43,13 @@ impl TrackingRegistry {
         // Add to key->clients map
         self.key_to_clients
             .entry(key.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(client_id);
 
         // Add to client->keys map for cleanup
         self.client_to_keys
             .entry(client_id)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(key);
     }
 
@@ -70,10 +70,10 @@ impl TrackingRegistry {
             let prefixes = entry.value();
 
             // Empty prefixes means track all keys
-            if prefixes.is_empty() || prefixes.iter().any(|p| key_bytes.starts_with(p.as_ref())) {
-                if !clients.contains(&client_id) {
-                    clients.push(client_id);
-                }
+            if (prefixes.is_empty() || prefixes.iter().any(|p| key_bytes.starts_with(p.as_ref())))
+                && !clients.contains(&client_id)
+            {
+                clients.push(client_id);
             }
         }
 
@@ -102,10 +102,10 @@ impl TrackingRegistry {
             let client_id = *entry.key();
             let prefixes = entry.value();
 
-            if prefixes.is_empty() || prefixes.iter().any(|p| key_bytes.starts_with(p.as_ref())) {
-                if !result.contains(&client_id) {
-                    result.push(client_id);
-                }
+            if (prefixes.is_empty() || prefixes.iter().any(|p| key_bytes.starts_with(p.as_ref())))
+                && !result.contains(&client_id)
+            {
+                result.push(client_id);
             }
         }
 

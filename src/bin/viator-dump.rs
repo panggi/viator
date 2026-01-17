@@ -3,6 +3,8 @@
 //! A tool for exporting Viator/Redis data to JSON format.
 //! Supports filtering by key patterns and database selection.
 
+#![allow(dead_code)] // Some enum variants used for parsing only
+
 use bytes::BytesMut;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -51,12 +53,8 @@ impl Connection {
             .map_err(|e| format!("Could not connect to Viator at {}: {}", addr, e))?;
 
         stream.set_nodelay(true).ok();
-        stream
-            .set_read_timeout(Some(Duration::from_secs(30)))
-            .ok();
-        stream
-            .set_write_timeout(Some(Duration::from_secs(30)))
-            .ok();
+        stream.set_read_timeout(Some(Duration::from_secs(30))).ok();
+        stream.set_write_timeout(Some(Duration::from_secs(30))).ok();
 
         let mut conn = Self {
             stream,
@@ -181,9 +179,7 @@ impl RespValue {
     fn as_i64(&self) -> Option<i64> {
         match self {
             RespValue::Integer(i) => Some(*i),
-            RespValue::Bulk(Some(b)) => {
-                String::from_utf8(b.clone()).ok()?.parse().ok()
-            }
+            RespValue::Bulk(Some(b)) => String::from_utf8(b.clone()).ok()?.parse().ok(),
             _ => None,
         }
     }
@@ -268,12 +264,7 @@ fn parse_resp_value(buf: &[u8], offset: usize) -> Result<Option<(RespValue, usiz
 }
 
 fn find_crlf(buf: &[u8], offset: usize) -> Option<usize> {
-    for i in offset..buf.len().saturating_sub(1) {
-        if buf[i] == b'\r' && buf[i + 1] == b'\n' {
-            return Some(i);
-        }
-    }
-    None
+    (offset..buf.len().saturating_sub(1)).find(|&i| buf[i] == b'\r' && buf[i + 1] == b'\n')
 }
 
 fn encode_command(args: &[&str]) -> Vec<u8> {
@@ -454,7 +445,8 @@ fn export_zset(conn: &mut Connection, key: &str) -> Result<Value, String> {
             let mut members = Vec::new();
             let mut i = 0;
             while i + 1 < arr.len() {
-                if let (Some(member), Some(score_str)) = (arr[i].as_string(), arr[i + 1].as_string())
+                if let (Some(member), Some(score_str)) =
+                    (arr[i].as_string(), arr[i + 1].as_string())
                 {
                     let score: f64 = score_str.parse().unwrap_or(0.0);
                     let mut obj = Map::new();
