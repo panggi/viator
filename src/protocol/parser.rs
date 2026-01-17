@@ -159,12 +159,12 @@ impl RespParser {
             }
         };
 
-        // Extract line
-        let line = self.buffer.split_to(line_end);
+        // Extract line and freeze for zero-copy slicing
+        let line = self.buffer.split_to(line_end).freeze();
         self.buffer.advance(2); // Skip CRLF
 
-        // Parse space-separated arguments
-        let args = parse_inline_args(&line);
+        // Parse space-separated arguments (zero-copy)
+        let args = parse_inline_args_zerocopy(line);
         if args.is_empty() {
             return Ok(None);
         }
@@ -350,8 +350,11 @@ fn find_crlf(buf: &[u8]) -> Option<usize> {
     None
 }
 
-/// Parse inline command arguments.
-fn parse_inline_args(line: &[u8]) -> Vec<Frame> {
+/// Parse inline command arguments with zero-copy slicing.
+///
+/// Uses `Bytes::slice()` to create zero-copy views into the original buffer
+/// instead of copying each argument.
+fn parse_inline_args_zerocopy(line: Bytes) -> Vec<Frame> {
     let mut args = Vec::new();
     let mut start = 0;
     let mut in_quotes = false;
@@ -364,10 +367,9 @@ fn parse_inline_args(line: &[u8]) -> Vec<Frame> {
         if in_quotes {
             if c == quote_char {
                 in_quotes = false;
-                // Include content without quotes
-                let arg = &line[start..i];
-                if !arg.is_empty() {
-                    args.push(Frame::Bulk(Bytes::copy_from_slice(arg)));
+                // Include content without quotes - zero-copy slice
+                if start < i {
+                    args.push(Frame::Bulk(line.slice(start..i)));
                 }
                 start = i + 1;
             }
@@ -377,7 +379,8 @@ fn parse_inline_args(line: &[u8]) -> Vec<Frame> {
             start = i + 1;
         } else if c == b' ' || c == b'\t' {
             if start < i {
-                args.push(Frame::Bulk(Bytes::copy_from_slice(&line[start..i])));
+                // Zero-copy slice instead of copy_from_slice
+                args.push(Frame::Bulk(line.slice(start..i)));
             }
             start = i + 1;
         }
@@ -385,9 +388,9 @@ fn parse_inline_args(line: &[u8]) -> Vec<Frame> {
         i += 1;
     }
 
-    // Handle last argument
+    // Handle last argument - zero-copy slice
     if start < line.len() {
-        args.push(Frame::Bulk(Bytes::copy_from_slice(&line[start..])));
+        args.push(Frame::Bulk(line.slice(start..)));
     }
 
     args

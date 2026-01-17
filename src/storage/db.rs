@@ -364,6 +364,36 @@ impl Db {
         }
     }
 
+    /// Fast path GET - skips LRU tracking for better performance.
+    /// Use this when LRU eviction policy is not configured.
+    #[inline]
+    pub fn get_fast(&self, key: &Key) -> Option<ViatorValue> {
+        // Check if key exists
+        let entry = self.data.get(key)?;
+
+        // Check expiration
+        if entry.is_expired() {
+            drop(entry);
+            self.delete(key);
+            self.stats.misses.fetch_add(1, Ordering::Relaxed);
+            return None;
+        }
+
+        // Skip LRU tracking - just return the value
+        self.stats.hits.fetch_add(1, Ordering::Relaxed);
+        Some(entry.value.clone())
+    }
+
+    /// Fast path GET for strings - skips LRU tracking.
+    #[inline]
+    pub fn get_string_fast(&self, key: &Key) -> Result<Option<Bytes>> {
+        match self.get_fast(key) {
+            Some(ViatorValue::String(s)) => Ok(Some(s)),
+            Some(_) => Err(Error::Command(CommandError::WrongType)),
+            None => Ok(None),
+        }
+    }
+
     /// Set a value.
     pub fn set(&self, key: Key, value: ViatorValue) {
         self.set_with_expiry(key, value, Expiry::Never);

@@ -543,7 +543,21 @@ impl Connection {
         self.write_buffer.clear();
         self.pending_writes = 0;
 
+        // Shrink write buffer if it has grown too large
+        // This prevents unbounded memory growth for long-lived connections
+        self.maybe_shrink_write_buffer();
+
         Ok(())
+    }
+
+    /// Shrink write buffer if capacity is much larger than needed.
+    #[inline]
+    fn maybe_shrink_write_buffer(&mut self) {
+        const SHRINK_THRESHOLD: usize = WRITE_BUFFER_INITIAL * 4; // 64KB
+        if self.write_buffer.capacity() > SHRINK_THRESHOLD {
+            // Shrink back to initial capacity
+            self.write_buffer = BytesMut::with_capacity(WRITE_BUFFER_INITIAL);
+        }
     }
 
     /// Write a frame immediately (for legacy compatibility).

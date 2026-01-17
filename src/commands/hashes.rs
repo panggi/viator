@@ -13,8 +13,9 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 /// Helper to get or create a hash
+/// Uses fast path that skips LRU tracking for better performance.
 fn get_or_create_hash(db: &Db, key: &Key) -> Result<ViatorValue> {
-    match db.get(key) {
+    match db.get_fast(key) {
         Some(v) if v.is_hash() => Ok(v),
         Some(_) => Err(CommandError::WrongType.into()),
         None => Ok(ViatorValue::new_hash()),
@@ -22,6 +23,7 @@ fn get_or_create_hash(db: &Db, key: &Key) -> Result<ViatorValue> {
 }
 
 /// HSET key field value [field value ...]
+/// Fast path: skips LRU tracking for better performance.
 pub fn cmd_hset(
     cmd: ParsedCommand,
     db: Arc<Db>,
@@ -53,7 +55,8 @@ pub fn cmd_hset(
         }
 
         drop(hash);
-        db.set(key, value);
+        // Use fast path for writes
+        db.set_fast(key, value);
 
         Ok(Frame::Integer(added))
     })

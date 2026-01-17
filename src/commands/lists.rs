@@ -12,8 +12,9 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 /// Helper to get or create a list
+/// Uses fast path that skips LRU tracking for better performance.
 fn get_or_create_list(db: &Db, key: &Key) -> Result<ViatorValue> {
-    match db.get(key) {
+    match db.get_fast(key) {
         Some(v) if v.is_list() => Ok(v),
         Some(_) => Err(CommandError::WrongType.into()),
         None => Ok(ViatorValue::new_list()),
@@ -21,6 +22,7 @@ fn get_or_create_list(db: &Db, key: &Key) -> Result<ViatorValue> {
 }
 
 /// LPUSH key element [element ...]
+/// Fast path: skips LRU tracking for better performance.
 pub fn cmd_lpush(
     cmd: ParsedCommand,
     db: Arc<Db>,
@@ -42,12 +44,14 @@ pub fn cmd_lpush(
         let len = list.len();
         drop(list);
 
-        db.set(key, value);
+        // Use fast path for writes
+        db.set_fast(key, value);
         Ok(Frame::Integer(len as i64))
     })
 }
 
 /// RPUSH key element [element ...]
+/// Fast path: skips LRU tracking for better performance.
 pub fn cmd_rpush(
     cmd: ParsedCommand,
     db: Arc<Db>,
@@ -69,7 +73,8 @@ pub fn cmd_rpush(
         let len = list.len();
         drop(list);
 
-        db.set(key, value);
+        // Use fast path for writes
+        db.set_fast(key, value);
         Ok(Frame::Integer(len as i64))
     })
 }

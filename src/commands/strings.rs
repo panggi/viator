@@ -13,6 +13,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 /// GET key
+/// Fast path: skips LRU tracking for better performance.
 pub fn cmd_get(
     cmd: ParsedCommand,
     db: Arc<Db>,
@@ -21,7 +22,8 @@ pub fn cmd_get(
     Box::pin(async move {
         let key = Key::from(cmd.args[0].clone());
 
-        match db.get_string(&key)? {
+        // Use fast path that skips LRU tracking
+        match db.get_string_fast(&key)? {
             Some(value) => Ok(Frame::Bulk(value)),
             None => Ok(Frame::Null),
         }
@@ -298,6 +300,7 @@ pub fn cmd_psetex(
 }
 
 /// MGET key [key ...]
+/// Fast path: skips LRU tracking for better performance.
 pub fn cmd_mget(
     cmd: ParsedCommand,
     db: Arc<Db>,
@@ -309,7 +312,8 @@ pub fn cmd_mget(
             .iter()
             .map(|arg| {
                 let key = Key::from(arg.clone());
-                match db.get_string(&key) {
+                // Use fast path that skips LRU tracking
+                match db.get_string_fast(&key) {
                     Ok(Some(v)) => Frame::Bulk(v),
                     _ => Frame::Null,
                 }
@@ -399,6 +403,7 @@ pub fn cmd_incrby(
 }
 
 /// INCRBYFLOAT key increment
+/// Fast path: skips LRU tracking for better performance.
 pub fn cmd_incrbyfloat(
     cmd: ParsedCommand,
     db: Arc<Db>,
@@ -408,7 +413,8 @@ pub fn cmd_incrbyfloat(
         let key = Key::from(cmd.args[0].clone());
         let increment = cmd.get_f64(1)?;
 
-        let current = match db.get_string(&key)? {
+        // Use fast path for reads
+        let current = match db.get_string_fast(&key)? {
             Some(v) => {
                 let s = std::str::from_utf8(&v).map_err(|_| CommandError::NotFloat)?;
                 s.parse::<f64>().map_err(|_| CommandError::NotFloat)?
@@ -424,7 +430,8 @@ pub fn cmd_incrbyfloat(
         }
 
         let value_str = format_float(new_value);
-        db.set(key, ViatorValue::string(value_str.clone()));
+        // Use fast path for writes
+        db.set_fast(key, ViatorValue::string(value_str.clone()));
         Ok(Frame::Bulk(Bytes::from(value_str)))
     })
 }
@@ -670,8 +677,10 @@ pub fn cmd_getex(
 }
 
 /// Helper function for INCR/INCRBY/DECR/DECRBY
+/// Optimized: uses fast path that skips LRU tracking.
 fn incr_by(db: &Db, key: &Key, delta: i64) -> Result<Frame> {
-    let current = match db.get_string(key)? {
+    // Use fast path for reads
+    let current = match db.get_string_fast(key)? {
         Some(v) => {
             let s = std::str::from_utf8(&v).map_err(|_| CommandError::NotInteger)?;
             s.parse::<i64>().map_err(|_| CommandError::NotInteger)?
@@ -681,7 +690,8 @@ fn incr_by(db: &Db, key: &Key, delta: i64) -> Result<Frame> {
 
     let new_value = current.checked_add(delta).ok_or(CommandError::OutOfRange)?;
 
-    db.set(key.clone(), ViatorValue::string(new_value.to_string()));
+    // Use fast path for writes
+    db.set_fast(key.clone(), ViatorValue::string(new_value.to_string()));
     Ok(Frame::Integer(new_value))
 }
 
