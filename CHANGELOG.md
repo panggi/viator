@@ -5,6 +5,31 @@ All notable changes to Viator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.18] - 2026-01-18
+
+### Added
+- **Consumer Group PEL Tracking**: Full Pending Entries List implementation for streams
+  - XACK, XCLAIM, XAUTOCLAIM with real PEL tracking
+  - XPENDING with consumer filtering and range queries
+  - XINFO GROUPS/CONSUMERS with accurate statistics
+- **CLIENT TRACKING**: Client-side caching with invalidation support
+  - TrackingRegistry for server-side key tracking
+  - BCAST mode with prefix filtering
+  - OPTIN/OPTOUT tracking modes
+- **DUMP/RESTORE Serialization**: Full Redis-compatible serialization with CRC64 checksums
+- **LRU/LFU Access Tracking**: OBJECT IDLETIME/FREQ now return accurate access metrics
+- **SORT BY/GET Pattern Support**: Hash field access in SORT operations
+- **MEMORY USAGE Command**: Memory estimation with sampling support
+- **Latency Monitoring**: Infrastructure for tracking command latencies
+- **New CLI Tools**:
+  - `viator-dump` - Export database to RDB/JSON formats
+  - `viator-load` - Import data from various formats
+  - `viator-shake` - Live data synchronization between instances
+
+### Fixed
+- **Nightly Rust Compatibility**: Fix function-cast-as-integer lint
+- **CI Compliance**: Fix clippy warnings and formatting
+
 ## [0.1.17] - 2026-01-17
 
 ### Fixed

@@ -1005,6 +1005,12 @@ These commands return appropriate responses but don't fully implement the featur
 
 | Version | Date | Redis Target | Changes |
 |---------|------|--------------|---------|
+| 0.1.18 | 2026-01 | 8.4.0 | Consumer group PEL, CLIENT TRACKING, DUMP/RESTORE, MEMORY USAGE |
+| 0.1.17 | 2026-01 | 8.4.0 | Fix VDB loading on startup |
+| 0.1.16 | 2026-01 | 8.4.0 | Docker fixes, code hardening |
+| 0.1.6 | 2026-01 | 8.4.0 | LZF compression for VDB persistence |
+| 0.1.5 | 2026-01 | 8.4.0 | Fix binary smoke tests for llvm-cov |
+| 0.1.4 | 2026-01 | 8.4.0 | Fix clippy warnings |
 | 0.1.3 | 2026-01 | 8.4.0 | Code formatting fix |
 | 0.1.2 | 2026-01 | 8.4.0 | Stream persistence (VDB/AOF), real CPU metrics |
 | 0.1.1 | 2026-01 | 8.4.0 | Production hardening, panic-safe locks, backpressure |
