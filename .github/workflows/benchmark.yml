@@ -23,7 +23,7 @@ jobs:
           cat /proc/kallsyms | grep -c io_uring || echo "io_uring symbols found"
 
       - name: Install Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install Redis
         run: |
