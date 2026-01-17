@@ -30,36 +30,36 @@ fn get_binary_path(name: &str) -> String {
     format!("{}/debug/{}", target_dir, name)
 }
 
-/// Test that viator binary responds to --help
+/// Test that viator-server binary responds to --help
 #[test]
 fn test_viator_help() {
-    let output = Command::new(get_binary_path("viator"))
+    let output = Command::new(get_binary_path("viator-server"))
         .arg("--help")
         .output()
-        .expect("Failed to execute viator");
+        .expect("Failed to execute viator-server");
 
-    assert!(output.status.success(), "viator --help failed");
+    assert!(output.status.success(), "viator-server --help failed");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("Viator") || stdout.contains("USAGE"),
-        "viator --help output unexpected: {}",
+        stdout.contains("viator-server") || stdout.contains("USAGE"),
+        "viator-server --help output unexpected: {}",
         stdout
     );
 }
 
-/// Test that viator binary responds to --version
+/// Test that viator-server binary responds to --version
 #[test]
-fn test_viator_version() {
-    let output = Command::new(get_binary_path("viator"))
+fn test_viator_server_version() {
+    let output = Command::new(get_binary_path("viator-server"))
         .arg("--version")
         .output()
-        .expect("Failed to execute viator");
+        .expect("Failed to execute viator-server");
 
-    assert!(output.status.success(), "viator --version failed");
+    assert!(output.status.success(), "viator-server --version failed");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("0.1") || stdout.contains("viator"),
-        "viator --version output unexpected: {}",
+        "viator-server --version output unexpected: {}",
         stdout
     );
 }
@@ -153,7 +153,7 @@ fn test_viator_check_vdb_help() {
 #[test]
 fn test_all_binaries_have_help() {
     let binaries = [
-        "viator",
+        "viator-server",
         "viator-cli",
         "viator-sentinel",
         "viator-benchmark",
