@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     if cli.version {
-        println!("Viator version {VERSION}");
+        println!("viator-server {VERSION}");
         return Ok(());
     }
 
@@ -126,7 +126,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Print banner (only if not daemonized)
     if !config.daemonize {
-        print_banner();
+        print_banner(config.port);
     }
 
     info!(
@@ -384,7 +384,7 @@ fn daemonize(config: &Config) -> anyhow::Result<()> {
     }
 }
 
-fn print_banner() {
+fn print_banner(port: u16) {
     println!(
         r"
            :::     :::  :::::::::::      :::      :::::::::::  ::::::::   :::::::::
@@ -395,22 +395,23 @@ fn print_banner() {
        #+#+#+#        #+#       #+#     #+#     #+#     #+#    #+#  #+#    #+#
          ###     ###########  ###     ###     ###      ########   ###    ###
 
-    Viator {} - A high-performance key-value store
-
+    Viator {}
+    Port: {}
     PID: {}
     https://github.com/panggi/viator
 ",
         VERSION,
+        port,
         std::process::id()
     );
 }
 
 fn print_help() {
     println!(
-        r"Viator {VERSION} - A high-performance key-value store
+        r"viator-server {VERSION}
 
 USAGE:
-    viator [OPTIONS]
+    viator-server [OPTIONS]
 
 OPTIONS:
     -c, --config <FILE>      Load configuration from file
@@ -428,22 +429,11 @@ OPTIONS:
     -h, --help               Print this help message
     -v, --version            Print version information
 
-CONFIGURATION FILE:
-    Viator supports redis.conf compatible configuration files.
-    Use --config to load a configuration file.
-
 EXAMPLES:
-    viator                              Start with defaults
-    viator --port 6380                  Start on port 6380
-    viator -c /etc/viator/viator.conf   Load from config file
-    viator -d --pidfile /var/run/viator.pid   Run as daemon
-    viator --maxmemory 1gb --appendonly       With memory limit and AOF
-
-SIGNALS:
-    SIGINT/SIGTERM  Graceful shutdown
-    SIGHUP          Reload configuration (if --config specified)
-
-For more information, visit: https://github.com/panggi/viator
+    viator-server                              Start with defaults
+    viator-server --port 6380                  Start on port 6380
+    viator-server -c /etc/viator.conf          Load from config file
+    viator-server -d --pidfile /var/run/viator.pid   Run as daemon
 "
     );
 }
