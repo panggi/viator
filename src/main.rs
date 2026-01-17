@@ -5,7 +5,6 @@
 #![allow(clippy::manual_c_str_literals)]
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use tracing::{error, info, warn};
 use tracing_subscriber::{EnvFilter, fmt};
 use viator::{Config, Server, VERSION};
@@ -152,6 +151,22 @@ async fn main() -> anyhow::Result<()> {
         if use_io_uring { "io_uring" } else { "tokio" }
     );
 
+    // Run with io_uring if available and requested (Linux only)
+    #[cfg(all(target_os = "linux", feature = "io-uring"))]
+    {
+        if use_io_uring {
+            return run_with_io_uring(config);
+        }
+    }
+
+    // Fall back to tokio-based server
+    run_with_tokio(config, cli.config).await
+}
+
+/// Run the server with tokio (default mode).
+async fn run_with_tokio(config: Config, config_path: Option<PathBuf>) -> anyhow::Result<()> {
+    use std::sync::Arc;
+
     // Create and run server
     let server = Arc::new(Server::new(config.clone()));
 
@@ -179,7 +194,7 @@ async fn main() -> anyhow::Result<()> {
     // Handle SIGHUP for config reload (Unix only)
     #[cfg(unix)]
     {
-        let config_path = cli.config.clone();
+        let config_path = config_path.clone();
         tokio::spawn(async move {
             let mut signal =
                 match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup()) {
@@ -214,8 +229,53 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    #[cfg(not(unix))]
+    let _ = config_path; // Suppress unused warning on non-Unix
+
     // Run the server
     server.run().await?;
+
+    // Clean up PID file
+    if let Some(ref pidfile) = config.pidfile {
+        let _ = std::fs::remove_file(pidfile);
+    }
+
+    Ok(())
+}
+
+/// Run the server with io_uring (Linux only, high-performance mode).
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+fn run_with_io_uring(config: Config) -> anyhow::Result<()> {
+    use std::sync::Arc;
+    use viator::commands::CommandExecutor;
+    use viator::server::PubSubHub;
+    use viator::server::io_uring::runtime::{IoUringServerConfig, start_server};
+    use viator::storage::Database;
+
+    // Create database and executor (same as tokio mode)
+    let database = Arc::new(Database::with_config(
+        config.requirepass.clone(),
+        config.maxmemory,
+        config.maxmemory_policy,
+    ));
+    let pubsub = Arc::new(PubSubHub::new());
+    let executor = Arc::new(CommandExecutor::with_pubsub(database.clone(), pubsub));
+
+    // Configure io_uring server
+    let bind_addr = format!("{}:{}", config.bind, config.port)
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Invalid bind address: {}", e))?;
+
+    let uring_config = IoUringServerConfig {
+        bind_addr,
+        workers: std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1),
+        uring_config: viator::server::io_uring::IoUringConfig::high_throughput(),
+    };
+
+    // Start io_uring server (blocks until shutdown)
+    start_server(uring_config, database, executor)?;
 
     // Clean up PID file
     if let Some(ref pidfile) = config.pidfile {
