@@ -141,3 +141,4 @@ pub const MAX_ARGUMENTS: usize = 1_000_000;
 
 /// Maximum number of concurrent clients.
 pub const MAX_CLIENTS: usize = 10_000;
+// Trigger benchmark
