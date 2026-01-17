@@ -12,7 +12,7 @@ use bytes::{Bytes, BytesMut};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::broadcast;
 use tracing::{debug, trace};
@@ -34,8 +34,8 @@ const WRITE_BUFFER_INITIAL: usize = 16 * 1024;
 
 /// A connection to a single client.
 pub struct Connection {
-    /// TCP stream
-    stream: BufWriter<TcpStream>,
+    /// TCP stream (unbuffered - we do our own buffering)
+    stream: TcpStream,
     /// Peer address
     peer_addr: SocketAddr,
     /// RESP parser
@@ -81,7 +81,7 @@ impl Connection {
         };
 
         Self {
-            stream: BufWriter::new(stream),
+            stream,
             peer_addr,
             parser: RespParser::new(),
             state: Arc::new(ClientState::new(
@@ -118,8 +118,7 @@ impl Connection {
             // Normal command mode
             // Read data from socket with optional timeout
             let read_result = if let Some(timeout) = self.idle_timeout {
-                match tokio::time::timeout(timeout, self.stream.get_mut().read(&mut read_buf)).await
-                {
+                match tokio::time::timeout(timeout, self.stream.read(&mut read_buf)).await {
                     Ok(result) => result,
                     Err(_) => {
                         // Timeout - close connection
@@ -131,7 +130,7 @@ impl Connection {
                     }
                 }
             } else {
-                self.stream.get_mut().read(&mut read_buf).await
+                self.stream.read(&mut read_buf).await
             };
 
             let n = read_result?;
@@ -206,7 +205,7 @@ impl Connection {
             // Use tokio::select! to wait for either socket data or pub/sub messages
             tokio::select! {
                 // Socket read
-                result = self.stream.get_mut().read(read_buf) => {
+                result = self.stream.read(read_buf) => {
                     match result {
                         Ok(0) => {
                             debug!("Connection closed by peer in pubsub mode: {}", self.peer_addr);
@@ -539,7 +538,6 @@ impl Connection {
         }
 
         self.stream.write_all(&self.write_buffer).await?;
-        self.stream.flush().await?;
         self.write_buffer.clear();
         self.pending_writes = 0;
 
