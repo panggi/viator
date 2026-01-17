@@ -398,6 +398,8 @@ viator-benchmark -h 127.0.0.1 -p 6379 -c 50 -n 100000 -t set,get
 viator-benchmark -h 127.0.0.1 -p 6379 -P 16
 ```
 
+📊 **Latest benchmark results**: [GitHub Actions Benchmark](https://github.com/panggi/viator/actions/workflows/benchmark.yml)
+
 ### viator-check-vdb
 
 VDB (snapshot) file integrity checker.
