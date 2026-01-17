@@ -29,7 +29,7 @@ pub use watch::{SharedWatchRegistry, WatchRegistry};
 
 use crate::Result;
 use crate::commands::CommandExecutor;
-use crate::persistence::VdbSaver;
+use crate::persistence::{VdbLoader, VdbSaver};
 use crate::pool::BufferPool;
 use crate::storage::{Database, ExpiryManager};
 use std::net::SocketAddr;
@@ -113,6 +113,19 @@ impl Server {
 
     /// Run the server.
     pub async fn run(self: Arc<Self>) -> Result<()> {
+        // Load VDB on startup if it exists
+        let vdb_path = std::path::Path::new(&self.config.dir).join(&self.config.dbfilename);
+        if vdb_path.exists() {
+            info!("Loading VDB file: {}", vdb_path.display());
+            match VdbLoader::new(&vdb_path) {
+                Ok(loader) => match loader.load_into(&self.database) {
+                    Ok(()) => info!("VDB loaded successfully"),
+                    Err(e) => error!("Failed to load VDB: {}", e),
+                },
+                Err(e) => error!("Failed to open VDB file: {}", e),
+            }
+        }
+
         let addr: SocketAddr = format!("{}:{}", self.config.bind, self.config.port).parse()?;
 
         let listener = TcpListener::bind(addr).await?;

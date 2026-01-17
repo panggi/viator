@@ -5,6 +5,13 @@ All notable changes to Viator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.17] - 2026-01-17
+
+### Fixed
+- **Critical: VDB not loaded on startup** - Server now loads dump.vdb when starting
+  - Previously VDB was saved on shutdown but never restored on startup
+  - Data now persists correctly across server restarts
+
 ## [0.1.16] - 2026-01-17
 
 ### Fixed
