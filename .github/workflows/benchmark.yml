@@ -28,14 +28,15 @@ jobs:
       - name: Install Redis
         run: |
           sudo apt-get update
-          sudo apt-get install -y redis-server redis-tools
+          sudo apt-get install -y redis-tools
+          # Download and build Redis from source to avoid systemd service
+          wget https://download.redis.io/redis-stable.tar.gz
+          tar xzf redis-stable.tar.gz
+          cd redis-stable && make -j$(nproc)
+          sudo cp src/redis-server /usr/local/bin/
 
-      - name: Build Viator (standard)
+      - name: Build Viator
         run: cargo build --release
-
-      - name: Build Viator (io_uring)
-        run: cargo build --release --features io-uring
-        continue-on-error: true  # May fail if io_uring not fully supported
 
       - name: Benchmark - Viator vs Redis
         run: |
@@ -44,8 +45,13 @@ jobs:
           echo "**Environment:** $(uname -r) | $(nproc) cores | $(free -h | awk '/^Mem:/{print $2}') RAM" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
+          # Make sure no servers are running
+          pkill -9 redis-server || true
+          pkill -9 viator-server || true
+          sleep 1
+
           # Start Redis on port 6380
-          redis-server --port 6380 --daemonize yes
+          /usr/local/bin/redis-server --port 6380 --daemonize yes --loglevel warning
           sleep 2
 
           # Start Viator on port 6379
@@ -53,46 +59,60 @@ jobs:
           VIATOR_PID=$!
           sleep 2
 
+          # Verify both servers are running
+          redis-cli -p 6379 PING || { echo "Viator not responding"; exit 1; }
+          redis-cli -p 6380 PING || { echo "Redis not responding"; exit 1; }
+
           echo "### Single Command Performance (100K requests, 50 clients)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Command | Viator (req/s) | Redis (req/s) | Gap |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---------|----------------|---------------|-----|" >> "$GITHUB_STEP_SUMMARY"
 
+          # Function to safely calculate gap
+          calc_gap() {
+            local v=$1 r=$2
+            if [ -z "$v" ] || [ -z "$r" ] || [ "$r" = "0" ]; then
+              echo "N/A"
+            else
+              echo "scale=1; (($v - $r) / $r) * 100" | bc 2>/dev/null || echo "N/A"
+            fi
+          }
+
           # Benchmark SET
           VIATOR_SET=$(redis-benchmark -p 6379 -t set -n 100000 -c 50 -q 2>&1 | grep "SET:" | tail -1 | awk '{print $2}')
           REDIS_SET=$(redis-benchmark -p 6380 -t set -n 100000 -c 50 -q 2>&1 | grep "SET:" | tail -1 | awk '{print $2}')
-          GAP_SET=$(echo "scale=1; (($VIATOR_SET - $REDIS_SET) / $REDIS_SET) * 100" | bc)
-          echo "| SET | $VIATOR_SET | $REDIS_SET | ${GAP_SET}% |" >> "$GITHUB_STEP_SUMMARY"
+          GAP_SET=$(calc_gap "$VIATOR_SET" "$REDIS_SET")
+          echo "| SET | ${VIATOR_SET:-N/A} | ${REDIS_SET:-N/A} | ${GAP_SET}% |" >> "$GITHUB_STEP_SUMMARY"
 
           # Benchmark GET
           VIATOR_GET=$(redis-benchmark -p 6379 -t get -n 100000 -c 50 -q 2>&1 | grep "GET:" | tail -1 | awk '{print $2}')
           REDIS_GET=$(redis-benchmark -p 6380 -t get -n 100000 -c 50 -q 2>&1 | grep "GET:" | tail -1 | awk '{print $2}')
-          GAP_GET=$(echo "scale=1; (($VIATOR_GET - $REDIS_GET) / $REDIS_GET) * 100" | bc)
-          echo "| GET | $VIATOR_GET | $REDIS_GET | ${GAP_GET}% |" >> "$GITHUB_STEP_SUMMARY"
+          GAP_GET=$(calc_gap "$VIATOR_GET" "$REDIS_GET")
+          echo "| GET | ${VIATOR_GET:-N/A} | ${REDIS_GET:-N/A} | ${GAP_GET}% |" >> "$GITHUB_STEP_SUMMARY"
 
           # Benchmark PING
           VIATOR_PING=$(redis-benchmark -p 6379 -t ping -n 100000 -c 50 -q 2>&1 | grep "PING_INLINE:" | tail -1 | awk '{print $2}')
           REDIS_PING=$(redis-benchmark -p 6380 -t ping -n 100000 -c 50 -q 2>&1 | grep "PING_INLINE:" | tail -1 | awk '{print $2}')
-          GAP_PING=$(echo "scale=1; (($VIATOR_PING - $REDIS_PING) / $REDIS_PING) * 100" | bc)
-          echo "| PING | $VIATOR_PING | $REDIS_PING | ${GAP_PING}% |" >> "$GITHUB_STEP_SUMMARY"
+          GAP_PING=$(calc_gap "$VIATOR_PING" "$REDIS_PING")
+          echo "| PING | ${VIATOR_PING:-N/A} | ${REDIS_PING:-N/A} | ${GAP_PING}% |" >> "$GITHUB_STEP_SUMMARY"
 
           # Benchmark INCR
           VIATOR_INCR=$(redis-benchmark -p 6379 -t incr -n 100000 -c 50 -q 2>&1 | grep "INCR:" | tail -1 | awk '{print $2}')
           REDIS_INCR=$(redis-benchmark -p 6380 -t incr -n 100000 -c 50 -q 2>&1 | grep "INCR:" | tail -1 | awk '{print $2}')
-          GAP_INCR=$(echo "scale=1; (($VIATOR_INCR - $REDIS_INCR) / $REDIS_INCR) * 100" | bc)
-          echo "| INCR | $VIATOR_INCR | $REDIS_INCR | ${GAP_INCR}% |" >> "$GITHUB_STEP_SUMMARY"
+          GAP_INCR=$(calc_gap "$VIATOR_INCR" "$REDIS_INCR")
+          echo "| INCR | ${VIATOR_INCR:-N/A} | ${REDIS_INCR:-N/A} | ${GAP_INCR}% |" >> "$GITHUB_STEP_SUMMARY"
 
           # Benchmark LPUSH
           VIATOR_LPUSH=$(redis-benchmark -p 6379 -t lpush -n 100000 -c 50 -q 2>&1 | grep "LPUSH:" | tail -1 | awk '{print $2}')
           REDIS_LPUSH=$(redis-benchmark -p 6380 -t lpush -n 100000 -c 50 -q 2>&1 | grep "LPUSH:" | tail -1 | awk '{print $2}')
-          GAP_LPUSH=$(echo "scale=1; (($VIATOR_LPUSH - $REDIS_LPUSH) / $REDIS_LPUSH) * 100" | bc)
-          echo "| LPUSH | $VIATOR_LPUSH | $REDIS_LPUSH | ${GAP_LPUSH}% |" >> "$GITHUB_STEP_SUMMARY"
+          GAP_LPUSH=$(calc_gap "$VIATOR_LPUSH" "$REDIS_LPUSH")
+          echo "| LPUSH | ${VIATOR_LPUSH:-N/A} | ${REDIS_LPUSH:-N/A} | ${GAP_LPUSH}% |" >> "$GITHUB_STEP_SUMMARY"
 
           # Benchmark HSET
           VIATOR_HSET=$(redis-benchmark -p 6379 -t hset -n 100000 -c 50 -q 2>&1 | grep "HSET:" | tail -1 | awk '{print $2}')
           REDIS_HSET=$(redis-benchmark -p 6380 -t hset -n 100000 -c 50 -q 2>&1 | grep "HSET:" | tail -1 | awk '{print $2}')
-          GAP_HSET=$(echo "scale=1; (($VIATOR_HSET - $REDIS_HSET) / $REDIS_HSET) * 100" | bc)
-          echo "| HSET | $VIATOR_HSET | $REDIS_HSET | ${GAP_HSET}% |" >> "$GITHUB_STEP_SUMMARY"
+          GAP_HSET=$(calc_gap "$VIATOR_HSET" "$REDIS_HSET")
+          echo "| HSET | ${VIATOR_HSET:-N/A} | ${REDIS_HSET:-N/A} | ${GAP_HSET}% |" >> "$GITHUB_STEP_SUMMARY"
 
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "*Negative gap = Viator is slower, Positive gap = Viator is faster*" >> "$GITHUB_STEP_SUMMARY"
@@ -109,8 +129,17 @@ jobs:
           echo "| Command | Viator (req/s) | Redis (req/s) | Gap |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---------|----------------|---------------|-----|" >> "$GITHUB_STEP_SUMMARY"
 
+          calc_gap() {
+            local v=$1 r=$2
+            if [ -z "$v" ] || [ -z "$r" ] || [ "$r" = "0" ]; then
+              echo "N/A"
+            else
+              echo "scale=1; (($v - $r) / $r) * 100" | bc 2>/dev/null || echo "N/A"
+            fi
+          }
+
           # Start servers again
-          redis-server --port 6380 --daemonize yes
+          /usr/local/bin/redis-server --port 6380 --daemonize yes --loglevel warning
           sleep 1
           ./target/release/viator-server --port 6379 &
           VIATOR_PID=$!
@@ -119,14 +148,14 @@ jobs:
           # SET with 200 clients
           VIATOR_SET=$(redis-benchmark -p 6379 -t set -n 100000 -c 200 -q 2>&1 | grep "SET:" | tail -1 | awk '{print $2}')
           REDIS_SET=$(redis-benchmark -p 6380 -t set -n 100000 -c 200 -q 2>&1 | grep "SET:" | tail -1 | awk '{print $2}')
-          GAP=$(echo "scale=1; (($VIATOR_SET - $REDIS_SET) / $REDIS_SET) * 100" | bc)
-          echo "| SET | $VIATOR_SET | $REDIS_SET | ${GAP}% |" >> "$GITHUB_STEP_SUMMARY"
+          GAP=$(calc_gap "$VIATOR_SET" "$REDIS_SET")
+          echo "| SET | ${VIATOR_SET:-N/A} | ${REDIS_SET:-N/A} | ${GAP}% |" >> "$GITHUB_STEP_SUMMARY"
 
           # GET with 200 clients
           VIATOR_GET=$(redis-benchmark -p 6379 -t get -n 100000 -c 200 -q 2>&1 | grep "GET:" | tail -1 | awk '{print $2}')
           REDIS_GET=$(redis-benchmark -p 6380 -t get -n 100000 -c 200 -q 2>&1 | grep "GET:" | tail -1 | awk '{print $2}')
-          GAP=$(echo "scale=1; (($VIATOR_GET - $REDIS_GET) / $REDIS_GET) * 100" | bc)
-          echo "| GET | $VIATOR_GET | $REDIS_GET | ${GAP}% |" >> "$GITHUB_STEP_SUMMARY"
+          GAP=$(calc_gap "$VIATOR_GET" "$REDIS_GET")
+          echo "| GET | ${VIATOR_GET:-N/A} | ${REDIS_GET:-N/A} | ${GAP}% |" >> "$GITHUB_STEP_SUMMARY"
 
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
@@ -141,8 +170,17 @@ jobs:
           echo "| Command | Viator (req/s) | Redis (req/s) | Gap |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---------|----------------|---------------|-----|" >> "$GITHUB_STEP_SUMMARY"
 
+          calc_gap() {
+            local v=$1 r=$2
+            if [ -z "$v" ] || [ -z "$r" ] || [ "$r" = "0" ]; then
+              echo "N/A"
+            else
+              echo "scale=1; (($v - $r) / $r) * 100" | bc 2>/dev/null || echo "N/A"
+            fi
+          }
+
           # Start servers again
-          redis-server --port 6380 --daemonize yes
+          /usr/local/bin/redis-server --port 6380 --daemonize yes --loglevel warning
           sleep 1
           ./target/release/viator-server --port 6379 &
           VIATOR_PID=$!
@@ -151,14 +189,14 @@ jobs:
           # SET with pipeline
           VIATOR_SET=$(redis-benchmark -p 6379 -t set -n 100000 -c 50 -P 16 -q 2>&1 | grep "SET:" | tail -1 | awk '{print $2}')
           REDIS_SET=$(redis-benchmark -p 6380 -t set -n 100000 -c 50 -P 16 -q 2>&1 | grep "SET:" | tail -1 | awk '{print $2}')
-          GAP=$(echo "scale=1; (($VIATOR_SET - $REDIS_SET) / $REDIS_SET) * 100" | bc)
-          echo "| SET (pipeline) | $VIATOR_SET | $REDIS_SET | ${GAP}% |" >> "$GITHUB_STEP_SUMMARY"
+          GAP=$(calc_gap "$VIATOR_SET" "$REDIS_SET")
+          echo "| SET (pipeline) | ${VIATOR_SET:-N/A} | ${REDIS_SET:-N/A} | ${GAP}% |" >> "$GITHUB_STEP_SUMMARY"
 
           # GET with pipeline
           VIATOR_GET=$(redis-benchmark -p 6379 -t get -n 100000 -c 50 -P 16 -q 2>&1 | grep "GET:" | tail -1 | awk '{print $2}')
           REDIS_GET=$(redis-benchmark -p 6380 -t get -n 100000 -c 50 -P 16 -q 2>&1 | grep "GET:" | tail -1 | awk '{print $2}')
-          GAP=$(echo "scale=1; (($VIATOR_GET - $REDIS_GET) / $REDIS_GET) * 100" | bc)
-          echo "| GET (pipeline) | $VIATOR_GET | $REDIS_GET | ${GAP}% |" >> "$GITHUB_STEP_SUMMARY"
+          GAP=$(calc_gap "$VIATOR_GET" "$REDIS_GET")
+          echo "| GET (pipeline) | ${VIATOR_GET:-N/A} | ${REDIS_GET:-N/A} | ${GAP}% |" >> "$GITHUB_STEP_SUMMARY"
 
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "---" >> "$GITHUB_STEP_SUMMARY"
