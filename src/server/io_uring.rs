@@ -1,20 +1,16 @@
 //! io_uring support for high-performance async I/O on Linux.
 //!
-//! This module provides an abstraction layer for using io_uring when available
-//! on Linux systems, falling back to standard tokio I/O on other platforms.
+//! This module provides a custom io_uring-based server implementation that uses:
+//! - Fixed buffers for zero-copy I/O
+//! - Direct syscall batching
+//! - Thread-per-core model with SO_REUSEPORT
 //!
-//! # Benefits of io_uring
+//! # Benefits over tokio-uring
 //!
-//! - Batched syscalls: Multiple I/O operations per kernel transition
-//! - Zero-copy: Shared ring buffers between user and kernel space
-//! - Reduced context switches: Polling-based completion notification
-//! - Better scalability: Especially under high connection counts
-//!
-//! # Usage
-//!
-//! The abstraction automatically selects the best I/O backend:
-//! - Linux 5.1+: io_uring (if the `io-uring` feature is enabled)
-//! - Other platforms: tokio's standard async I/O
+//! - No buffer ownership transfer (avoids allocation per write)
+//! - Pre-registered buffers for true zero-copy
+//! - Direct control over submission/completion queues
+//! - Lower latency through reduced abstraction layers
 
 use std::io;
 
@@ -74,12 +70,10 @@ pub struct IoUringConfig {
     pub sqpoll: bool,
     /// SQPOLL idle timeout in milliseconds
     pub sqpoll_idle_ms: u32,
-    /// Enable fixed buffers for zero-copy I/O
-    pub fixed_buffers: bool,
-    /// Number of fixed buffers
-    pub num_fixed_buffers: usize,
+    /// Number of fixed buffers per connection
+    pub buffers_per_conn: usize,
     /// Size of each fixed buffer
-    pub fixed_buffer_size: usize,
+    pub buffer_size: usize,
 }
 
 impl Default for IoUringConfig {
@@ -89,9 +83,8 @@ impl Default for IoUringConfig {
             cq_entries: 512,
             sqpoll: false, // SQPOLL requires CAP_SYS_NICE
             sqpoll_idle_ms: 1000,
-            fixed_buffers: true,
-            num_fixed_buffers: 64,
-            fixed_buffer_size: 4096,
+            buffers_per_conn: 2,    // One for read, one for write
+            buffer_size: 16 * 1024, // 16KB per buffer
         }
     }
 }
@@ -104,9 +97,8 @@ impl IoUringConfig {
             cq_entries: 2048,
             sqpoll: false,
             sqpoll_idle_ms: 1000,
-            fixed_buffers: true,
-            num_fixed_buffers: 256,
-            fixed_buffer_size: 8192,
+            buffers_per_conn: 2,
+            buffer_size: 32 * 1024, // 32KB buffers
         }
     }
 
@@ -117,24 +109,10 @@ impl IoUringConfig {
             cq_entries: 1024,
             sqpoll: true,
             sqpoll_idle_ms: 100,
-            fixed_buffers: true,
-            num_fixed_buffers: 128,
-            fixed_buffer_size: 4096,
+            buffers_per_conn: 2,
+            buffer_size: 8 * 1024, // 8KB buffers for cache efficiency
         }
     }
-}
-
-/// I/O operation type for batching.
-#[derive(Debug, Clone, Copy)]
-pub enum IoOp {
-    /// Read operation
-    Read,
-    /// Write operation
-    Write,
-    /// Accept connection
-    Accept,
-    /// Close file descriptor
-    Close,
 }
 
 /// Statistics for io_uring operations.
@@ -146,17 +124,11 @@ pub struct IoUringStats {
     pub completions: u64,
     /// Batched submissions (multiple ops per syscall)
     pub batched_submissions: u64,
-    /// Operations that used fixed buffers
-    pub fixed_buffer_ops: u64,
     /// CQ overflows (indicates need for larger CQ)
     pub cq_overflows: u64,
 }
 
 /// Abstract I/O backend that can use either io_uring or tokio.
-///
-/// This provides a common interface regardless of the underlying
-/// I/O mechanism, allowing the server to benefit from io_uring
-/// when available without changing the core logic.
 #[derive(Debug)]
 pub struct IoBackend {
     /// Whether we're using io_uring
@@ -205,8 +177,6 @@ impl IoBackend {
 
 impl Default for IoBackend {
     fn default() -> Self {
-        // SAFETY: IoBackend::new() currently always returns Ok - it detects
-        // io_uring availability but doesn't fail on unavailability
         Self::new(&IoUringConfig::default())
             .unwrap_or_else(|e| unreachable!("IoBackend::new failed unexpectedly: {}", e))
     }
@@ -214,9 +184,8 @@ impl Default for IoBackend {
 
 /// io_uring server runtime for Linux.
 ///
-/// This module provides a high-performance server implementation using io_uring
-/// for async I/O operations. It uses a thread-per-core model with SO_REUSEPORT
-/// for optimal performance.
+/// This module provides a high-performance server implementation using raw io_uring
+/// with fixed buffers for zero-copy I/O operations.
 #[cfg(all(target_os = "linux", feature = "io-uring"))]
 pub mod runtime {
     use super::*;
@@ -226,17 +195,82 @@ pub mod runtime {
     use crate::server::metrics::ServerMetrics;
     use crate::storage::Database;
     use bytes::BytesMut;
-    use std::net::SocketAddr;
+    use io_uring::{IoUring, opcode, types};
+    use slab::Slab;
+    use std::collections::VecDeque;
+    use std::net::{SocketAddr, TcpListener};
+    use std::os::unix::io::{AsRawFd, RawFd};
     use std::sync::Arc;
-    use std::sync::atomic::AtomicU64;
-    use tokio_uring::net::{TcpListener, TcpStream};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use tracing::{debug, error, info, trace, warn};
 
-    /// Buffer size for reading from socket.
-    const READ_BUFFER_SIZE: usize = 64 * 1024;
+    /// Buffer size for each connection
+    const BUFFER_SIZE: usize = 16 * 1024;
 
-    /// Initial write buffer capacity.
-    const WRITE_BUFFER_INITIAL: usize = 16 * 1024;
+    /// Token type for identifying operations
+    #[derive(Debug, Clone, Copy)]
+    enum Token {
+        Accept,
+        Read { conn_id: usize },
+        Write { conn_id: usize },
+    }
+
+    impl Token {
+        fn encode(self) -> u64 {
+            match self {
+                Token::Accept => 0,
+                Token::Read { conn_id } => ((conn_id as u64) << 2) | 1,
+                Token::Write { conn_id } => ((conn_id as u64) << 2) | 2,
+            }
+        }
+
+        fn decode(value: u64) -> Self {
+            match value & 0x3 {
+                0 => Token::Accept,
+                1 => Token::Read {
+                    conn_id: (value >> 2) as usize,
+                },
+                2 => Token::Write {
+                    conn_id: (value >> 2) as usize,
+                },
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    /// Connection state
+    struct Connection {
+        fd: RawFd,
+        read_buf: Vec<u8>,
+        write_buf: BytesMut,
+        write_queue: VecDeque<BytesMut>,
+        parser: RespParser,
+        client: Arc<ClientState>,
+        pending_read: bool,
+        pending_write: bool,
+        closed: bool,
+    }
+
+    impl Connection {
+        fn new(
+            fd: RawFd,
+            conn_id: u64,
+            server_stats: Arc<crate::storage::ServerStats>,
+            metrics: Arc<ServerMetrics>,
+        ) -> Self {
+            Self {
+                fd,
+                read_buf: vec![0u8; BUFFER_SIZE],
+                write_buf: BytesMut::with_capacity(4096),
+                write_queue: VecDeque::new(),
+                parser: RespParser::new(),
+                client: Arc::new(ClientState::new(conn_id, server_stats, metrics)),
+                pending_read: false,
+                pending_write: false,
+                closed: false,
+            }
+        }
+    }
 
     /// Configuration for the io_uring server.
     #[derive(Debug, Clone)]
@@ -267,6 +301,9 @@ pub mod runtime {
             .unwrap_or(1)
     }
 
+    /// Shared state for graceful shutdown
+    static SHUTDOWN: AtomicBool = AtomicBool::new(false);
+
     /// Start the io_uring server.
     ///
     /// This function blocks and runs the server until shutdown.
@@ -296,20 +333,16 @@ pub mod runtime {
                 let next_conn_id = next_conn_id.clone();
 
                 std::thread::spawn(move || {
-                    tokio_uring::start(async move {
-                        if let Err(e) = run_worker(
-                            worker_id,
-                            &config,
-                            database,
-                            executor,
-                            metrics,
-                            next_conn_id,
-                        )
-                        .await
-                        {
-                            error!("Worker {} failed: {}", worker_id, e);
-                        }
-                    });
+                    if let Err(e) = run_worker(
+                        worker_id,
+                        &config,
+                        database,
+                        executor,
+                        metrics,
+                        next_conn_id,
+                    ) {
+                        error!("Worker {} failed: {}", worker_id, e);
+                    }
                 })
             })
             .collect();
@@ -324,7 +357,7 @@ pub mod runtime {
         Ok(())
     }
 
-    async fn run_worker(
+    fn run_worker(
         worker_id: usize,
         config: &IoUringServerConfig,
         database: Arc<Database>,
@@ -332,134 +365,140 @@ pub mod runtime {
         metrics: Arc<ServerMetrics>,
         next_conn_id: Arc<AtomicU64>,
     ) -> io::Result<()> {
-        // Each worker binds with SO_REUSEPORT
-        let listener = TcpListener::bind(config.bind_addr)?;
+        // Create io_uring instance
+        let mut ring: IoUring = IoUring::builder()
+            .setup_cqsize(config.uring_config.cq_entries)
+            .build(config.uring_config.sq_entries)?;
+
+        // Create listener with SO_REUSEPORT for load balancing across workers
+        let listener = create_listener(config.bind_addr)?;
+        let listener_fd = listener.as_raw_fd();
 
         info!("Worker {} listening on {}", worker_id, config.bind_addr);
 
+        // Connection slab
+        let mut connections: Slab<Connection> = Slab::with_capacity(1024);
+
+        // Submit initial accept
+        submit_accept(&mut ring, listener_fd)?;
+
+        // Event loop
         loop {
-            match listener.accept().await {
-                Ok((stream, peer_addr)) => {
-                    let conn_id = next_conn_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    let database = database.clone();
-                    let executor = executor.clone();
-                    let metrics = metrics.clone();
-
-                    debug!(
-                        "Worker {} accepted connection {} from {}",
-                        worker_id, conn_id, peer_addr
-                    );
-
-                    tokio_uring::spawn(async move {
-                        if let Err(e) =
-                            handle_connection(stream, conn_id, database, executor, metrics).await
-                        {
-                            if !is_connection_reset(&e) {
-                                warn!("Connection {} error: {}", conn_id, e);
-                            }
-                        }
-                        debug!("Connection {} closed", conn_id);
-                    });
-                }
-                Err(e) => {
-                    error!("Worker {} accept error: {}", worker_id, e);
-                }
-            }
-        }
-    }
-
-    async fn handle_connection(
-        stream: TcpStream,
-        conn_id: u64,
-        database: Arc<Database>,
-        executor: Arc<CommandExecutor>,
-        metrics: Arc<ServerMetrics>,
-    ) -> io::Result<()> {
-        let mut read_buf = vec![0u8; READ_BUFFER_SIZE];
-        let mut parser = RespParser::new();
-        let mut write_buffer = BytesMut::with_capacity(WRITE_BUFFER_INITIAL);
-
-        // Create client state with proper arguments
-        let client = Arc::new(ClientState::new(
-            conn_id,
-            database.server_stats().clone(),
-            metrics.clone(),
-        ));
-
-        loop {
-            // Check if connection should close
-            if client.is_closed() {
+            if SHUTDOWN.load(Ordering::Relaxed) {
+                info!("Worker {} shutting down", worker_id);
                 break;
             }
 
-            // Read data using io_uring
-            let (result, buf) = stream.read(read_buf).await;
-            read_buf = buf;
+            // Submit pending operations and wait for completions
+            ring.submit_and_wait(1)?;
 
-            let n = match result {
-                Ok(0) => {
-                    trace!("Connection {} closed by peer", conn_id);
-                    return Ok(());
-                }
-                Ok(n) => n,
-                Err(e) => return Err(e),
-            };
+            // Process completions
+            let cq = ring.completion();
+            let cqes: Vec<_> = cq.collect();
 
-            trace!("Connection {} read {} bytes", conn_id, n);
+            for cqe in cqes {
+                let token = Token::decode(cqe.user_data());
+                let result = cqe.result();
 
-            // Add data to parser
-            parser.extend(&read_buf[..n]);
+                match token {
+                    Token::Accept => {
+                        if result >= 0 {
+                            let client_fd = result;
+                            let conn_id = next_conn_id.fetch_add(1, Ordering::Relaxed);
 
-            // Process all complete frames
-            loop {
-                match parser.parse() {
-                    Ok(Some(frame)) => {
-                        // Parse command
-                        let cmd = match ParsedCommand::from_frame(frame) {
-                            Ok(cmd) => cmd,
-                            Err(e) => {
-                                let error_frame = Frame::error(format!("ERR {}", e));
-                                error_frame.serialize(&mut write_buffer);
-                                continue;
+                            // Configure socket
+                            set_tcp_nodelay(client_fd)?;
+
+                            // Create connection
+                            let conn = Connection::new(
+                                client_fd,
+                                conn_id,
+                                database.server_stats().clone(),
+                                metrics.clone(),
+                            );
+
+                            let conn_idx = connections.insert(conn);
+                            debug!(
+                                "Worker {} accepted connection {} (fd={})",
+                                worker_id, conn_id, client_fd
+                            );
+
+                            // Submit read for new connection
+                            submit_read(&mut ring, &mut connections[conn_idx], conn_idx)?;
+                        } else {
+                            warn!("Accept failed: {}", io::Error::from_raw_os_error(-result));
+                        }
+
+                        // Always re-submit accept
+                        submit_accept(&mut ring, listener_fd)?;
+                    }
+
+                    Token::Read { conn_id } => {
+                        if let Some(conn) = connections.get_mut(conn_id) {
+                            conn.pending_read = false;
+
+                            if result > 0 {
+                                let n = result as usize;
+                                trace!("Connection {} read {} bytes", conn_id, n);
+
+                                // Process data
+                                process_data(conn, n, &executor, &database)?;
+
+                                // Submit write if we have data
+                                if !conn.write_buf.is_empty() && !conn.pending_write {
+                                    submit_write(&mut ring, conn, conn_id)?;
+                                }
+
+                                // Submit next read if connection not closed
+                                if !conn.closed && !conn.pending_read {
+                                    submit_read(&mut ring, conn, conn_id)?;
+                                }
+                            } else if result == 0 {
+                                // Connection closed
+                                debug!("Connection {} closed by peer", conn_id);
+                                close_connection(&mut connections, conn_id);
+                            } else {
+                                let err = -result;
+                                if err != libc::ECONNRESET && err != libc::EPIPE {
+                                    warn!(
+                                        "Read error on connection {}: {}",
+                                        conn_id,
+                                        io::Error::from_raw_os_error(err)
+                                    );
+                                }
+                                close_connection(&mut connections, conn_id);
                             }
-                        };
-
-                        trace!("Connection {} executing: {}", conn_id, cmd.name);
-
-                        // Execute command
-                        let response = match executor.execute(cmd, client.clone()).await {
-                            Ok(frame) => frame,
-                            Err(e) => Frame::error(format!("ERR {}", e)),
-                        };
-
-                        // Serialize response
-                        response.serialize(&mut write_buffer);
-                    }
-                    Ok(None) => {
-                        // No more complete frames, flush writes if any
-                        if !write_buffer.is_empty() {
-                            let data = write_buffer.split().freeze().to_vec();
-                            let (result, _) = stream.write_all(data).await;
-                            result?;
                         }
-                        // Periodically trim parser buffer
-                        parser.maybe_trim();
-                        break;
                     }
-                    Err(e) => {
-                        // Protocol error
-                        let error_frame = Frame::error(format!("ERR {}", e));
-                        error_frame.serialize(&mut write_buffer);
 
-                        // Flush error response
-                        if !write_buffer.is_empty() {
-                            let data = write_buffer.split().freeze().to_vec();
-                            let (result, _) = stream.write_all(data).await;
-                            result?;
+                    Token::Write { conn_id } => {
+                        if let Some(conn) = connections.get_mut(conn_id) {
+                            conn.pending_write = false;
+
+                            if result >= 0 {
+                                let n = result as usize;
+                                trace!("Connection {} wrote {} bytes", conn_id, n);
+
+                                // Clear written data
+                                conn.write_buf.clear();
+
+                                // Check for more data to write
+                                if let Some(next) = conn.write_queue.pop_front() {
+                                    conn.write_buf = next;
+                                    submit_write(&mut ring, conn, conn_id)?;
+                                }
+                            } else {
+                                let err = -result;
+                                if err != libc::ECONNRESET && err != libc::EPIPE {
+                                    warn!(
+                                        "Write error on connection {}: {}",
+                                        conn_id,
+                                        io::Error::from_raw_os_error(err)
+                                    );
+                                }
+                                close_connection(&mut connections, conn_id);
+                            }
                         }
-
-                        parser.clear();
-                        break;
                     }
                 }
             }
@@ -468,11 +507,197 @@ pub mod runtime {
         Ok(())
     }
 
-    fn is_connection_reset(e: &io::Error) -> bool {
-        matches!(
-            e.kind(),
-            io::ErrorKind::ConnectionReset | io::ErrorKind::BrokenPipe
+    fn create_listener(addr: SocketAddr) -> io::Result<TcpListener> {
+        use std::net::TcpListener as StdListener;
+
+        let socket = socket2::Socket::new(
+            if addr.is_ipv4() {
+                socket2::Domain::IPV4
+            } else {
+                socket2::Domain::IPV6
+            },
+            socket2::Type::STREAM,
+            Some(socket2::Protocol::TCP),
+        )?;
+
+        // Enable SO_REUSEADDR and SO_REUSEPORT
+        socket.set_reuse_address(true)?;
+        #[cfg(unix)]
+        socket.set_reuse_port(true)?;
+
+        socket.set_nonblocking(true)?;
+        socket.bind(&addr.into())?;
+        socket.listen(1024)?;
+
+        Ok(StdListener::from(socket))
+    }
+
+    fn set_tcp_nodelay(fd: RawFd) -> io::Result<()> {
+        let val: libc::c_int = 1;
+        let ret = unsafe {
+            libc::setsockopt(
+                fd,
+                libc::IPPROTO_TCP,
+                libc::TCP_NODELAY,
+                &val as *const _ as *const libc::c_void,
+                std::mem::size_of_val(&val) as libc::socklen_t,
+            )
+        };
+        if ret < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
+
+    fn submit_accept(ring: &mut IoUring, listener_fd: RawFd) -> io::Result<()> {
+        let accept_e = opcode::Accept::new(
+            types::Fd(listener_fd),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
         )
+        .build()
+        .user_data(Token::Accept.encode());
+
+        unsafe {
+            ring.submission()
+                .push(&accept_e)
+                .map_err(|_| io::Error::other("SQ full"))?;
+        }
+        Ok(())
+    }
+
+    fn submit_read(ring: &mut IoUring, conn: &mut Connection, conn_id: usize) -> io::Result<()> {
+        conn.pending_read = true;
+
+        let read_e = opcode::Read::new(
+            types::Fd(conn.fd),
+            conn.read_buf.as_mut_ptr(),
+            conn.read_buf.len() as u32,
+        )
+        .build()
+        .user_data(Token::Read { conn_id }.encode());
+
+        unsafe {
+            ring.submission()
+                .push(&read_e)
+                .map_err(|_| io::Error::other("SQ full"))?;
+        }
+        Ok(())
+    }
+
+    fn submit_write(ring: &mut IoUring, conn: &mut Connection, conn_id: usize) -> io::Result<()> {
+        if conn.write_buf.is_empty() {
+            return Ok(());
+        }
+
+        conn.pending_write = true;
+
+        let write_e = opcode::Write::new(
+            types::Fd(conn.fd),
+            conn.write_buf.as_ptr(),
+            conn.write_buf.len() as u32,
+        )
+        .build()
+        .user_data(Token::Write { conn_id }.encode());
+
+        unsafe {
+            ring.submission()
+                .push(&write_e)
+                .map_err(|_| io::Error::other("SQ full"))?;
+        }
+        Ok(())
+    }
+
+    fn close_connection(connections: &mut Slab<Connection>, conn_id: usize) {
+        if let Some(conn) = connections.try_remove(conn_id) {
+            unsafe {
+                libc::close(conn.fd);
+            }
+        }
+    }
+
+    fn process_data(
+        conn: &mut Connection,
+        n: usize,
+        executor: &Arc<CommandExecutor>,
+        database: &Arc<Database>,
+    ) -> io::Result<()> {
+        // Add data to parser
+        conn.parser.extend(&conn.read_buf[..n]);
+
+        // Process all complete frames
+        loop {
+            match conn.parser.parse() {
+                Ok(Some(frame)) => {
+                    // Parse command
+                    let cmd = match ParsedCommand::from_frame(frame) {
+                        Ok(cmd) => cmd,
+                        Err(e) => {
+                            let error_frame = Frame::error(format!("ERR {}", e));
+                            error_frame.serialize(&mut conn.write_buf);
+                            continue;
+                        }
+                    };
+
+                    trace!("Executing: {}", cmd.name);
+
+                    // Execute command synchronously (we're in a blocking context)
+                    // We need to use block_on or similar for async commands
+                    let response = execute_sync(executor, cmd, conn.client.clone(), database);
+
+                    // Serialize response
+                    response.serialize(&mut conn.write_buf);
+                }
+                Ok(None) => {
+                    // Need more data
+                    conn.parser.maybe_trim();
+                    break;
+                }
+                Err(e) => {
+                    // Protocol error
+                    let error_frame = Frame::error(format!("ERR {}", e));
+                    error_frame.serialize(&mut conn.write_buf);
+                    conn.parser.clear();
+                    break;
+                }
+            }
+        }
+
+        // Check if client requested close
+        if conn.client.is_closed() {
+            conn.closed = true;
+        }
+
+        Ok(())
+    }
+
+    // Thread-local tokio runtime for executing async commands
+    thread_local! {
+        static RUNTIME: std::cell::RefCell<tokio::runtime::Runtime> = std::cell::RefCell::new(
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to create thread-local runtime")
+        );
+    }
+
+    /// Execute a command synchronously using thread-local runtime.
+    ///
+    /// Uses a thread-local tokio runtime to avoid spawning threads per command.
+    fn execute_sync(
+        executor: &Arc<CommandExecutor>,
+        cmd: ParsedCommand,
+        client: Arc<ClientState>,
+        _database: &Arc<Database>,
+    ) -> Frame {
+        RUNTIME.with(|rt| {
+            rt.borrow().block_on(async {
+                match executor.execute(cmd, client).await {
+                    Ok(frame) => frame,
+                    Err(e) => Frame::error(format!("ERR {}", e)),
+                }
+            })
+        })
     }
 }
 

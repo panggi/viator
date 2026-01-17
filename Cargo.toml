@@ -19,7 +19,7 @@ telemetry = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "tracin
 cluster = []
 sentinel = []
 # Linux io_uring for high-performance async I/O (Linux 5.1+ only)
-io-uring = ["tokio-uring"]
+io-uring = ["dep:io-uring", "dep:slab", "dep:socket2"]
 
 [dependencies]
 # Async runtime - tokio is the industry standard
@@ -130,7 +130,9 @@ libc = "0.2"
 
 # Linux io_uring support (Linux 5.1+ only)
 [target.'cfg(target_os = "linux")'.dependencies]
-tokio-uring = { version = "0.5", optional = true }
+io-uring = { version = "0.7", optional = true }
+slab = { version = "0.4", optional = true }
+socket2 = { version = "0.5", optional = true }
 
 [dev-dependencies]
 # Testing

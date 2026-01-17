@@ -45,7 +45,7 @@ jobs:
         run: |
           echo "## Benchmark Results" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Environment:** $(uname -r) | $(nproc) cores | $(free -h | awk '/^Mem:/{print $2}') RAM" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Environment:** $(uname -r) | $(nproc) cores | $(free -h | awk '/^Mem:/{print $2}') RAM | **io_uring (raw)**" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           # Make sure no servers are running
@@ -61,7 +61,7 @@ jobs:
           sleep 2
 
           # Start Viator on port 6379
-          ./target/release/viator-server --port 6379 &
+          ./target/release/viator-server --port 6379 --io-uring &
           VIATOR_PID=$!
           sleep 2
 
@@ -157,7 +157,7 @@ jobs:
           # Start servers again
           /usr/local/bin/redis-server --port 6380 --daemonize yes --loglevel warning
           sleep 1
-          ./target/release/viator-server --port 6379 &
+          ./target/release/viator-server --port 6379 --io-uring &
           VIATOR_PID=$!
           sleep 2
 
@@ -202,7 +202,7 @@ jobs:
           # Start servers again
           /usr/local/bin/redis-server --port 6380 --daemonize yes --loglevel warning
           sleep 1
-          ./target/release/viator-server --port 6379 &
+          ./target/release/viator-server --port 6379 --io-uring &
           VIATOR_PID=$!
           sleep 2
 
