@@ -53,7 +53,8 @@ jobs:
           pkill -9 viator-server || true
           sleep 1
 
-          # Start Redis on port 6380
+          # Start Redis on port 6380 (ignore memory overcommit warning)
+          sudo sysctl vm.overcommit_memory=1 || true
           /usr/local/bin/redis-server --port 6380 --daemonize yes --loglevel warning
           sleep 2
 

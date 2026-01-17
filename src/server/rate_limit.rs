@@ -28,9 +28,11 @@ pub struct RateLimitConfig {
 impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
-            max_connections_per_ip_per_sec: 100,
-            max_commands_per_connection_per_sec: 10_000,
-            burst_allowance: 50,
+            // High defaults to support benchmarking; production deployments
+            // can configure lower limits via rate limiting config
+            max_connections_per_ip_per_sec: 10_000,
+            max_commands_per_connection_per_sec: 100_000,
+            burst_allowance: 1_000,
             window: Duration::from_secs(1),
             enabled: true,
         }
