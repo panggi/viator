@@ -9,8 +9,9 @@ use crate::error::CommandError;
 use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::storage::Db;
-use crate::types::{Key, StreamId, StreamIdParsed, ValueType, ViatorValue};
+use crate::types::{Key, StreamId, StreamIdParsed, ValueType, ViatorStream, ViatorValue};
 use bytes::Bytes;
+use parking_lot::RwLock;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -309,7 +310,7 @@ pub fn cmd_xread(
 
         let mut idx = 0;
         let mut count: Option<usize> = None;
-        let mut _block: Option<u64> = None;
+        let mut block_ms: Option<u64> = None;
 
         // Parse options
         while idx < cmd.args.len() {
@@ -322,9 +323,8 @@ pub fn cmd_xread(
                 }
                 "BLOCK" => {
                     idx += 1;
-                    _block = Some(cmd.get_u64(idx)?);
+                    block_ms = Some(cmd.get_u64(idx)?);
                     idx += 1;
-                    // Note: Blocking not implemented, will return immediately
                 }
                 "STREAMS" => {
                     idx += 1;
@@ -367,29 +367,62 @@ pub fn cmd_xread(
             })
             .collect();
 
-        // Read from each stream
-        let mut results = Vec::new();
-        for (key, after_id) in keys.iter().zip(ids.iter()) {
-            if let Some(v) = db.get_typed(key, ValueType::Stream)? {
-                let stream = v
-                    .as_stream()
-                    .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_stream"));
-                let guard = stream.read();
-                let entries = guard.read_after(*after_id, count);
+        // Calculate deadline for blocking
+        let deadline = block_ms.map(|ms| {
+            std::time::Instant::now() + std::time::Duration::from_millis(ms)
+        });
 
-                if !entries.is_empty() {
-                    results.push(Frame::Array(vec![
-                        Frame::Bulk(Bytes::copy_from_slice(key.as_bytes())),
-                        stream_entries_to_frame(entries),
-                    ]));
+        // Blocking loop - keep trying until we get results or timeout
+        loop {
+            // Read from each stream
+            let mut results = Vec::new();
+            for (key, after_id) in keys.iter().zip(ids.iter()) {
+                if let Some(v) = db.get_typed(key, ValueType::Stream)? {
+                    let stream = v
+                        .as_stream()
+                        .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_stream"));
+                    let guard = stream.read();
+                    let entries = guard.read_after(*after_id, count);
+
+                    if !entries.is_empty() {
+                        results.push(Frame::Array(vec![
+                            Frame::Bulk(Bytes::copy_from_slice(key.as_bytes())),
+                            stream_entries_to_frame(entries),
+                        ]));
+                    }
                 }
             }
-        }
 
-        if results.is_empty() {
-            Ok(Frame::Null)
-        } else {
-            Ok(Frame::Array(results))
+            // If we have results, return them
+            if !results.is_empty() {
+                return Ok(Frame::Array(results));
+            }
+
+            // If not blocking, return null immediately
+            if block_ms.is_none() {
+                return Ok(Frame::Null);
+            }
+
+            // Check if we've exceeded the deadline
+            if let Some(deadline) = deadline {
+                if std::time::Instant::now() >= deadline {
+                    return Ok(Frame::Null);
+                }
+            }
+
+            // Sleep briefly before retrying (100ms or remaining time, whichever is less)
+            let sleep_duration = if let Some(deadline) = deadline {
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                std::cmp::min(remaining, std::time::Duration::from_millis(100))
+            } else {
+                std::time::Duration::from_millis(100)
+            };
+
+            if sleep_duration.is_zero() {
+                return Ok(Frame::Null);
+            }
+
+            tokio::time::sleep(sleep_duration).await;
         }
     })
 }
@@ -588,12 +621,85 @@ pub fn cmd_xinfo(
                 Ok(Frame::Array(info))
             }
             "GROUPS" => {
-                // Consumer groups not fully implemented
-                Ok(Frame::Array(vec![]))
+                let value = db
+                    .get_typed(&key, ValueType::Stream)?
+                    .ok_or(CommandError::NoSuchKey)?;
+
+                let stream = value
+                    .as_stream()
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_typed"));
+                let guard = stream.read();
+
+                let groups: Vec<Frame> = guard
+                    .groups()
+                    .map(|group| {
+                        let (pending_count, _min_id, _max_id, _) = group.pending_summary();
+                        Frame::Array(vec![
+                            Frame::bulk("name"),
+                            Frame::Bulk(group.name.clone()),
+                            Frame::bulk("consumers"),
+                            Frame::Integer(group.consumers.len() as i64),
+                            Frame::bulk("pending"),
+                            Frame::Integer(pending_count as i64),
+                            Frame::bulk("last-delivered-id"),
+                            Frame::bulk(group.last_delivered_id.to_string()),
+                            Frame::bulk("entries-read"),
+                            Frame::Integer(group.entries_read as i64),
+                            Frame::bulk("lag"),
+                            Frame::Integer(0), // Lag calculation would need stream length comparison
+                        ])
+                    })
+                    .collect();
+
+                Ok(Frame::Array(groups))
             }
             "CONSUMERS" => {
-                // Consumer groups not fully implemented
-                Ok(Frame::Array(vec![]))
+                if cmd.args.len() < 3 {
+                    return Err(CommandError::WrongArity {
+                        command: "XINFO CONSUMERS".to_string(),
+                    }
+                    .into());
+                }
+
+                let group_name = cmd.args[2].clone();
+
+                let value = db
+                    .get_typed(&key, ValueType::Stream)?
+                    .ok_or(CommandError::NoSuchKey)?;
+
+                let stream = value
+                    .as_stream()
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_typed"));
+                let guard = stream.read();
+
+                if let Some(group) = guard.get_group(&group_name) {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as u64)
+                        .unwrap_or(0);
+
+                    let consumers: Vec<Frame> = group
+                        .consumers
+                        .values()
+                        .map(|consumer| {
+                            let idle = now.saturating_sub(consumer.last_seen);
+                            Frame::Array(vec![
+                                Frame::bulk("name"),
+                                Frame::Bulk(consumer.name.clone()),
+                                Frame::bulk("pending"),
+                                Frame::Integer(consumer.pending_count as i64),
+                                Frame::bulk("idle"),
+                                Frame::Integer(idle as i64),
+                                Frame::bulk("inactive"),
+                                Frame::Integer(idle as i64),
+                            ])
+                        })
+                        .collect();
+
+                    Ok(Frame::Array(consumers))
+                } else {
+                    Ok(Frame::Error("NOGROUP No such consumer group".to_string()))
+                }
             }
             _ => Err(CommandError::SyntaxError.into()),
         }
@@ -639,7 +745,7 @@ fn stream_entry_to_frame(entry: &crate::types::StreamEntry) -> Frame {
 /// XGROUP CREATE|CREATECONSUMER|DELCONSUMER|DESTROY|SETID key groupname [consumer] [id|$] [MKSTREAM]
 pub fn cmd_xgroup(
     cmd: ParsedCommand,
-    _db: Arc<Db>,
+    db: Arc<Db>,
     _client: Arc<ClientState>,
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
@@ -654,27 +760,138 @@ pub fn cmd_xgroup(
         match subcommand.as_str() {
             "CREATE" => {
                 cmd.require_args(3)?;
-                // Consumer group creation stub - return OK to allow basic compatibility
-                Ok(Frame::ok())
+                let key = Key::from(cmd.args[1].clone());
+                let group_name = cmd.args[2].clone();
+                let id_str = cmd.get_str(3)?;
+                
+                // Check for MKSTREAM option
+                let mkstream = cmd.args.iter().skip(4).any(|a| {
+                    std::str::from_utf8(a).map(|s| s.to_uppercase() == "MKSTREAM").unwrap_or(false)
+                });
+
+                // Parse the ID
+                let last_delivered_id = if id_str == "$" {
+                    // Use the stream's last ID
+                    if let Some(v) = db.get_typed(&key, ValueType::Stream)? {
+                        let stream = v.as_stream().unwrap();
+                        stream.read().last_id()
+                    } else if mkstream {
+                        StreamId::min()
+                    } else {
+                        return Ok(Frame::Error("ERR The XGROUP subcommand requires the key to exist".to_string()));
+                    }
+                } else if id_str == "0" || id_str == "0-0" {
+                    StreamId::min()
+                } else {
+                    match StreamId::parse(id_str) {
+                        Some(StreamIdParsed::Exact(id)) => id,
+                        Some(StreamIdParsed::Partial { ms, seq }) => StreamId::new(ms, seq.unwrap_or(0)),
+                        _ => return Ok(Frame::Error("ERR Invalid stream ID".to_string())),
+                    }
+                };
+
+                // Create stream if MKSTREAM and doesn't exist
+                if mkstream && db.get(&key).is_none() {
+                    db.set(key.clone(), ViatorValue::Stream(Arc::new(RwLock::new(ViatorStream::new()))));
+                }
+
+                // Get or create the stream and add the consumer group
+                if let Some(v) = db.get_typed(&key, ValueType::Stream)? {
+                    let stream = v.as_stream().unwrap();
+                    let mut guard = stream.write();
+                    match guard.create_group(group_name, last_delivered_id, mkstream) {
+                        Ok(true) => Ok(Frame::ok()),
+                        Ok(false) => Ok(Frame::Error("BUSYGROUP Consumer Group name already exists".to_string())),
+                        Err(e) => Ok(Frame::Error(format!("ERR {}", e))),
+                    }
+                } else {
+                    Ok(Frame::Error("ERR The XGROUP subcommand requires the key to exist".to_string()))
+                }
             }
             "CREATECONSUMER" => {
                 cmd.require_args(3)?;
-                // Return 1 (consumer created) for compatibility
-                Ok(Frame::Integer(1))
+                let key = Key::from(cmd.args[1].clone());
+                let group_name = cmd.args[2].clone();
+                let consumer_name = cmd.args[3].clone();
+
+                if let Some(v) = db.get_typed(&key, ValueType::Stream)? {
+                    let stream = v.as_stream().unwrap();
+                    let mut guard = stream.write();
+                    if let Some(group) = guard.get_group_mut(&group_name) {
+                        let is_new = !group.consumers.contains_key(&consumer_name);
+                        group.get_or_create_consumer(&consumer_name);
+                        Ok(Frame::Integer(if is_new { 1 } else { 0 }))
+                    } else {
+                        Ok(Frame::Error("NOGROUP No such consumer group".to_string()))
+                    }
+                } else {
+                    Ok(Frame::Error("ERR The XGROUP subcommand requires the key to exist".to_string()))
+                }
             }
             "DELCONSUMER" => {
                 cmd.require_args(3)?;
-                // Return 0 (no pending entries)
-                Ok(Frame::Integer(0))
+                let key = Key::from(cmd.args[1].clone());
+                let group_name = cmd.args[2].clone();
+                let consumer_name = cmd.args[3].clone();
+
+                if let Some(v) = db.get_typed(&key, ValueType::Stream)? {
+                    let stream = v.as_stream().unwrap();
+                    let mut guard = stream.write();
+                    match guard.delete_consumer(&group_name, &consumer_name) {
+                        Some(pending) => Ok(Frame::Integer(pending as i64)),
+                        None => Ok(Frame::Integer(0)),
+                    }
+                } else {
+                    Ok(Frame::Error("ERR The XGROUP subcommand requires the key to exist".to_string()))
+                }
             }
             "DESTROY" => {
                 cmd.require_args(2)?;
-                // Return 1 (group destroyed) for compatibility
-                Ok(Frame::Integer(1))
+                let key = Key::from(cmd.args[1].clone());
+                let group_name = cmd.args[2].clone();
+
+                if let Some(v) = db.get_typed(&key, ValueType::Stream)? {
+                    let stream = v.as_stream().unwrap();
+                    let mut guard = stream.write();
+                    match guard.destroy_group(&group_name) {
+                        Some(_) => Ok(Frame::Integer(1)),
+                        None => Ok(Frame::Integer(0)),
+                    }
+                } else {
+                    Ok(Frame::Integer(0))
+                }
             }
             "SETID" => {
                 cmd.require_args(3)?;
-                Ok(Frame::ok())
+                let key = Key::from(cmd.args[1].clone());
+                let group_name = cmd.args[2].clone();
+                let id_str = cmd.get_str(3)?;
+
+                let new_id = if id_str == "$" {
+                    if let Some(v) = db.get_typed(&key, ValueType::Stream)? {
+                        v.as_stream().unwrap().read().last_id()
+                    } else {
+                        return Ok(Frame::Error("ERR The XGROUP subcommand requires the key to exist".to_string()));
+                    }
+                } else {
+                    match StreamId::parse(id_str) {
+                        Some(StreamIdParsed::Exact(id)) => id,
+                        Some(StreamIdParsed::Partial { ms, seq }) => StreamId::new(ms, seq.unwrap_or(0)),
+                        _ => return Ok(Frame::Error("ERR Invalid stream ID".to_string())),
+                    }
+                };
+
+                if let Some(v) = db.get_typed(&key, ValueType::Stream)? {
+                    let stream = v.as_stream().unwrap();
+                    let mut guard = stream.write();
+                    if guard.set_group_id(&group_name, new_id) {
+                        Ok(Frame::ok())
+                    } else {
+                        Ok(Frame::Error("NOGROUP No such consumer group".to_string()))
+                    }
+                } else {
+                    Ok(Frame::Error("ERR The XGROUP subcommand requires the key to exist".to_string()))
+                }
             }
             "HELP" => Ok(Frame::Array(vec![
                 Frame::bulk("XGROUP CREATE key groupname id|$ [MKSTREAM]"),
@@ -694,50 +911,305 @@ pub fn cmd_xgroup(
 /// XACK key group id [id ...]
 pub fn cmd_xack(
     cmd: ParsedCommand,
-    _db: Arc<Db>,
+    db: Arc<Db>,
     _client: Arc<ClientState>,
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
         cmd.require_args(3)?;
-        // Return 0 (no messages acknowledged) - stub for compatibility
-        Ok(Frame::Integer(0))
+
+        let key = Key::from(cmd.args[0].clone());
+        let group_name = cmd.args[1].clone();
+
+        // Parse IDs to acknowledge
+        let ids: Vec<StreamId> = cmd.args[2..]
+            .iter()
+            .filter_map(|b| {
+                let s = std::str::from_utf8(b).ok()?;
+                match StreamId::parse(s) {
+                    Some(StreamIdParsed::Exact(id)) => Some(id),
+                    Some(StreamIdParsed::Partial { ms, seq }) => {
+                        Some(StreamId::new(ms, seq.unwrap_or(0)))
+                    }
+                    _ => None,
+                }
+            })
+            .collect();
+
+        let acked = match db.get_typed(&key, ValueType::Stream)? {
+            Some(v) => {
+                let stream = v
+                    .as_stream()
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_typed"));
+                let mut guard = stream.write();
+                if let Some(group) = guard.get_group_mut(&group_name) {
+                    group.ack(&ids)
+                } else {
+                    0
+                }
+            }
+            None => 0,
+        };
+
+        Ok(Frame::Integer(acked as i64))
     })
 }
 
 /// XCLAIM key group consumer min-idle-time id [id ...] [IDLE ms] [TIME ms-unix-time] [RETRYCOUNT count] [FORCE] [JUSTID]
 pub fn cmd_xclaim(
     cmd: ParsedCommand,
-    _db: Arc<Db>,
+    db: Arc<Db>,
     _client: Arc<ClientState>,
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
         cmd.require_args(5)?;
-        // Return empty array - stub for compatibility
-        Ok(Frame::Array(vec![]))
+
+        let key = Key::from(cmd.args[0].clone());
+        let group_name = cmd.args[1].clone();
+        let consumer_name = cmd.args[2].clone();
+        let min_idle_time = cmd.get_u64(3)?;
+
+        // Parse options and IDs
+        let mut idx = 4;
+        let mut ids = Vec::new();
+        let mut set_idle: Option<u64> = None;
+        let mut set_time: Option<u64> = None;
+        let mut set_retrycount: Option<u32> = None;
+        let mut force = false;
+        let mut justid = false;
+
+        while idx < cmd.args.len() {
+            let arg = cmd.get_str(idx)?;
+            let upper = arg.to_uppercase();
+            match upper.as_str() {
+                "IDLE" => {
+                    idx += 1;
+                    set_idle = Some(cmd.get_u64(idx)?);
+                    idx += 1;
+                }
+                "TIME" => {
+                    idx += 1;
+                    set_time = Some(cmd.get_u64(idx)?);
+                    idx += 1;
+                }
+                "RETRYCOUNT" => {
+                    idx += 1;
+                    set_retrycount = Some(cmd.get_u64(idx)? as u32);
+                    idx += 1;
+                }
+                "FORCE" => {
+                    force = true;
+                    idx += 1;
+                }
+                "JUSTID" => {
+                    justid = true;
+                    idx += 1;
+                }
+                "LASTID" => {
+                    // Redis 7+ LASTID option (ignored for now)
+                    idx += 2;
+                }
+                _ => {
+                    // Must be an ID
+                    if let Some(parsed) = StreamId::parse(arg) {
+                        match parsed {
+                            StreamIdParsed::Exact(id) => ids.push(id),
+                            StreamIdParsed::Partial { ms, seq } => {
+                                ids.push(StreamId::new(ms, seq.unwrap_or(0)))
+                            }
+                            _ => {}
+                        }
+                    }
+                    idx += 1;
+                }
+            }
+        }
+
+        // Calculate effective time from IDLE or TIME
+        let effective_time = if let Some(idle) = set_idle {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            Some(now.saturating_sub(idle))
+        } else {
+            set_time
+        };
+
+        match db.get_typed(&key, ValueType::Stream)? {
+            Some(v) => {
+                let stream = v
+                    .as_stream()
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_typed"));
+                let mut guard = stream.write();
+
+                if let Some(group) = guard.get_group_mut(&group_name) {
+                    let claimed = group.claim(
+                        &ids,
+                        &consumer_name,
+                        min_idle_time,
+                        effective_time,
+                        set_retrycount,
+                        force,
+                    );
+
+                    if justid {
+                        // Return just the IDs
+                        Ok(Frame::Array(
+                            claimed
+                                .into_iter()
+                                .map(|id| Frame::bulk(id.to_string()))
+                                .collect(),
+                        ))
+                    } else {
+                        // Return full entries
+                        let entries: Vec<Frame> = claimed
+                            .into_iter()
+                            .filter_map(|id| {
+                                guard.get_entry(&id).map(|entry| {
+                                    let fields: Vec<Frame> = entry
+                                        .fields
+                                        .iter()
+                                        .flat_map(|(k, v)| {
+                                            vec![Frame::Bulk(k.clone()), Frame::Bulk(v.clone())]
+                                        })
+                                        .collect();
+                                    Frame::Array(vec![Frame::bulk(entry.id.to_string()), Frame::Array(fields)])
+                                })
+                            })
+                            .collect();
+                        Ok(Frame::Array(entries))
+                    }
+                } else {
+                    Ok(Frame::Error("NOGROUP No such consumer group".to_string()))
+                }
+            }
+            None => Ok(Frame::Error("ERR no such key".to_string())),
+        }
     })
 }
 
 /// XPENDING key group [[IDLE min-idle-time] start end count [consumer]]
 pub fn cmd_xpending(
     cmd: ParsedCommand,
-    _db: Arc<Db>,
+    db: Arc<Db>,
     _client: Arc<ClientState>,
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
         cmd.require_args(2)?;
 
-        // Check if detailed format (with start/end/count)
-        if cmd.args.len() >= 5 {
-            // Return empty array for detailed format
-            Ok(Frame::Array(vec![]))
-        } else {
-            // Summary format: [pending_count, min_id, max_id, [[consumer, count]...]]
-            Ok(Frame::Array(vec![
-                Frame::Integer(0),
-                Frame::Null,
-                Frame::Null,
-                Frame::Null,
-            ]))
+        let key = Key::from(cmd.args[0].clone());
+        let group_name = cmd.args[1].clone();
+
+        match db.get_typed(&key, ValueType::Stream)? {
+            Some(v) => {
+                let stream = v
+                    .as_stream()
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_typed"));
+                let guard = stream.read();
+
+                if let Some(group) = guard.get_group(&group_name) {
+                    // Check if detailed format (with start/end/count)
+                    if cmd.args.len() >= 5 {
+                        // Parse optional IDLE filter
+                        let mut idx = 2;
+                        let mut min_idle: Option<u64> = None;
+
+                        if cmd.get_str(idx)?.to_uppercase() == "IDLE" {
+                            idx += 1;
+                            min_idle = Some(cmd.get_u64(idx)?);
+                            idx += 1;
+                        }
+
+                        let start_str = cmd.get_str(idx)?;
+                        let start = parse_range_id(start_str, true)?;
+                        idx += 1;
+
+                        let end_str = cmd.get_str(idx)?;
+                        let end = parse_range_id(end_str, false)?;
+                        idx += 1;
+
+                        let count = cmd.get_u64(idx)? as usize;
+                        idx += 1;
+
+                        let consumer_filter = if idx < cmd.args.len() {
+                            Some(cmd.args[idx].clone())
+                        } else {
+                            None
+                        };
+
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis() as u64)
+                            .unwrap_or(0);
+
+                        // Get detailed entries
+                        let pending_entries = group.pending_entries(
+                            start,
+                            end,
+                            count,
+                            consumer_filter.as_ref(),
+                        );
+
+                        // Filter by idle time if specified
+                        let entries: Vec<Frame> = pending_entries
+                            .into_iter()
+                            .filter(|entry| {
+                                if let Some(min) = min_idle {
+                                    now.saturating_sub(entry.delivery_time) >= min
+                                } else {
+                                    true
+                                }
+                            })
+                            .map(|entry| {
+                                Frame::Array(vec![
+                                    Frame::bulk(entry.id.to_string()),
+                                    Frame::Bulk(entry.consumer.clone()),
+                                    Frame::Integer(now.saturating_sub(entry.delivery_time) as i64),
+                                    Frame::Integer(entry.delivery_count as i64),
+                                ])
+                            })
+                            .collect();
+
+                        Ok(Frame::Array(entries))
+                    } else {
+                        // Summary format: [pending_count, min_id, max_id, [[consumer, count]...]]
+                        let (count, min_id, max_id, consumers) = group.pending_summary();
+
+                        let min_frame = min_id
+                            .map(|id| Frame::bulk(id.to_string()))
+                            .unwrap_or(Frame::Null);
+                        let max_frame = max_id
+                            .map(|id| Frame::bulk(id.to_string()))
+                            .unwrap_or(Frame::Null);
+
+                        let consumers_frame = if consumers.is_empty() {
+                            Frame::Null
+                        } else {
+                            Frame::Array(
+                                consumers
+                                    .into_iter()
+                                    .map(|(name, cnt)| {
+                                        Frame::Array(vec![
+                                            Frame::Bulk(name),
+                                            Frame::bulk(cnt.to_string()),
+                                        ])
+                                    })
+                                    .collect(),
+                            )
+                        };
+
+                        Ok(Frame::Array(vec![
+                            Frame::Integer(count as i64),
+                            min_frame,
+                            max_frame,
+                            consumers_frame,
+                        ]))
+                    }
+                } else {
+                    Ok(Frame::Error("NOGROUP No such consumer group".to_string()))
+                }
+            }
+            None => Ok(Frame::Error("ERR no such key".to_string())),
         }
     })
 }
@@ -745,18 +1217,111 @@ pub fn cmd_xpending(
 /// XAUTOCLAIM key group consumer min-idle-time start [COUNT count] [JUSTID]
 pub fn cmd_xautoclaim(
     cmd: ParsedCommand,
-    _db: Arc<Db>,
+    db: Arc<Db>,
     _client: Arc<ClientState>,
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
         cmd.require_args(5)?;
 
-        // Return: [next_id, [claimed entries], [deleted ids]]
-        Ok(Frame::Array(vec![
-            Frame::bulk("0-0"),
-            Frame::Array(vec![]),
-            Frame::Array(vec![]),
-        ]))
+        let key = Key::from(cmd.args[0].clone());
+        let group_name = cmd.args[1].clone();
+        let consumer_name = cmd.args[2].clone();
+        let min_idle_time = cmd.get_u64(3)?;
+        let start_str = cmd.get_str(4)?;
+
+        let start_id = match StreamId::parse(start_str) {
+            Some(StreamIdParsed::Exact(id)) => id,
+            Some(StreamIdParsed::Partial { ms, seq }) => StreamId::new(ms, seq.unwrap_or(0)),
+            Some(StreamIdParsed::Min) => StreamId::min(),
+            _ => StreamId::min(),
+        };
+
+        // Parse optional arguments
+        let mut count = 100usize; // Redis default
+        let mut justid = false;
+        let mut idx = 5;
+
+        while idx < cmd.args.len() {
+            let opt = cmd.get_str(idx)?.to_uppercase();
+            match opt.as_str() {
+                "COUNT" => {
+                    idx += 1;
+                    count = cmd.get_u64(idx)? as usize;
+                    idx += 1;
+                }
+                "JUSTID" => {
+                    justid = true;
+                    idx += 1;
+                }
+                _ => {
+                    idx += 1;
+                }
+            }
+        }
+
+        match db.get_typed(&key, ValueType::Stream)? {
+            Some(v) => {
+                let stream = v
+                    .as_stream()
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_typed"));
+                let mut guard = stream.write();
+
+                if let Some(group) = guard.get_group_mut(&group_name) {
+                    let (claimed_ids, next_id) = group.autoclaim(
+                        min_idle_time,
+                        start_id,
+                        count,
+                        &consumer_name,
+                    );
+
+                    let next_id_str = if next_id == StreamId::min() {
+                        "0-0".to_string()
+                    } else {
+                        next_id.to_string()
+                    };
+
+                    if justid {
+                        // Return: [next_id, [claimed ids], [deleted ids]]
+                        Ok(Frame::Array(vec![
+                            Frame::bulk(next_id_str),
+                            Frame::Array(
+                                claimed_ids
+                                    .into_iter()
+                                    .map(|id| Frame::bulk(id.to_string()))
+                                    .collect(),
+                            ),
+                            Frame::Array(vec![]), // No deleted IDs tracking for now
+                        ]))
+                    } else {
+                        // Return: [next_id, [claimed entries], [deleted ids]]
+                        let entries: Vec<Frame> = claimed_ids
+                            .into_iter()
+                            .filter_map(|id| {
+                                guard.get_entry(&id).map(|entry| {
+                                    let fields: Vec<Frame> = entry
+                                        .fields
+                                        .iter()
+                                        .flat_map(|(k, v)| {
+                                            vec![Frame::Bulk(k.clone()), Frame::Bulk(v.clone())]
+                                        })
+                                        .collect();
+                                    Frame::Array(vec![Frame::bulk(entry.id.to_string()), Frame::Array(fields)])
+                                })
+                            })
+                            .collect();
+
+                        Ok(Frame::Array(vec![
+                            Frame::bulk(next_id_str),
+                            Frame::Array(entries),
+                            Frame::Array(vec![]), // No deleted IDs tracking for now
+                        ]))
+                    }
+                } else {
+                    Ok(Frame::Error("NOGROUP No such consumer group".to_string()))
+                }
+            }
+            None => Ok(Frame::Error("ERR no such key".to_string())),
+        }
     })
 }
 
@@ -779,16 +1344,16 @@ pub fn cmd_xreadgroup(
         }
         idx += 1;
 
-        let group = cmd.args[idx].clone();
+        let group_name = cmd.args[idx].clone();
         idx += 1;
 
-        let consumer = cmd.args[idx].clone();
+        let consumer_name = cmd.args[idx].clone();
         idx += 1;
 
         let mut count: Option<usize> = None;
-        let mut _block: Option<u64> = None;
+        let mut block_ms: Option<u64> = None;
         let mut noack = false;
-        let mut claim_idle: Option<u64> = None; // Redis 8.4+ CLAIM option
+        let mut _claim_idle: Option<u64> = None; // Redis 8.4+ CLAIM option
 
         // Parse options
         while idx < cmd.args.len() {
@@ -801,7 +1366,7 @@ pub fn cmd_xreadgroup(
                 }
                 "BLOCK" => {
                     idx += 1;
-                    _block = Some(cmd.get_u64(idx)?);
+                    block_ms = Some(cmd.get_u64(idx)?);
                     idx += 1;
                 }
                 "NOACK" => {
@@ -811,7 +1376,7 @@ pub fn cmd_xreadgroup(
                 "CLAIM" => {
                     // Redis 8.4+ inline claiming
                     idx += 1;
-                    claim_idle = Some(cmd.get_u64(idx)?);
+                    _claim_idle = Some(cmd.get_u64(idx)?);
                     idx += 1;
                 }
                 "STREAMS" => {
@@ -861,67 +1426,95 @@ pub fn cmd_xreadgroup(
             })
             .collect();
 
-        // Read from each stream
-        let mut results = Vec::new();
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
+        // Calculate deadline for blocking
+        let deadline = block_ms.map(|ms| {
+            std::time::Instant::now() + std::time::Duration::from_millis(ms)
+        });
 
-        for (i, (key, after_id)) in keys.iter().zip(ids.iter()).enumerate() {
-            if let Some(v) = db.get_typed(key, ValueType::Stream)? {
-                let stream = v
-                    .as_stream()
-                    .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_stream"));
-                let guard = stream.read();
+        // Blocking loop - keep trying until we get results or timeout
+        loop {
+            // Read from each stream using read_group for proper PEL tracking
+            let mut results = Vec::new();
 
-                let mut stream_entries = Vec::new();
-                let requested_id = requested_ids.get(i).copied().unwrap_or("0");
-                let is_new_only = requested_id == ">";
+            for (key, after_id) in keys.iter().zip(ids.iter()) {
+                if let Some(v) = db.get_typed(key, ValueType::Stream)? {
+                    let stream = v
+                        .as_stream()
+                        .unwrap_or_else(|| unreachable!("type guaranteed by get_typed"));
+                    let mut guard = stream.write();
 
-                // Redis 8.4+ CLAIM: When id is ">" and CLAIM is specified,
-                // return both claimed pending entries and new entries
-                // Note: Full consumer group PEL tracking is not yet implemented.
-                // In a complete implementation, we would:
-                // 1. Check the Pending Entries List (PEL) for entries idle >= min_idle_ms
-                // 2. Transfer ownership of those entries to this consumer
-                // 3. Return them with (id, fields, idle_time_ms, delivery_count) format
-                let _ = (&group, &consumer, &claim_idle, now_ms, is_new_only, noack);
-                // Placeholder: claimed entries would be added here
+                    // Use read_group for proper consumer group handling with PEL
+                    if let Some(entries) = guard.read_group(
+                        &group_name,
+                        &consumer_name,
+                        *after_id,
+                        count,
+                        noack,
+                    ) {
+                        if !entries.is_empty() {
+                            let stream_entries: Vec<Frame> = entries
+                                .into_iter()
+                                .map(|entry| {
+                                    let fields: Vec<Frame> = entry
+                                        .fields
+                                        .iter()
+                                        .flat_map(|(k, v)| {
+                                            vec![Frame::Bulk(k.clone()), Frame::Bulk(v.clone())]
+                                        })
+                                        .collect();
+                                    Frame::Array(vec![
+                                        Frame::bulk(entry.id.to_string()),
+                                        Frame::Array(fields),
+                                    ])
+                                })
+                                .collect();
 
-                // Get new entries (when id is ">" or after specified id)
-                let remaining_count = count.map(|c| c.saturating_sub(stream_entries.len()));
-                let new_entries = guard.read_after(*after_id, remaining_count);
-
-                // In a full implementation, new entries would be added to PEL if not NOACK
-                // Note: NOACK does not apply to claimed entries from CLAIM
-
-                // Format new entries (standard format without claim metadata)
-                for entry in new_entries {
-                    let mut fields = Vec::new();
-                    for (f, v) in &entry.fields {
-                        fields.push(Frame::Bulk(f.clone()));
-                        fields.push(Frame::Bulk(v.clone()));
+                            results.push(Frame::Array(vec![
+                                Frame::Bulk(Bytes::copy_from_slice(key.as_bytes())),
+                                Frame::Array(stream_entries),
+                            ]));
+                        }
+                    } else {
+                        // Consumer group doesn't exist
+                        return Ok(Frame::Error(format!(
+                            "NOGROUP No such key '{}' or consumer group '{}' in XREADGROUP",
+                            std::str::from_utf8(key.as_bytes()).unwrap_or("<invalid>"),
+                            std::str::from_utf8(&group_name).unwrap_or("<invalid>")
+                        )));
                     }
-                    stream_entries.push(Frame::Array(vec![
-                        Frame::Bulk(Bytes::from(entry.id.to_string())),
-                        Frame::Array(fields),
-                    ]));
-                }
-
-                if !stream_entries.is_empty() {
-                    results.push(Frame::Array(vec![
-                        Frame::Bulk(Bytes::copy_from_slice(key.as_bytes())),
-                        Frame::Array(stream_entries),
-                    ]));
                 }
             }
-        }
 
-        if results.is_empty() {
-            Ok(Frame::Null)
-        } else {
-            Ok(Frame::Array(results))
+            // If we have results, return them
+            if !results.is_empty() {
+                return Ok(Frame::Array(results));
+            }
+
+            // If not blocking, return null immediately
+            if block_ms.is_none() {
+                return Ok(Frame::Null);
+            }
+
+            // Check if we've exceeded the deadline
+            if let Some(deadline) = deadline {
+                if std::time::Instant::now() >= deadline {
+                    return Ok(Frame::Null);
+                }
+            }
+
+            // Sleep briefly before retrying (100ms or remaining time, whichever is less)
+            let sleep_duration = if let Some(deadline) = deadline {
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                std::cmp::min(remaining, std::time::Duration::from_millis(100))
+            } else {
+                std::time::Duration::from_millis(100)
+            };
+
+            if sleep_duration.is_zero() {
+                return Ok(Frame::Null);
+            }
+
+            tokio::time::sleep(sleep_duration).await;
         }
     })
 }
@@ -1049,7 +1642,7 @@ pub fn cmd_xackdel(
         cmd.require_args(3)?;
 
         let key = Key::from(cmd.args[0].clone());
-        let _group = cmd.args[1].clone(); // Consumer group (for acknowledgement)
+        let group_name = cmd.args[1].clone();
 
         let mut _keep_ref = false;
         let mut _del_ref = true;
@@ -1093,16 +1686,20 @@ pub fn cmd_xackdel(
             })
             .collect();
 
-        // Atomically acknowledge (stub - consumer groups not fully implemented)
-        // and delete the entries
+        // Atomically acknowledge and delete the entries
         let deleted = match db.get_typed(&key, ValueType::Stream)? {
             Some(v) => {
                 let stream = v
                     .as_stream()
-                    .unwrap_or_else(|| unreachable!("type guaranteed by get_or_create_stream"));
+                    .unwrap_or_else(|| unreachable!("type guaranteed by get_typed"));
                 let mut guard = stream.write();
-                // In a full implementation, we would also remove from pending entries list
-                // For now, just delete the entries
+
+                // First, acknowledge entries in the consumer group (remove from PEL)
+                if let Some(group) = guard.get_group_mut(&group_name) {
+                    group.ack(&ids);
+                }
+
+                // Then delete the entries from the stream
                 guard.delete(&ids)
             }
             None => 0,

@@ -7,35 +7,39 @@ pub mod cluster;
 pub mod cluster_bus;
 pub mod config;
 mod connection;
+pub mod latency;
 pub mod metrics;
 pub mod pubsub;
 pub mod rate_limit;
 pub mod replication;
 pub mod sentinel;
 mod state;
+pub mod tracking;
 pub mod watch;
 
 pub use cluster::{ClusterManager, ClusterState, SharedClusterManager, Slot, SlotRange};
 pub use cluster_bus::{ClusterBus, ClusterBusConfig, SharedClusterBus};
 pub use config::{Config, ConfigError, LogLevel};
 pub use connection::Connection;
+pub use latency::{LatencyEvent, LatencyGuard, LatencyMonitor, LatencySample, SharedLatencyMonitor};
 pub use metrics::ServerMetrics;
 pub use pubsub::{PubSubHub, SharedPubSubHub};
 pub use rate_limit::{ConnectionRateLimiter, RateLimitConfig, RateLimitStats};
 pub use replication::{ReplicationManager, ReplicationRole, SharedReplicationManager};
 pub use sentinel::SentinelMonitor;
-pub use state::ClientState;
+pub use state::{ClientState, TrackingState};
+pub use tracking::{SharedTrackingRegistry, TrackingRegistry};
 pub use watch::{SharedWatchRegistry, WatchRegistry};
 
 use crate::Result;
 use crate::commands::CommandExecutor;
-use crate::persistence::{VdbLoader, VdbSaver};
+use crate::persistence::{VdbLoadResult, VdbLoader, VdbSaveResult, VdbSaver};
 use crate::pool::BufferPool;
 use crate::storage::{Database, ExpiryManager};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
 use tokio::sync::{Notify, Semaphore};
 use tracing::{error, info, warn};
@@ -111,15 +115,55 @@ impl Server {
         }
     }
 
+    /// Log VDB save result in Redis-style format.
+    fn log_vdb_save_result(result: &VdbSaveResult) {
+        info!(
+            "SAVE done, {} keys saved, {} keys skipped, {} bytes written.",
+            result.keys_saved, result.keys_skipped, result.bytes_written
+        );
+        info!("DB saved on disk");
+    }
+
+    /// Log VDB load result in Redis-style format.
+    fn log_vdb_load_result(result: &VdbLoadResult, duration: Duration) {
+        let version = if result.viator_version.is_empty() {
+            "unknown".to_string()
+        } else {
+            result.viator_version.clone()
+        };
+        info!("Loading VDB produced by version {}", version);
+
+        // Calculate VDB age
+        if result.ctime > 0 {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            let age = now - result.ctime;
+            info!("VDB age {} seconds", age);
+        }
+
+        info!(
+            "Done loading VDB, keys loaded: {}, keys expired: {}.",
+            result.keys_loaded, result.keys_expired
+        );
+        info!("DB loaded from disk: {:.3} seconds", duration.as_secs_f64());
+    }
+
     /// Run the server.
     pub async fn run(self: Arc<Self>) -> Result<()> {
+        info!("Server initialized");
+
         // Load VDB on startup if it exists
         let vdb_path = std::path::Path::new(&self.config.dir).join(&self.config.dbfilename);
         if vdb_path.exists() {
-            info!("Loading VDB file: {}", vdb_path.display());
+            let load_start = Instant::now();
             match VdbLoader::new(&vdb_path) {
                 Ok(loader) => match loader.load_into(&self.database) {
-                    Ok(()) => info!("VDB loaded successfully"),
+                    Ok(result) => {
+                        let load_duration = load_start.elapsed();
+                        Self::log_vdb_load_result(&result, load_duration);
+                    }
                     Err(e) => error!("Failed to load VDB: {}", e),
                 },
                 Err(e) => error!("Failed to open VDB file: {}", e),
@@ -129,7 +173,7 @@ impl Server {
         let addr: SocketAddr = format!("{}:{}", self.config.bind, self.config.port).parse()?;
 
         let listener = TcpListener::bind(addr).await?;
-        info!("Viator server listening on {}", addr);
+        info!("Ready to accept connections tcp");
 
         self.running.store(true, Ordering::SeqCst);
 
@@ -146,6 +190,117 @@ impl Server {
                     break;
                 }
                 rate_cleanup_server.rate_limiter.cleanup();
+            }
+        });
+
+        // Start background save check task (like Redis serverCron)
+        let save_check_server = self.clone();
+        let save_check_handle = tokio::spawn(async move {
+            // Check save conditions every second (Redis uses 100ms in serverCron)
+            let mut interval = tokio::time::interval(Duration::from_secs(1));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+            loop {
+                interval.tick().await;
+                if !save_check_server.running.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                // Skip if save is disabled or already in progress
+                if save_check_server.config.save.is_empty() {
+                    continue;
+                }
+                if save_check_server
+                    .database
+                    .server_stats()
+                    .vdb_bgsave_in_progress
+                    .load(Ordering::Relaxed)
+                {
+                    continue;
+                }
+
+                // Get current stats
+                let changes = save_check_server
+                    .database
+                    .server_stats()
+                    .vdb_changes_since_save
+                    .load(Ordering::Relaxed);
+                let last_save = save_check_server
+                    .database
+                    .server_stats()
+                    .last_vdb_save_time
+                    .load(Ordering::Relaxed);
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let seconds_since_save = now.saturating_sub(last_save);
+
+                // Check each save point (already sorted by most urgent in config)
+                let mut should_save = false;
+                let mut trigger_seconds = 0u64;
+                let mut trigger_changes = 0u64;
+
+                for save_config in &save_check_server.config.save {
+                    if changes >= save_config.changes && seconds_since_save >= save_config.seconds {
+                        should_save = true;
+                        trigger_seconds = save_config.seconds;
+                        trigger_changes = save_config.changes;
+                        break;
+                    }
+                }
+
+                if should_save {
+                    info!(
+                        "{} changes in {} seconds. Saving...",
+                        trigger_changes, trigger_seconds
+                    );
+
+                    // Mark save in progress
+                    save_check_server.database.server_stats().vdb_save_started();
+                    info!("Background saving started");
+
+                    // Spawn the actual save in a blocking task
+                    let db_for_save = save_check_server.database.clone();
+                    let db_for_stats = save_check_server.database.clone();
+                    let vdb_path = std::path::Path::new(&save_check_server.config.dir)
+                        .join(&save_check_server.config.dbfilename);
+
+                    tokio::spawn(async move {
+                        let save_result =
+                            tokio::task::spawn_blocking(move || match VdbSaver::new(&vdb_path) {
+                                Ok(saver) => saver.save(&db_for_save),
+                                Err(e) => Err(e),
+                            })
+                            .await;
+
+                        match save_result {
+                            Ok(Ok(result)) => {
+                                db_for_stats.server_stats().vdb_save_completed();
+                                info!("Background saving terminated with success");
+                                info!(
+                                    "BGSAVE done, {} keys saved, {} keys skipped, {} bytes written.",
+                                    result.keys_saved, result.keys_skipped, result.bytes_written
+                                );
+                            }
+                            Ok(Err(e)) => {
+                                // Mark save as no longer in progress even on error
+                                db_for_stats
+                                    .server_stats()
+                                    .vdb_bgsave_in_progress
+                                    .store(false, Ordering::Relaxed);
+                                error!("Background saving terminated with error: {}", e);
+                            }
+                            Err(e) => {
+                                db_for_stats
+                                    .server_stats()
+                                    .vdb_bgsave_in_progress
+                                    .store(false, Ordering::Relaxed);
+                                error!("Background save task panicked: {}", e);
+                            }
+                        }
+                    });
+                }
             }
         });
 
@@ -243,7 +398,7 @@ impl Server {
         );
 
         let shutdown_timeout = Duration::from_secs(30);
-        let start = std::time::Instant::now();
+        let start = Instant::now();
         while self.connection_count.load(Ordering::Relaxed) > 0 {
             if start.elapsed() > shutdown_timeout {
                 warn!(
@@ -259,11 +414,13 @@ impl Server {
         self.expiry_manager.stop();
         expiry_handle.await.ok();
         rate_cleanup_handle.abort();
+        save_check_handle.abort();
 
         // Save final VDB snapshot before exiting (unless SHUTDOWN NOSAVE was used)
         let should_save = !self.config.save.is_empty() && self.database.should_save_on_shutdown();
         if should_save {
-            info!("Saving the final VDB snapshot before exiting (do not interrupt!)");
+            info!("User requested shutdown...");
+            info!("Saving the final VDB snapshot before exiting.");
             let vdb_path = std::path::Path::new(&self.config.dir).join(&self.config.dbfilename);
 
             // Spawn blocking task to ensure save completes even if signals arrive
@@ -275,8 +432,8 @@ impl Server {
             .await;
 
             match save_result {
-                Ok(Ok(())) => {
-                    info!("DB saved on disk");
+                Ok(Ok(result)) => {
+                    Self::log_vdb_save_result(&result);
                 }
                 Ok(Err(e)) => {
                     error!("Failed to save VDB on shutdown: {}", e);
@@ -290,7 +447,7 @@ impl Server {
         }
 
         self.running.store(false, Ordering::SeqCst);
-        info!("Server shutdown complete");
+        info!("Viator is now ready to exit, bye bye...");
 
         Ok(())
     }

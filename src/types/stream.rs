@@ -3,7 +3,7 @@
 //! Streams are append-only data structures with unique IDs for each entry.
 
 use bytes::Bytes;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Stream entry ID in format `<milliseconds>-<sequence>`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -118,6 +118,285 @@ impl StreamEntry {
     }
 }
 
+/// A pending entry in the PEL (Pending Entries List)
+#[derive(Debug, Clone)]
+pub struct PendingEntry {
+    /// The stream entry ID
+    pub id: StreamId,
+    /// Consumer that owns this entry
+    pub consumer: Bytes,
+    /// Time when the entry was delivered (milliseconds)
+    pub delivery_time: u64,
+    /// Number of times this entry has been delivered
+    pub delivery_count: u32,
+}
+
+impl PendingEntry {
+    /// Create a new pending entry
+    pub fn new(id: StreamId, consumer: Bytes, delivery_time: u64) -> Self {
+        Self {
+            id,
+            consumer,
+            delivery_time,
+            delivery_count: 1,
+        }
+    }
+}
+
+/// A consumer in a consumer group
+#[derive(Debug, Clone, Default)]
+pub struct StreamConsumer {
+    /// Consumer name
+    pub name: Bytes,
+    /// Last time the consumer was seen (milliseconds)
+    pub last_seen: u64,
+    /// Number of pending entries for this consumer
+    pub pending_count: usize,
+    /// Last successful delivery time
+    pub last_delivery: u64,
+}
+
+impl StreamConsumer {
+    /// Create a new consumer
+    pub fn new(name: Bytes) -> Self {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        Self {
+            name,
+            last_seen: now,
+            pending_count: 0,
+            last_delivery: 0,
+        }
+    }
+
+    /// Update last seen time
+    pub fn touch(&mut self) {
+        self.last_seen = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+    }
+}
+
+/// A consumer group for stream processing
+#[derive(Debug, Clone, Default)]
+pub struct ConsumerGroup {
+    /// Group name
+    pub name: Bytes,
+    /// Last delivered ID (entries after this are new)
+    pub last_delivered_id: StreamId,
+    /// Consumers in this group
+    pub consumers: HashMap<Bytes, StreamConsumer>,
+    /// Pending Entries List - entries delivered but not acknowledged
+    pub pel: BTreeMap<StreamId, PendingEntry>,
+    /// Total entries ever read by this group
+    pub entries_read: u64,
+}
+
+impl ConsumerGroup {
+    /// Create a new consumer group
+    pub fn new(name: Bytes, last_delivered_id: StreamId) -> Self {
+        Self {
+            name,
+            last_delivered_id,
+            consumers: HashMap::new(),
+            pel: BTreeMap::new(),
+            entries_read: 0,
+        }
+    }
+
+    /// Get or create a consumer
+    pub fn get_or_create_consumer(&mut self, name: &Bytes) -> &mut StreamConsumer {
+        if !self.consumers.contains_key(name) {
+            self.consumers.insert(name.clone(), StreamConsumer::new(name.clone()));
+        }
+        self.consumers.get_mut(name).unwrap()
+    }
+
+    /// Add entry to PEL (mark as delivered to consumer)
+    pub fn add_to_pel(&mut self, id: StreamId, consumer: &Bytes) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
+        self.pel.insert(id, PendingEntry::new(id, consumer.clone(), now));
+        
+        if let Some(c) = self.consumers.get_mut(consumer) {
+            c.pending_count += 1;
+            c.last_delivery = now;
+            c.touch();
+        }
+        
+        self.entries_read += 1;
+    }
+
+    /// Acknowledge entries (remove from PEL)
+    /// Returns number of entries acknowledged
+    pub fn ack(&mut self, ids: &[StreamId]) -> usize {
+        let mut count = 0;
+        for id in ids {
+            if let Some(entry) = self.pel.remove(id) {
+                count += 1;
+                if let Some(c) = self.consumers.get_mut(&entry.consumer) {
+                    c.pending_count = c.pending_count.saturating_sub(1);
+                }
+            }
+        }
+        count
+    }
+
+    /// Claim entries from other consumers
+    /// Returns claimed entries with updated delivery info
+    pub fn claim(
+        &mut self,
+        ids: &[StreamId],
+        new_consumer: &Bytes,
+        min_idle_time: u64,
+        set_time: Option<u64>,
+        set_retrycount: Option<u32>,
+        force: bool,
+    ) -> Vec<StreamId> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
+        let mut claimed = Vec::new();
+
+        for id in ids {
+            let should_claim = if force {
+                // Force claim even if not in PEL
+                true
+            } else if let Some(entry) = self.pel.get(id) {
+                // Check if idle time is sufficient
+                now.saturating_sub(entry.delivery_time) >= min_idle_time
+            } else {
+                false
+            };
+
+            if should_claim {
+                // Remove from old consumer's count
+                if let Some(entry) = self.pel.get(id) {
+                    if let Some(c) = self.consumers.get_mut(&entry.consumer) {
+                        c.pending_count = c.pending_count.saturating_sub(1);
+                    }
+                }
+
+                // Update or insert the PEL entry
+                let delivery_time = set_time.unwrap_or(now);
+                let entry = self.pel.entry(*id).or_insert_with(|| {
+                    PendingEntry::new(*id, new_consumer.clone(), delivery_time)
+                });
+                
+                entry.consumer = new_consumer.clone();
+                entry.delivery_time = delivery_time;
+                if let Some(rc) = set_retrycount {
+                    entry.delivery_count = rc;
+                } else {
+                    entry.delivery_count += 1;
+                }
+
+                // Add to new consumer's count
+                let consumer = self.get_or_create_consumer(new_consumer);
+                consumer.pending_count += 1;
+                consumer.touch();
+
+                claimed.push(*id);
+            }
+        }
+
+        claimed
+    }
+
+    /// Auto-claim idle entries
+    /// Returns (claimed_ids, next_start_id)
+    pub fn autoclaim(
+        &mut self,
+        min_idle_time: u64,
+        start_id: StreamId,
+        count: usize,
+        new_consumer: &Bytes,
+    ) -> (Vec<StreamId>, StreamId) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
+        let mut claimed = Vec::new();
+        let mut next_id = StreamId::min();
+
+        for (id, entry) in self.pel.range(start_id..) {
+            if claimed.len() >= count {
+                next_id = *id;
+                break;
+            }
+
+            let idle_time = now.saturating_sub(entry.delivery_time);
+            if idle_time >= min_idle_time {
+                claimed.push(*id);
+            }
+        }
+
+        // Actually claim the entries
+        for id in &claimed {
+            if let Some(entry) = self.pel.get(id) {
+                if let Some(c) = self.consumers.get_mut(&entry.consumer) {
+                    c.pending_count = c.pending_count.saturating_sub(1);
+                }
+            }
+            
+            if let Some(entry) = self.pel.get_mut(id) {
+                entry.consumer = new_consumer.clone();
+                entry.delivery_time = now;
+                entry.delivery_count += 1;
+            }
+
+            let consumer = self.get_or_create_consumer(new_consumer);
+            consumer.pending_count += 1;
+            consumer.touch();
+        }
+
+        (claimed, next_id)
+    }
+
+    /// Get pending entries info
+    pub fn pending_summary(&self) -> (usize, Option<StreamId>, Option<StreamId>, Vec<(Bytes, usize)>) {
+        let count = self.pel.len();
+        let min_id = self.pel.keys().next().copied();
+        let max_id = self.pel.keys().next_back().copied();
+        
+        // Count per consumer
+        let mut consumer_counts: HashMap<Bytes, usize> = HashMap::new();
+        for entry in self.pel.values() {
+            *consumer_counts.entry(entry.consumer.clone()).or_insert(0) += 1;
+        }
+        let consumers: Vec<_> = consumer_counts.into_iter().collect();
+
+        (count, min_id, max_id, consumers)
+    }
+
+    /// Get detailed pending entries for a consumer
+    pub fn pending_entries(
+        &self,
+        start: StreamId,
+        end: StreamId,
+        count: usize,
+        consumer_filter: Option<&Bytes>,
+    ) -> Vec<&PendingEntry> {
+        self.pel
+            .range(start..=end)
+            .filter(|(_, entry)| {
+                consumer_filter.map_or(true, |c| &entry.consumer == c)
+            })
+            .take(count)
+            .map(|(_, entry)| entry)
+            .collect()
+    }
+}
+
 /// Redis Stream data structure
 #[derive(Debug, Clone, Default)]
 pub struct ViatorStream {
@@ -129,6 +408,8 @@ pub struct ViatorStream {
     entries_added: u64,
     /// First entry ID (may change with trimming)
     first_entry_id: Option<StreamId>,
+    /// Consumer groups for this stream
+    consumer_groups: HashMap<Bytes, ConsumerGroup>,
 }
 
 impl ViatorStream {
@@ -139,6 +420,7 @@ impl ViatorStream {
             last_id: StreamId::new(0, 0),
             entries_added: 0,
             first_entry_id: None,
+            consumer_groups: HashMap::new(),
         }
     }
 
@@ -163,6 +445,7 @@ impl ViatorStream {
             last_id: StreamId::new(export.last_id.0, export.last_id.1),
             entries_added: export.entries_added,
             first_entry_id,
+            consumer_groups: HashMap::new(), // Consumer groups are not persisted yet
         }
     }
 
@@ -369,6 +652,141 @@ impl ViatorStream {
             .map(|fields| 16 + fields.iter().map(|(k, v)| k.len() + v.len()).sum::<usize>())
             .sum();
         base + entries
+    }
+
+    // ==================== Consumer Group Methods ====================
+
+    /// Create a new consumer group
+    /// Returns true if created, false if group already exists
+    pub fn create_group(&mut self, name: Bytes, last_delivered_id: StreamId, mkstream: bool) -> Result<bool, &'static str> {
+        if self.consumer_groups.contains_key(&name) {
+            return Ok(false);
+        }
+
+        // Validate that the ID exists (unless it's 0-0 or $ for last)
+        if last_delivered_id != StreamId::min() && last_delivered_id != self.last_id {
+            if !self.entries.contains_key(&last_delivered_id) && !mkstream {
+                // ID doesn't exist but we allow it (Redis does too)
+            }
+        }
+
+        self.consumer_groups.insert(name.clone(), ConsumerGroup::new(name, last_delivered_id));
+        Ok(true)
+    }
+
+    /// Destroy a consumer group
+    /// Returns the number of pending entries that were in the group
+    pub fn destroy_group(&mut self, name: &Bytes) -> Option<usize> {
+        self.consumer_groups.remove(name).map(|g| g.pel.len())
+    }
+
+    /// Get a consumer group by name
+    pub fn get_group(&self, name: &Bytes) -> Option<&ConsumerGroup> {
+        self.consumer_groups.get(name)
+    }
+
+    /// Get a mutable consumer group by name
+    pub fn get_group_mut(&mut self, name: &Bytes) -> Option<&mut ConsumerGroup> {
+        self.consumer_groups.get_mut(name)
+    }
+
+    /// Get all consumer groups
+    pub fn groups(&self) -> impl Iterator<Item = &ConsumerGroup> {
+        self.consumer_groups.values()
+    }
+
+    /// Set the last delivered ID for a consumer group
+    pub fn set_group_id(&mut self, name: &Bytes, id: StreamId) -> bool {
+        if let Some(group) = self.consumer_groups.get_mut(name) {
+            group.last_delivered_id = id;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Delete a consumer from a group
+    /// Returns the number of pending entries that were removed
+    pub fn delete_consumer(&mut self, group_name: &Bytes, consumer_name: &Bytes) -> Option<usize> {
+        if let Some(group) = self.consumer_groups.get_mut(group_name) {
+            if let Some(consumer) = group.consumers.remove(consumer_name) {
+                // Remove all pending entries for this consumer
+                let pending_count = consumer.pending_count;
+                group.pel.retain(|_, entry| entry.consumer != *consumer_name);
+                return Some(pending_count);
+            }
+        }
+        None
+    }
+
+    /// Read entries for a consumer group
+    /// This method handles the ">" ID (new entries) and specific IDs (pending entries)
+    /// Returns entries and updates PEL if not noack
+    pub fn read_group(
+        &mut self,
+        group_name: &Bytes,
+        consumer_name: &Bytes,
+        after_id: StreamId,
+        count: Option<usize>,
+        noack: bool,
+    ) -> Option<Vec<StreamEntry>> {
+        let group = self.consumer_groups.get_mut(group_name)?;
+        
+        // Ensure consumer exists
+        group.get_or_create_consumer(consumer_name);
+
+        // Determine what to read
+        let is_new_only = after_id == StreamId::max();
+        
+        let entries = if is_new_only {
+            // Read new entries (after last_delivered_id)
+            let start_id = StreamId::new(
+                group.last_delivered_id.ms,
+                group.last_delivered_id.seq.saturating_add(1),
+            );
+            
+            let entries: Vec<StreamEntry> = self.entries
+                .range(start_id..)
+                .take(count.unwrap_or(usize::MAX))
+                .map(|(id, fields)| StreamEntry::new(*id, fields.clone()))
+                .collect();
+
+            // Update last_delivered_id
+            if let Some(last) = entries.last() {
+                group.last_delivered_id = last.id;
+            }
+
+            // Add to PEL if not noack
+            if !noack {
+                for entry in &entries {
+                    group.add_to_pel(entry.id, consumer_name);
+                }
+            }
+
+            entries
+        } else {
+            // Read pending entries (after specified ID)
+            // This returns entries from PEL that belong to this consumer
+            let entries: Vec<StreamEntry> = group.pel
+                .range(after_id..)
+                .filter(|(_, pending)| pending.consumer == *consumer_name)
+                .take(count.unwrap_or(usize::MAX))
+                .filter_map(|(id, _)| {
+                    self.entries.get(id).map(|fields| {
+                        StreamEntry::new(*id, fields.clone())
+                    })
+                })
+                .collect();
+
+            entries
+        };
+
+        Some(entries)
+    }
+
+    /// Get an entry by ID (for use with claimed entries)
+    pub fn get_entry(&self, id: &StreamId) -> Option<StreamEntry> {
+        self.entries.get(id).map(|fields| StreamEntry::new(*id, fields.clone()))
     }
 }
 

@@ -328,16 +328,19 @@ fn main() {
 
     match checker.check() {
         Ok(true) => {
-            println!("AOF is valid");
+            println!("AOF {} is valid", path.display());
         }
         Ok(false) => {
-            eprintln!("AOF is not valid");
+            eprintln!(
+                "AOF {} is not valid. Use the --fix option to try fixing it.",
+                path.display()
+            );
 
             if fix {
                 println!("Trying to fix by truncating at last valid command...");
                 match checker.truncate_at_last_valid() {
                     Ok(()) => {
-                        println!("Successfully truncated AOF");
+                        println!("Successfully truncated AOF {}", path.display());
                     }
                     Err(e) => {
                         eprintln!("Failed to fix AOF: {e}");
@@ -345,7 +348,6 @@ fn main() {
                     }
                 }
             } else {
-                println!("Use --fix to truncate the file at the last valid command.");
                 std::process::exit(1);
             }
         }

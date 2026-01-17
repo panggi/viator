@@ -253,6 +253,10 @@ pub struct Db {
     /// Uses millisecond timestamps for ordering.
     access_times: DashMap<Key, u64>,
 
+    /// Access frequency for each key (for LFU eviction).
+    /// Uses logarithmic counter similar to Redis LFU.
+    access_freq: DashMap<Key, u8>,
+
     /// Statistics
     stats: DbStats,
 
@@ -288,6 +292,7 @@ impl Db {
             data: DashMap::new(),
             expires: DashMap::new(),
             access_times: DashMap::new(),
+            access_freq: DashMap::new(),
             stats: DbStats::default(),
             pubsub,
             search_manager: Arc::new(SearchManager::new()),
@@ -337,8 +342,56 @@ impl Db {
         self.access_times
             .insert(key.clone(), current_timestamp_ms() as u64);
 
+        // Update LFU frequency (logarithmic counter like Redis)
+        self.update_lfu_counter(key);
+
         self.stats.hits.fetch_add(1, Ordering::Relaxed);
         Some(entry.value.clone())
+    }
+
+    /// Update LFU counter using Redis-style logarithmic probability.
+    /// The counter is a u8 (0-255), where higher values mean more frequent access.
+    /// Probability of increment decreases as counter increases.
+    #[inline]
+    fn update_lfu_counter(&self, key: &Key) {
+        let current = self.access_freq.get(key).map(|r| *r).unwrap_or(5); // Start at 5 like Redis
+        
+        // Redis LFU: lfu_log_factor determines decay rate
+        // Probability of increment = 1 / (old_count * lfu_log_factor + 1)
+        // With factor=10 (default), probability starts at ~10% and decreases
+        let lfu_log_factor = 10.0_f64;
+        let base_val = (current.saturating_sub(5)) as f64;
+        let probability = 1.0 / (base_val * lfu_log_factor + 1.0);
+        
+        // Use thread-local random for performance
+        let mut rng = rand::thread_rng();
+        let random: f64 = rng.gen_range(0.0..1.0);
+        if random < probability && current < 255 {
+            self.access_freq.insert(key.clone(), current.saturating_add(1));
+        }
+    }
+
+    /// Get the idle time for a key in seconds.
+    /// Returns None if the key doesn't exist.
+    pub fn get_idle_time(&self, key: &Key) -> Option<u64> {
+        if !self.exists(key) {
+            return None;
+        }
+        let last_access = self.access_times.get(key).map(|r| *r).unwrap_or(0);
+        if last_access == 0 {
+            return Some(0);
+        }
+        let now = current_timestamp_ms() as u64;
+        Some((now.saturating_sub(last_access)) / 1000) // Convert ms to seconds
+    }
+
+    /// Get the access frequency for a key.
+    /// Returns None if the key doesn't exist.
+    pub fn get_frequency(&self, key: &Key) -> Option<u8> {
+        if !self.exists(key) {
+            return None;
+        }
+        Some(self.access_freq.get(key).map(|r| *r).unwrap_or(5))
     }
 
     /// Get a value with type checking.
@@ -549,6 +602,7 @@ impl Db {
     pub fn delete(&self, key: &Key) -> bool {
         self.expires.remove(key);
         self.access_times.remove(key);
+        self.access_freq.remove(key);
         self.data.remove(key).is_some()
     }
 
@@ -858,6 +912,7 @@ impl Db {
         self.data.clear();
         self.expires.clear();
         self.access_times.clear();
+        self.access_freq.clear();
     }
 
     /// Evict a random key from the database.
@@ -878,6 +933,7 @@ impl Db {
             self.data.remove(&key);
             self.expires.remove(&key);
             self.access_times.remove(&key);
+            self.access_freq.remove(&key);
             self.stats.evicted_keys.fetch_add(1, Ordering::Relaxed);
             return true;
         }
@@ -900,6 +956,7 @@ impl Db {
             self.data.remove(&key);
             self.expires.remove(&key);
             self.access_times.remove(&key);
+            self.access_freq.remove(&key);
             self.stats.evicted_keys.fetch_add(1, Ordering::Relaxed);
             return true;
         }
@@ -926,6 +983,7 @@ impl Db {
             self.data.remove(&key);
             self.expires.remove(&key);
             self.access_times.remove(&key);
+            self.access_freq.remove(&key);
             self.stats.evicted_keys.fetch_add(1, Ordering::Relaxed);
             return true;
         }
@@ -964,6 +1022,7 @@ impl Db {
             self.data.remove(&key);
             self.expires.remove(&key);
             self.access_times.remove(&key);
+            self.access_freq.remove(&key);
             self.stats.evicted_keys.fetch_add(1, Ordering::Relaxed);
             return true;
         }
@@ -1002,6 +1061,85 @@ impl Db {
             self.data.remove(&key);
             self.expires.remove(&key);
             self.access_times.remove(&key);
+            self.access_freq.remove(&key);
+            self.stats.evicted_keys.fetch_add(1, Ordering::Relaxed);
+            return true;
+        }
+
+        false
+    }
+
+    /// Evict the least frequently used key from all keys.
+    /// Uses Redis-style approximation: samples 5 random keys and evicts the least frequent.
+    /// Returns true if a key was evicted, false if database is empty.
+    pub fn evict_lfu(&self) -> bool {
+        const SAMPLE_SIZE: usize = 5;
+        let len = self.data.len();
+        if len == 0 {
+            return false;
+        }
+
+        let mut rng = rand::thread_rng();
+        let mut lowest_freq_key: Option<Key> = None;
+        let mut lowest_freq: u8 = u8::MAX;
+
+        // Sample random keys and find the least frequently used
+        for _ in 0..SAMPLE_SIZE.min(len) {
+            let target = rng.gen_range(0..len);
+            if let Some(entry) = self.data.iter().nth(target) {
+                let key = entry.key();
+                let freq = self.access_freq.get(key).map(|r| *r).unwrap_or(5);
+                if freq < lowest_freq {
+                    lowest_freq = freq;
+                    lowest_freq_key = Some(key.clone());
+                }
+            }
+        }
+
+        if let Some(key) = lowest_freq_key {
+            self.data.remove(&key);
+            self.expires.remove(&key);
+            self.access_times.remove(&key);
+            self.access_freq.remove(&key);
+            self.stats.evicted_keys.fetch_add(1, Ordering::Relaxed);
+            return true;
+        }
+
+        false
+    }
+
+    /// Evict the least frequently used volatile key (one with TTL).
+    /// Uses Redis-style approximation: samples 5 random volatile keys and evicts the least frequent.
+    /// Returns true if a key was evicted, false if no volatile keys exist.
+    pub fn evict_lfu_volatile(&self) -> bool {
+        const SAMPLE_SIZE: usize = 5;
+        let len = self.expires.len();
+        if len == 0 {
+            return false;
+        }
+
+        let mut rng = rand::thread_rng();
+        let mut lowest_freq_key: Option<Key> = None;
+        let mut lowest_freq: u8 = u8::MAX;
+
+        // Sample random volatile keys and find the least frequently used
+        for _ in 0..SAMPLE_SIZE.min(len) {
+            let target = rng.gen_range(0..len);
+            if let Some(entry) = self.expires.iter().nth(target) {
+                let key = entry.key();
+                let freq = self.access_freq.get(key).map(|r| *r).unwrap_or(5);
+                if freq < lowest_freq {
+                    lowest_freq = freq;
+                    lowest_freq_key = Some(key.clone());
+                }
+            }
+        }
+
+        if let Some(key) = lowest_freq_key {
+            self.data.remove(&key);
+            self.expires.remove(&key);
+            self.access_times.remove(&key);
+            self.access_freq.remove(&key);
             self.stats.evicted_keys.fetch_add(1, Ordering::Relaxed);
             return true;
         }
@@ -1084,6 +1222,150 @@ impl Db {
 
         Some(f(entry.value_mut()))
     }
+
+    // --- DEBUG command support ---
+
+    /// Compute a digest of this database using XXH3.
+    pub fn compute_digest(&self) -> String {
+        use xxhash_rust::xxh3::Xxh3;
+
+        let mut hasher = Xxh3::new();
+
+        // Collect keys and sort for deterministic hash
+        let mut keys: Vec<_> = self.data.iter()
+            .filter(|kv| !kv.value().is_expired())
+            .map(|kv| kv.key().clone())
+            .collect();
+        keys.sort();
+
+        for key in keys {
+            if let Some(stored) = self.data.get(&key) {
+                if stored.is_expired() {
+                    continue;
+                }
+
+                hasher.update(key.as_bytes());
+                Self::hash_value(&mut hasher, &stored.value);
+            }
+        }
+
+        let digest = hasher.digest128();
+        format!("{:032x}", digest)
+    }
+
+    /// Compute a digest of a specific key's value.
+    pub fn compute_key_digest(&self, key: &Key) -> String {
+        use xxhash_rust::xxh3::Xxh3;
+
+        let mut hasher = Xxh3::new();
+
+        if let Some(stored) = self.data.get(key) {
+            if !stored.is_expired() {
+                hasher.update(key.as_bytes());
+                Self::hash_value(&mut hasher, &stored.value);
+            }
+        }
+
+        let digest = hasher.digest128();
+        format!("{:032x}", digest)
+    }
+
+    /// Helper to hash a value into a hasher.
+    fn hash_value(hasher: &mut xxhash_rust::xxh3::Xxh3, value: &ViatorValue) {
+        match value {
+            ViatorValue::String(s) => {
+                hasher.update(&[0]); // Type marker
+                hasher.update(s);
+            }
+            ViatorValue::List(list) => {
+                hasher.update(&[1]);
+                let guard = list.read();
+                for item in guard.range(0, -1) {
+                    hasher.update(item);
+                }
+            }
+            ViatorValue::Set(set) => {
+                hasher.update(&[2]);
+                let guard = set.read();
+                let mut members: Vec<_> = guard.members().into_iter().cloned().collect();
+                members.sort();
+                for member in members {
+                    hasher.update(&member);
+                }
+            }
+            ViatorValue::ZSet(zset) => {
+                hasher.update(&[3]);
+                let guard = zset.read();
+                for entry in guard.iter() {
+                    hasher.update(&entry.member);
+                    hasher.update(&entry.score.to_le_bytes());
+                }
+            }
+            ViatorValue::Hash(hash) => {
+                hasher.update(&[4]);
+                let guard = hash.read();
+                let mut fields: Vec<_> = guard.iter().collect();
+                fields.sort_by(|a, b| a.0.cmp(b.0));
+                for (field, value) in fields {
+                    hasher.update(field);
+                    hasher.update(value);
+                }
+            }
+            ViatorValue::Stream(stream) => {
+                hasher.update(&[5]);
+                let guard = stream.read();
+                hasher.update(&guard.last_id().ms.to_le_bytes());
+                hasher.update(&guard.last_id().seq.to_le_bytes());
+            }
+            ViatorValue::VectorSet(vs) => {
+                hasher.update(&[6]);
+                let guard = vs.read();
+                hasher.update(&guard.dim().unwrap_or(0).to_le_bytes());
+            }
+        }
+    }
+
+    /// Get hash table statistics for this database.
+    pub fn get_hashtable_stats(&self, _db_idx: u32) -> String {
+        let data_len = self.data.len();
+        let expiry_len = self.expires.len();
+
+        format!(
+            "[Dictionary HT]\n\
+             Hash table 0 stats (main hash table):\n\
+             table size: {}\n\
+             number of elements: {}\n\
+             different slots: {}\n\
+             max chain length: 1\n\
+             avg chain length: 1.00\n\
+             std dev of chain length: 0.00\n\n\
+             [Expires HT]\n\
+             Hash table 0 stats (expiry index):\n\
+             table size: {}\n\
+             number of elements: {}\n",
+            data_len.next_power_of_two(),
+            data_len,
+            data_len,
+            expiry_len.next_power_of_two().max(1),
+            expiry_len,
+        )
+    }
+
+    /// Enable or disable active expiry (placeholder for compatibility).
+    pub fn set_active_expire_enabled(&self, _enabled: bool) {
+        // This is a placeholder - active expiry is handled at the ExpiryManager level
+    }
+
+    /// Set the quicklist packed threshold (placeholder for compatibility).
+    pub fn set_quicklist_packed_threshold(&self, _threshold: usize) {
+        // Placeholder - we don't have quicklist yet
+    }
+
+    /// Get the quicklist packed threshold (placeholder for compatibility).
+    pub fn get_quicklist_packed_threshold(&self) -> usize {
+        // Placeholder - return default Redis value
+        1024
+    }
 }
 
 impl Default for Db {
@@ -1109,6 +1391,10 @@ pub struct Database {
     shutdown_requested: std::sync::atomic::AtomicBool,
     /// Save on shutdown flag (for SHUTDOWN SAVE vs NOSAVE)
     save_on_shutdown: std::sync::atomic::AtomicBool,
+    /// Client pause end time (Unix timestamp in milliseconds, 0 = not paused)
+    client_pause_until: std::sync::atomic::AtomicU64,
+    /// Whether client pause only affects write commands (true = WRITE mode, false = ALL mode)
+    client_pause_write_only: std::sync::atomic::AtomicBool,
 }
 
 impl Database {
@@ -1140,6 +1426,8 @@ impl Database {
             server_stats,
             shutdown_requested: std::sync::atomic::AtomicBool::new(false),
             save_on_shutdown: std::sync::atomic::AtomicBool::new(true), // Default: save before shutdown
+            client_pause_until: std::sync::atomic::AtomicU64::new(0),
+            client_pause_write_only: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -1212,6 +1500,62 @@ impl Database {
         self.shutdown_requested.store(false, Ordering::SeqCst);
     }
 
+    /// Pause all clients for the specified duration.
+    ///
+    /// # Arguments
+    /// * `timeout_ms` - Duration to pause clients in milliseconds
+    /// * `write_only` - If true, only pause write commands (WRITE mode). If false, pause all commands (ALL mode).
+    pub fn pause_clients(&self, timeout_ms: u64, write_only: bool) {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let pause_until = now_ms.saturating_add(timeout_ms);
+        self.client_pause_until.store(pause_until, Ordering::SeqCst);
+        self.client_pause_write_only.store(write_only, Ordering::SeqCst);
+    }
+
+    /// Unpause all clients immediately.
+    pub fn unpause_clients(&self) {
+        self.client_pause_until.store(0, Ordering::SeqCst);
+    }
+
+    /// Check if clients are currently paused.
+    /// Returns (is_paused, write_only) tuple.
+    #[inline]
+    pub fn is_clients_paused(&self) -> (bool, bool) {
+        let pause_until = self.client_pause_until.load(Ordering::SeqCst);
+        if pause_until == 0 {
+            return (false, false);
+        }
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        if now_ms >= pause_until {
+            // Pause expired, clear it
+            self.client_pause_until.store(0, Ordering::SeqCst);
+            (false, false)
+        } else {
+            (true, self.client_pause_write_only.load(Ordering::SeqCst))
+        }
+    }
+
+    /// Get remaining pause time in milliseconds.
+    /// Returns 0 if not paused.
+    #[inline]
+    pub fn pause_remaining_ms(&self) -> u64 {
+        let pause_until = self.client_pause_until.load(Ordering::SeqCst);
+        if pause_until == 0 {
+            return 0;
+        }
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        pause_until.saturating_sub(now_ms)
+    }
+
     /// Check memory and perform eviction if needed.
     /// Call this before write operations when maxmemory is configured.
     /// Returns Ok(()) if write can proceed, Err(OOM) if over limit with NoEviction.
@@ -1245,9 +1589,8 @@ impl Database {
             MaxMemoryPolicy::VolatileTtl => db.evict_volatile_ttl(),
             MaxMemoryPolicy::AllKeysLru => db.evict_lru(),
             MaxMemoryPolicy::VolatileLru => db.evict_lru_volatile(),
-            // LFU requires frequency tracking - fall back to LRU for now
-            MaxMemoryPolicy::AllKeysLfu => db.evict_lru(),
-            MaxMemoryPolicy::VolatileLfu => db.evict_lru_volatile(),
+            MaxMemoryPolicy::AllKeysLfu => db.evict_lfu(),
+            MaxMemoryPolicy::VolatileLfu => db.evict_lfu_volatile(),
         }
     }
 
@@ -1617,6 +1960,7 @@ impl Database {
         let db = &self.dbs[db_idx as usize];
         db.set_with_expiry(Key::from(key), ViatorValue::from_stream(stream), expiry);
     }
+
 }
 
 #[cfg(test)]

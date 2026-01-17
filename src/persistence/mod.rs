@@ -13,7 +13,7 @@ mod aof;
 mod vdb;
 
 pub use aof::{AofFsync, AofReader, AofWriter};
-pub use vdb::{VdbLoader, VdbSaver};
+pub use vdb::{VdbLoadResult, VdbLoader, VdbSaveResult, VdbSaver};
 
 use crate::error::StorageError;
 use crate::storage::Database;

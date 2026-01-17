@@ -299,6 +299,7 @@ fn find_crlf(buf: &[u8]) -> Option<usize> {
 /// Interactive REPL mode
 fn run_interactive(config: &Config) -> Result<(), String> {
     let mut conn = Connection::connect(config)?;
+    let mut reconnect_count = 0u32;
 
     let prompt = format!("{}:{}> ", config.host, config.port);
     let _db_prompt = if config.database > 0 {
@@ -372,13 +373,16 @@ fn run_interactive(config: &Config) -> Result<(), String> {
                 Err(e) => {
                     eprintln!("(error) {e}");
                     // Try to reconnect
+                    reconnect_count += 1;
+                    eprint!("Reconnecting... {}\r", reconnect_count);
                     match Connection::connect(config) {
                         Ok(new_conn) => {
                             conn = new_conn;
-                            eprintln!("Reconnected.");
+                            reconnect_count = 0;
+                            eprintln!("\nReconnected.");
                         }
                         Err(e) => {
-                            eprintln!("Reconnection failed: {e}");
+                            eprintln!("\nReconnection failed: {e}");
                         }
                     }
                 }
@@ -503,6 +507,7 @@ fn run_pipe(config: &Config) -> Result<(), String> {
 fn run_monitor(config: &Config) -> Result<(), String> {
     let mut conn = Connection::connect(config)?;
 
+    println!("Entering monitor mode... (press Ctrl-C to quit)");
     conn.execute(&["MONITOR"])?;
     println!("OK");
 
@@ -546,10 +551,7 @@ fn run_subscribe(config: &Config, channels: &[String]) -> Result<(), String> {
         .write_all(&cmd)
         .map_err(|e| format!("Write error: {e}"))?;
 
-    println!(
-        "Subscribed to {} channel(s). Press Ctrl+C to exit.",
-        channels.len()
-    );
+    println!("Reading messages... (press Ctrl-C to quit or any key to type command)");
 
     // Read continuous output
     let mut temp = [0u8; 4096];

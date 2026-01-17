@@ -114,6 +114,9 @@ mlua = { version = "0.10", features = ["lua54", "vendored", "send"] }
 # JSON path queries
 jsonpath-rust = "0.7"
 
+# Base64 encoding for binary data export
+base64 = "0.22"
+
 # Vector similarity search (HNSW algorithm)
 instant-distance = "0.6"
 
@@ -160,6 +163,18 @@ path = "src/bin/viator-cli.rs"
 [[bin]]
 name = "viator-sentinel"
 path = "src/bin/viator-sentinel.rs"
+
+[[bin]]
+name = "viator-dump"
+path = "src/bin/viator-dump.rs"
+
+[[bin]]
+name = "viator-load"
+path = "src/bin/viator-load.rs"
+
+[[bin]]
+name = "viator-shake"
+path = "src/bin/viator-shake.rs"
 
 [[bench]]
 name = "protocol"

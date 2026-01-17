@@ -371,9 +371,21 @@ fn main() {
     // Test connection first
     let addr = format!("{}:{}", config.host, config.port);
     if TcpStream::connect(&addr).is_err() {
-        eprintln!("Error: Could not connect to Viator at {addr}");
-        eprintln!("Make sure the server is running.");
+        eprintln!("Could not connect to Viator at {addr}");
+        eprintln!("PING: Connection refused");
         std::process::exit(1);
+    }
+
+    // Print configuration summary (like redis-benchmark)
+    if !config.quiet {
+        println!(
+            "viator-benchmark: {} requests, {} clients, {} bytes payload",
+            config.requests, config.clients, config.data_size
+        );
+        if !config.keepalive {
+            println!("WARNING: keepalive disabled, you may see reduced performance");
+        }
+        println!();
     }
 
     let data = "x".repeat(config.data_size);

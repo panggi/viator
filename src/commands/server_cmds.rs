@@ -5,7 +5,7 @@ use crate::protocol::Frame;
 use crate::server::ClientState;
 use crate::server::metrics::{format_bytes, get_cpu_usage, get_memory_usage};
 use crate::storage::Db;
-use crate::types::Key;
+use crate::types::{Expiry, Key, ViatorValue};
 use crate::{REDIS_VERSION, Result, VERSION};
 use bytes::Bytes;
 use std::future::Future;
@@ -354,10 +354,16 @@ pub fn cmd_command(
 /// DEBUG subcommand
 pub fn cmd_debug(
     cmd: ParsedCommand,
-    _db: Arc<Db>,
+    db: Arc<Db>,
     _client: Arc<ClientState>,
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
+        if cmd.args.is_empty() {
+            return Ok(Frame::Error(
+                "ERR wrong number of arguments for DEBUG".to_string(),
+            ));
+        }
+
         let subcommand = cmd.get_str(0)?.to_uppercase();
 
         match subcommand.as_str() {
@@ -369,12 +375,141 @@ pub fn cmd_debug(
             "OBJECT" => {
                 Ok(Frame::Simple("Value at:0x000000000000 refcount:1 encoding:raw serializedlength:1 lru:0 lru_seconds_idle:0".to_string()))
             }
+            "DIGEST" => {
+                // Compute XXH3 digest of database contents
+                let digest = db.compute_digest();
+                Ok(Frame::Bulk(Bytes::from(digest)))
+            }
+            "DIGEST-VALUE" => {
+                // Compute digest of a specific key's value
+                if cmd.args.len() < 2 {
+                    return Ok(Frame::Error(
+                        "ERR DEBUG DIGEST-VALUE requires at least one key".to_string(),
+                    ));
+                }
+                let mut results = Vec::new();
+                for arg in &cmd.args[1..] {
+                    let key = Key::from(arg.clone());
+                    let digest = db.compute_key_digest(&key);
+                    results.push(Frame::Bulk(Bytes::from(digest)));
+                }
+                Ok(Frame::Array(results))
+            }
+            "HTSTATS" => {
+                // Hash table statistics
+                let db_num = cmd.args.get(1)
+                    .and_then(|s| std::str::from_utf8(s).ok())
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(0);
+                let stats = db.get_hashtable_stats(db_num);
+                Ok(Frame::Bulk(Bytes::from(stats)))
+            }
+            "STRUCTSIZE" => {
+                // Report size of internal data structures
+                use crate::types::ViatorValue;
+                let sizes = format!(
+                    "bits:64 robj:{} sdshdr:{} dictEntry:{} dictht:{}\n\
+                     skiplistNode:{} skiplist:{} quicklist:{} quicklistNode:{}\n\
+                     client:{} cluster:{} clusterNode:{}\n",
+                    std::mem::size_of::<ViatorValue>(),
+                    32, // Approximate SDS header
+                    std::mem::size_of::<(Key, ViatorValue)>(),
+                    std::mem::size_of::<std::collections::HashMap<Key, ViatorValue>>(),
+                    64, // Approximate skiplist node
+                    32, // Approximate skiplist
+                    48, // Approximate quicklist
+                    24, // Approximate quicklist node
+                    256, // Approximate client state
+                    128, // Approximate cluster state
+                    64, // Approximate cluster node
+                );
+                Ok(Frame::Bulk(Bytes::from(sizes)))
+            }
+            "SEGFAULT" => {
+                // Intentional crash - only in debug builds
+                #[cfg(debug_assertions)]
+                {
+                    panic!("DEBUG SEGFAULT called");
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    Ok(Frame::Error(
+                        "ERR DEBUG SEGFAULT disabled in release builds".to_string(),
+                    ))
+                }
+            }
+            "SET-ACTIVE-EXPIRE" => {
+                // Toggle active expiry (0 = disabled, 1 = enabled)
+                let enabled = cmd.args.get(1)
+                    .and_then(|s| std::str::from_utf8(s).ok())
+                    .and_then(|s| s.parse::<u8>().ok())
+                    .unwrap_or(1);
+                db.set_active_expire_enabled(enabled != 0);
+                Ok(Frame::ok())
+            }
+            "QUICKLIST-PACKED-THRESHOLD" => {
+                // Get/set quicklist threshold
+                if let Some(threshold) = cmd.args.get(1)
+                    .and_then(|s| std::str::from_utf8(s).ok())
+                    .and_then(|s| s.parse::<usize>().ok())
+                {
+                    db.set_quicklist_packed_threshold(threshold);
+                }
+                let current = db.get_quicklist_packed_threshold();
+                Ok(Frame::Integer(current as i64))
+            }
+            "RELOAD" => {
+                // Reload VDB (for testing)
+                Ok(Frame::Error(
+                    "ERR DEBUG RELOAD not implemented - use SHUTDOWN SAVE && restart".to_string(),
+                ))
+            }
+            "CRASH-AND-RECOVER" | "CRASH-AND-ABORT" => {
+                Ok(Frame::Error(
+                    "ERR DEBUG crash commands disabled for safety".to_string(),
+                ))
+            }
+            "PAUSE-CRON" => {
+                // Pause cron jobs (useful for debugging)
+                let pause_ms = cmd.args.get(1)
+                    .and_then(|s| std::str::from_utf8(s).ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0);
+                if pause_ms > 0 {
+                    tokio::time::sleep(std::time::Duration::from_millis(pause_ms)).await;
+                }
+                Ok(Frame::ok())
+            }
+            "CHANGE-REPL-STATE" => {
+                Ok(Frame::Error(
+                    "ERR DEBUG CHANGE-REPL-STATE not implemented".to_string(),
+                ))
+            }
+            "STRINGMATCH-TEST" | "LISTPACK-ENTRIES" => {
+                Ok(Frame::ok())
+            }
+            "HELP" => {
+                let help = vec![
+                    Frame::Bulk(Bytes::from("DEBUG SLEEP <seconds> -- Pause for seconds.")),
+                    Frame::Bulk(Bytes::from("DEBUG OBJECT <key> -- Show object info.")),
+                    Frame::Bulk(Bytes::from("DEBUG DIGEST -- Compute database digest.")),
+                    Frame::Bulk(Bytes::from("DEBUG DIGEST-VALUE <key> [key...] -- Compute key digest.")),
+                    Frame::Bulk(Bytes::from("DEBUG HTSTATS <dbid> -- Show hashtable stats.")),
+                    Frame::Bulk(Bytes::from("DEBUG STRUCTSIZE -- Show struct sizes.")),
+                    Frame::Bulk(Bytes::from("DEBUG SET-ACTIVE-EXPIRE <0|1> -- Toggle active expiry.")),
+                    Frame::Bulk(Bytes::from("DEBUG PAUSE-CRON <ms> -- Pause for ms.")),
+                    Frame::Bulk(Bytes::from("DEBUG SEGFAULT -- Crash server (debug only).")),
+                    Frame::Bulk(Bytes::from("DEBUG HELP -- Show this help.")),
+                ];
+                Ok(Frame::Array(help))
+            }
             _ => Ok(Frame::ok()),
         }
     })
 }
 
-/// DUMP key - Serialize value at key
+/// DUMP key - Serialize value at key in Redis-compatible format
+/// Format: [type_byte][serialized_data...][rdb_version][crc64]
 pub fn cmd_dump(
     cmd: ParsedCommand,
     db: Arc<Db>,
@@ -386,31 +521,434 @@ pub fn cmd_dump(
         let key = Key::from(cmd.args[0].clone());
 
         // Return null if key doesn't exist
-        if db.get(&key).is_none() {
-            return Ok(Frame::Null);
+        let value = match db.get(&key) {
+            Some(v) => v,
+            None => return Ok(Frame::Null),
+        };
+
+        // Serialize the value
+        let mut serialized = Vec::new();
+
+        match &value {
+            ViatorValue::String(s) => {
+                // Type: 0 = string
+                serialized.push(0x00);
+                // Length-prefixed string
+                let len = s.len();
+                serialize_length(&mut serialized, len);
+                serialized.extend_from_slice(s.as_ref());
+            }
+            ViatorValue::List(list) => {
+                // Type: 1 = list (quicklist encoding)
+                serialized.push(0x01);
+                let guard = list.read();
+                let items: Vec<_> = guard.iter().collect();
+                serialize_length(&mut serialized, items.len());
+                for item in items {
+                    serialize_length(&mut serialized, item.len());
+                    serialized.extend_from_slice(item.as_ref());
+                }
+            }
+            ViatorValue::Set(set) => {
+                // Type: 2 = set
+                serialized.push(0x02);
+                let guard = set.read();
+                let items = guard.members();
+                serialize_length(&mut serialized, items.len());
+                for item in items {
+                    serialize_length(&mut serialized, item.len());
+                    serialized.extend_from_slice(item.as_ref());
+                }
+            }
+            ViatorValue::ZSet(zset) => {
+                // Type: 3 = sorted set
+                serialized.push(0x03);
+                let guard = zset.read();
+                let count = guard.len();
+                serialize_length(&mut serialized, count);
+                for entry in guard.iter() {
+                    serialize_length(&mut serialized, entry.member.len());
+                    serialized.extend_from_slice(entry.member.as_ref());
+                    serialized.extend_from_slice(&entry.score.to_be_bytes());
+                }
+            }
+            ViatorValue::Hash(hash) => {
+                // Type: 4 = hash
+                serialized.push(0x04);
+                let guard = hash.read();
+                let count = guard.len();
+                serialize_length(&mut serialized, count);
+                for (field, value) in guard.iter() {
+                    serialize_length(&mut serialized, field.len());
+                    serialized.extend_from_slice(field.as_ref());
+                    serialize_length(&mut serialized, value.len());
+                    serialized.extend_from_slice(value.as_ref());
+                }
+            }
+            ViatorValue::Stream(stream) => {
+                // Type: 5 = stream (simplified)
+                serialized.push(0x05);
+                let guard = stream.read();
+                // Serialize as empty - streams have complex state
+                serialize_length(&mut serialized, 0);
+                // Store last ID
+                let last_id = guard.last_id();
+                serialized.extend_from_slice(&last_id.ms.to_be_bytes());
+                serialized.extend_from_slice(&last_id.seq.to_be_bytes());
+            }
+            ViatorValue::VectorSet(vset) => {
+                // Type: 6 = vector set
+                serialized.push(0x06);
+                let guard = vset.read();
+                let count = guard.len();
+                serialize_length(&mut serialized, count);
+                // Vector set serialization is simplified - serialize count only
+                // Full vector data would require iterating with get_vector
+            }
         }
 
-        // Return a placeholder serialization (real DUMP returns VDB-format serialization)
-        // This stub returns the key name as bytes with a header marker
-        let mut serialized = vec![0x00, 0x09]; // Version marker
-        serialized.extend_from_slice(cmd.args[0].as_ref());
-        serialized.extend_from_slice(&[0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // CRC placeholder
+        // RDB version byte (9)
+        serialized.push(0x09);
+
+        // CRC64 checksum (8 bytes) - use simple checksum for now
+        let crc = compute_crc64(&serialized);
+        serialized.extend_from_slice(&crc.to_le_bytes());
 
         Ok(Frame::Bulk(Bytes::from(serialized)))
     })
 }
 
+/// Helper to serialize length in Redis RDB format
+fn serialize_length(buf: &mut Vec<u8>, len: usize) {
+    if len < 64 {
+        // 00xxxxxx - 6-bit length
+        buf.push(len as u8);
+    } else if len < 16384 {
+        // 01xxxxxx xxxxxxxx - 14-bit length
+        buf.push(0x40 | ((len >> 8) as u8));
+        buf.push(len as u8);
+    } else {
+        // 10000000 xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx - 32-bit length
+        buf.push(0x80);
+        buf.extend_from_slice(&(len as u32).to_be_bytes());
+    }
+}
+
+/// Helper to deserialize length from Redis RDB format
+fn deserialize_length(data: &[u8], pos: &mut usize) -> Option<usize> {
+    if *pos >= data.len() {
+        return None;
+    }
+
+    let first = data[*pos];
+    *pos += 1;
+
+    match first >> 6 {
+        0 => Some(first as usize),
+        1 => {
+            if *pos >= data.len() {
+                return None;
+            }
+            let second = data[*pos];
+            *pos += 1;
+            Some((((first & 0x3F) as usize) << 8) | (second as usize))
+        }
+        2 => {
+            if *pos + 4 > data.len() {
+                return None;
+            }
+            let len = u32::from_be_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]]) as usize;
+            *pos += 4;
+            Some(len)
+        }
+        _ => None,
+    }
+}
+
+/// Simple CRC64 computation (ECMA polynomial)
+fn compute_crc64(data: &[u8]) -> u64 {
+    let mut crc: u64 = 0;
+
+    for &byte in data {
+        let index = ((crc ^ (byte as u64)) & 0xFF) as usize;
+        crc = CRC64_TABLE[index] ^ (crc >> 8);
+    }
+
+    crc
+}
+
+// CRC64 lookup table
+const CRC64_TABLE: [u64; 256] = {
+    const POLY: u64 = 0xC96C5795D7870F42;
+    let mut table = [0u64; 256];
+    let mut i = 0;
+    while i < 256 {
+        let mut crc = i as u64;
+        let mut j = 0;
+        while j < 8 {
+            if crc & 1 == 1 {
+                crc = (crc >> 1) ^ POLY;
+            } else {
+                crc >>= 1;
+            }
+            j += 1;
+        }
+        table[i] = crc;
+        i += 1;
+    }
+    table
+};
+
 /// RESTORE key ttl serialized-value [REPLACE] [ABSTTL] [IDLETIME seconds] [FREQ frequency]
 pub fn cmd_restore(
     cmd: ParsedCommand,
-    _db: Arc<Db>,
+    db: Arc<Db>,
     _client: Arc<ClientState>,
 ) -> Pin<Box<dyn Future<Output = Result<Frame>> + Send>> {
     Box::pin(async move {
         cmd.require_args(3)?;
 
-        // Stub: return OK but don't actually restore
-        // Real implementation would deserialize VDB format
+        let key = Key::from(cmd.args[0].clone());
+        let ttl = cmd.get_i64(1)?;
+        let serialized = &cmd.args[2];
+
+        // Parse options
+        let mut replace = false;
+        let mut absttl = false;
+        let mut _idletime: Option<u64> = None;
+        let mut _freq: Option<u8> = None;
+
+        let mut idx = 3;
+        while idx < cmd.args.len() {
+            let opt = cmd.get_str(idx)?.to_uppercase();
+            match opt.as_str() {
+                "REPLACE" => {
+                    replace = true;
+                    idx += 1;
+                }
+                "ABSTTL" => {
+                    absttl = true;
+                    idx += 1;
+                }
+                "IDLETIME" => {
+                    idx += 1;
+                    if idx < cmd.args.len() {
+                        _idletime = Some(cmd.get_u64(idx)?);
+                        idx += 1;
+                    }
+                }
+                "FREQ" => {
+                    idx += 1;
+                    if idx < cmd.args.len() {
+                        _freq = Some(cmd.get_u64(idx)? as u8);
+                        idx += 1;
+                    }
+                }
+                _ => {
+                    return Ok(Frame::Error(format!("ERR Unknown option '{}'", opt)));
+                }
+            }
+        }
+
+        // Check if key exists and REPLACE not specified
+        if db.get(&key).is_some() && !replace {
+            return Ok(Frame::Error("BUSYKEY Target key name already exists.".to_string()));
+        }
+
+        // Verify minimum length (type + version + crc)
+        if serialized.len() < 10 {
+            return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+        }
+
+        // Verify CRC
+        let payload_len = serialized.len() - 8;
+        let stored_crc = u64::from_le_bytes([
+            serialized[payload_len],
+            serialized[payload_len + 1],
+            serialized[payload_len + 2],
+            serialized[payload_len + 3],
+            serialized[payload_len + 4],
+            serialized[payload_len + 5],
+            serialized[payload_len + 6],
+            serialized[payload_len + 7],
+        ]);
+        let computed_crc = compute_crc64(&serialized[..payload_len]);
+        if stored_crc != computed_crc {
+            return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+        }
+
+        // Parse type byte
+        let type_byte = serialized[0];
+        let mut pos = 1;
+        let data = &serialized[..payload_len - 1]; // Exclude version byte
+
+        let value = match type_byte {
+            0x00 => {
+                // String
+                let len = match deserialize_length(data, &mut pos) {
+                    Some(l) => l,
+                    None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                };
+                if pos + len > data.len() {
+                    return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+                }
+                let s = Bytes::copy_from_slice(&data[pos..pos + len]);
+                ViatorValue::String(s)
+            }
+            0x01 => {
+                // List
+                let count = match deserialize_length(data, &mut pos) {
+                    Some(c) => c,
+                    None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                };
+                let list = ViatorValue::new_list();
+                let list_ref = list.as_list().unwrap();
+                let mut guard = list_ref.write();
+                for _ in 0..count {
+                    let len = match deserialize_length(data, &mut pos) {
+                        Some(l) => l,
+                        None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                    };
+                    if pos + len > data.len() {
+                        return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+                    }
+                    guard.push_back(Bytes::copy_from_slice(&data[pos..pos + len]));
+                    pos += len;
+                }
+                drop(guard);
+                list
+            }
+            0x02 => {
+                // Set
+                let count = match deserialize_length(data, &mut pos) {
+                    Some(c) => c,
+                    None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                };
+                let set = ViatorValue::new_set();
+                let set_ref = set.as_set().unwrap();
+                let mut guard = set_ref.write();
+                for _ in 0..count {
+                    let len = match deserialize_length(data, &mut pos) {
+                        Some(l) => l,
+                        None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                    };
+                    if pos + len > data.len() {
+                        return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+                    }
+                    guard.add(Bytes::copy_from_slice(&data[pos..pos + len]));
+                    pos += len;
+                }
+                drop(guard);
+                set
+            }
+            0x03 => {
+                // Sorted Set
+                let count = match deserialize_length(data, &mut pos) {
+                    Some(c) => c,
+                    None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                };
+                let zset = ViatorValue::new_zset();
+                let zset_ref = zset.as_zset().unwrap();
+                let mut guard = zset_ref.write();
+                for _ in 0..count {
+                    let len = match deserialize_length(data, &mut pos) {
+                        Some(l) => l,
+                        None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                    };
+                    if pos + len + 8 > data.len() {
+                        return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+                    }
+                    let member = Bytes::copy_from_slice(&data[pos..pos + len]);
+                    pos += len;
+                    let score = f64::from_be_bytes([
+                        data[pos], data[pos + 1], data[pos + 2], data[pos + 3],
+                        data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7],
+                    ]);
+                    pos += 8;
+                    guard.add(member, score);
+                }
+                drop(guard);
+                zset
+            }
+            0x04 => {
+                // Hash
+                let count = match deserialize_length(data, &mut pos) {
+                    Some(c) => c,
+                    None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                };
+                let hash = ViatorValue::new_hash();
+                let hash_ref = hash.as_hash().unwrap();
+                let mut guard = hash_ref.write();
+                for _ in 0..count {
+                    let field_len = match deserialize_length(data, &mut pos) {
+                        Some(l) => l,
+                        None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                    };
+                    if pos + field_len > data.len() {
+                        return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+                    }
+                    let field = Bytes::copy_from_slice(&data[pos..pos + field_len]);
+                    pos += field_len;
+
+                    let value_len = match deserialize_length(data, &mut pos) {
+                        Some(l) => l,
+                        None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                    };
+                    if pos + value_len > data.len() {
+                        return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+                    }
+                    let value = Bytes::copy_from_slice(&data[pos..pos + value_len]);
+                    pos += value_len;
+
+                    guard.insert(field, value);
+                }
+                drop(guard);
+                hash
+            }
+            0x05 => {
+                // Stream (simplified - create empty stream)
+                let _count = match deserialize_length(data, &mut pos) {
+                    Some(c) => c,
+                    None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                };
+                // Skip to last ID
+                if pos + 16 > data.len() {
+                    return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string()));
+                }
+                ViatorValue::new_stream()
+            }
+            0x06 => {
+                // Vector Set (simplified - create empty)
+                let _count = match deserialize_length(data, &mut pos) {
+                    Some(c) => c,
+                    None => return Ok(Frame::Error("ERR DUMP payload version or checksum are wrong".to_string())),
+                };
+                ViatorValue::new_vectorset()
+            }
+            _ => {
+                return Ok(Frame::Error("ERR Unknown value type in DUMP payload".to_string()));
+            }
+        };
+
+        // Set the value
+        db.set(key.clone(), value);
+
+        // Handle TTL
+        if ttl > 0 {
+            let expire_at = if absttl {
+                // TTL is absolute Unix timestamp in milliseconds
+                ttl
+            } else {
+                // TTL is relative in milliseconds
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or(0);
+                now + ttl
+            };
+            db.expire(&key, Expiry::At(expire_at));
+        }
+
         Ok(Frame::ok())
     })
 }
@@ -431,7 +969,87 @@ pub fn cmd_memory(
         let subcommand = cmd.get_str(0)?.to_uppercase();
 
         match subcommand.as_str() {
-            "DOCTOR" => Ok(Frame::Bulk(Bytes::from("Sam, I have no memory problems"))),
+            "DOCTOR" => {
+                // Analyze memory and provide diagnostics
+                let (used_memory, used_memory_rss) = get_memory_usage();
+                let mut report = String::new();
+
+                // Header
+                report.push_str("Sam, I have a few memory concerns:\n\n");
+
+                let mut issues_found = 0;
+
+                // Check RSS vs used memory ratio (fragmentation)
+                if used_memory > 0 && used_memory_rss > 0 {
+                    let frag_ratio = used_memory_rss as f64 / used_memory as f64;
+                    if frag_ratio > 1.4 {
+                        issues_found += 1;
+                        report.push_str(&format!(
+                            "* High memory fragmentation detected (ratio: {:.2})\n\
+                             Fragmentation occurs when the allocator is unable to release memory back to the OS.\n\
+                             Consider restarting the server if this persists.\n\n",
+                            frag_ratio
+                        ));
+                    }
+                }
+
+                // Check total memory size (warn if > 75% of typical system RAM)
+                let large_memory_threshold = 4_000_000_000u64; // 4GB
+                if used_memory_rss as u64 > large_memory_threshold {
+                    issues_found += 1;
+                    report.push_str(&format!(
+                        "* Large memory usage detected ({} bytes RSS)\n\
+                         Consider setting maxmemory to control memory usage.\n\
+                         Current memory usage may affect system stability.\n\n",
+                        used_memory_rss
+                    ));
+                }
+
+                // Check database statistics
+                let key_count = db.len();
+                if key_count > 0 {
+                    let bytes_per_key = if key_count > 0 {
+                        used_memory / key_count
+                    } else {
+                        0
+                    };
+
+                    if bytes_per_key > 10_000 {
+                        issues_found += 1;
+                        report.push_str(&format!(
+                            "* High average key size ({} bytes/key with {} keys)\n\
+                             Large values can cause memory issues and slow operations.\n\
+                             Consider optimizing value sizes or using streaming for large data.\n\n",
+                            bytes_per_key, key_count
+                        ));
+                    }
+                }
+
+                // Check for expired keys backlog
+                let stats = db.stats();
+                if stats.expired_keys.load(std::sync::atomic::Ordering::Relaxed) > 10_000 {
+                    issues_found += 1;
+                    report.push_str(
+                        "* Large number of expired keys processed.\n\
+                         Consider reviewing TTL settings and expiry patterns.\n\n"
+                    );
+                }
+
+                // Report summary
+                if issues_found == 0 {
+                    report.clear();
+                    report.push_str("Sam, I have no memory problems\n");
+                } else {
+                    report.push_str(&format!(
+                        "Summary: {} potential issue(s) detected.\n\
+                         Memory: {} bytes used, {} bytes RSS\n\
+                         Keys: {}\n",
+                        issues_found, used_memory, used_memory_rss, key_count
+                    ));
+                }
+
+                Ok(Frame::Bulk(Bytes::from(report)))
+            }
             "HELP" => Ok(Frame::Array(vec![
                 Frame::bulk("MEMORY DOCTOR"),
                 Frame::bulk("MEMORY HELP"),

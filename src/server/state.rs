@@ -48,6 +48,34 @@ impl PubSubState {
     }
 }
 
+/// Default output buffer soft limit (32 MB).
+pub const DEFAULT_OUTPUT_BUFFER_SOFT_LIMIT: usize = 32 * 1024 * 1024;
+/// Default output buffer hard limit (64 MB).
+pub const DEFAULT_OUTPUT_BUFFER_HARD_LIMIT: usize = 64 * 1024 * 1024;
+/// Default soft limit timeout in seconds.
+pub const DEFAULT_OUTPUT_BUFFER_SOFT_SECONDS: u64 = 60;
+
+/// Client tracking mode flags.
+#[derive(Debug, Clone, Default)]
+pub struct TrackingState {
+    /// Is tracking enabled
+    pub enabled: bool,
+    /// Redirect invalidations to this client ID (-1 for no redirect, uses RESP3 push)
+    pub redirect: i64,
+    /// Broadcast mode - track all key modifications, not just keys this client reads
+    pub bcast: bool,
+    /// Prefixes to track in BCAST mode (empty means all keys)
+    pub prefixes: Vec<Bytes>,
+    /// Opt-in mode - only track keys after CLIENT CACHING YES
+    pub optin: bool,
+    /// Opt-out mode - track all keys unless CLIENT CACHING NO
+    pub optout: bool,
+    /// Don't send invalidations for keys modified by this client
+    pub noloop: bool,
+    /// For OPTIN mode: next read should be tracked
+    pub caching_yes: bool,
+}
+
 /// Client connection state.
 ///
 /// This struct holds per-connection state such as the selected database,
@@ -88,6 +116,28 @@ pub struct ClientState {
     auth_failures: AtomicU32,
     /// Timestamp of last failed AUTH (seconds since UNIX epoch)
     auth_lockout_until: AtomicU64,
+
+    // Memory tracking fields
+    /// Current query (input) buffer size in bytes
+    query_buffer_size: AtomicU64,
+    /// Current output buffer size in bytes
+    output_buffer_size: AtomicU64,
+    /// Peak output buffer size (for monitoring)
+    output_buffer_peak: AtomicU64,
+    /// Timestamp when output buffer exceeded soft limit (0 if under limit)
+    output_buffer_soft_exceeded_at: AtomicU64,
+    /// Output buffer soft limit (bytes)
+    output_buffer_soft_limit: AtomicU64,
+    /// Output buffer hard limit (bytes)
+    output_buffer_hard_limit: AtomicU64,
+    /// Soft limit timeout in seconds
+    output_buffer_soft_seconds: AtomicU64,
+
+    // Client-side caching tracking
+    /// Tracking state for client-side caching
+    tracking: RwLock<TrackingState>,
+    /// Pending invalidation keys to send to this client
+    pending_invalidations: RwLock<Vec<Key>>,
 }
 
 impl ClientState {
@@ -115,6 +165,17 @@ impl ClientState {
             asking: AtomicBool::new(false),
             auth_failures: AtomicU32::new(0),
             auth_lockout_until: AtomicU64::new(0),
+            // Memory tracking
+            query_buffer_size: AtomicU64::new(0),
+            output_buffer_size: AtomicU64::new(0),
+            output_buffer_peak: AtomicU64::new(0),
+            output_buffer_soft_exceeded_at: AtomicU64::new(0),
+            output_buffer_soft_limit: AtomicU64::new(DEFAULT_OUTPUT_BUFFER_SOFT_LIMIT as u64),
+            output_buffer_hard_limit: AtomicU64::new(DEFAULT_OUTPUT_BUFFER_HARD_LIMIT as u64),
+            output_buffer_soft_seconds: AtomicU64::new(DEFAULT_OUTPUT_BUFFER_SOFT_SECONDS),
+            // Client-side caching tracking
+            tracking: RwLock::new(TrackingState::default()),
+            pending_invalidations: RwLock::new(Vec::new()),
         }
     }
 
@@ -469,4 +530,250 @@ impl ClientState {
     pub fn auth_failure_count(&self) -> u32 {
         self.auth_failures.load(Ordering::Relaxed)
     }
+
+    // Memory tracking methods
+
+    /// Update query buffer size.
+    #[inline]
+    pub fn set_query_buffer_size(&self, size: u64) {
+        self.query_buffer_size.store(size, Ordering::Relaxed);
+    }
+
+    /// Get current query buffer size.
+    #[inline]
+    pub fn query_buffer_size(&self) -> u64 {
+        self.query_buffer_size.load(Ordering::Relaxed)
+    }
+
+    /// Update output buffer size and check limits.
+    /// Returns `Err(reason)` if the client should be disconnected due to buffer limits.
+    pub fn update_output_buffer(&self, size: u64) -> Result<(), &'static str> {
+        self.output_buffer_size.store(size, Ordering::Relaxed);
+
+        // Update peak
+        let peak = self.output_buffer_peak.load(Ordering::Relaxed);
+        if size > peak {
+            self.output_buffer_peak.store(size, Ordering::Relaxed);
+        }
+
+        let hard_limit = self.output_buffer_hard_limit.load(Ordering::Relaxed);
+        let soft_limit = self.output_buffer_soft_limit.load(Ordering::Relaxed);
+        let soft_seconds = self.output_buffer_soft_seconds.load(Ordering::Relaxed);
+
+        // Check hard limit
+        if hard_limit > 0 && size >= hard_limit {
+            return Err("output buffer hard limit exceeded");
+        }
+
+        // Check soft limit
+        if soft_limit > 0 && size >= soft_limit {
+            let now = Self::current_timestamp_secs();
+            let exceeded_at = self.output_buffer_soft_exceeded_at.load(Ordering::Relaxed);
+
+            if exceeded_at == 0 {
+                // First time exceeding soft limit
+                self.output_buffer_soft_exceeded_at.store(now, Ordering::Relaxed);
+            } else if now - exceeded_at >= soft_seconds {
+                // Soft limit exceeded for too long
+                return Err("output buffer soft limit exceeded for too long");
+            }
+        } else {
+            // Under soft limit, reset timer
+            self.output_buffer_soft_exceeded_at.store(0, Ordering::Relaxed);
+        }
+
+        Ok(())
+    }
+
+    /// Get current output buffer size.
+    #[inline]
+    pub fn output_buffer_size(&self) -> u64 {
+        self.output_buffer_size.load(Ordering::Relaxed)
+    }
+
+    /// Get peak output buffer size.
+    #[inline]
+    pub fn output_buffer_peak(&self) -> u64 {
+        self.output_buffer_peak.load(Ordering::Relaxed)
+    }
+
+    /// Set output buffer limits.
+    pub fn set_output_buffer_limits(&self, soft_limit: u64, hard_limit: u64, soft_seconds: u64) {
+        self.output_buffer_soft_limit.store(soft_limit, Ordering::Relaxed);
+        self.output_buffer_hard_limit.store(hard_limit, Ordering::Relaxed);
+        self.output_buffer_soft_seconds.store(soft_seconds, Ordering::Relaxed);
+    }
+
+    /// Get total memory usage for this client.
+    pub fn total_memory_usage(&self) -> u64 {
+        let query = self.query_buffer_size.load(Ordering::Relaxed);
+        let output = self.output_buffer_size.load(Ordering::Relaxed);
+
+        // Base client state overhead (estimated)
+        let base_overhead = 512u64;
+
+        // Transaction queue memory
+        let transaction_mem = {
+            let queue = self.transaction_queue.read();
+            queue.iter().map(|cmd| {
+                cmd.name.len() as u64 + cmd.args.iter().map(|a| a.len() as u64).sum::<u64>()
+            }).sum::<u64>()
+        };
+
+        // Watched keys memory
+        let watched_mem = {
+            let watched = self.watched_keys.read();
+            watched.iter().map(|k| k.len() as u64).sum::<u64>()
+        };
+
+        base_overhead + query + output + transaction_mem + watched_mem
+    }
+
+    /// Get memory info for CLIENT LIST command.
+    pub fn memory_info(&self) -> ClientMemoryInfo {
+        ClientMemoryInfo {
+            query_buffer_size: self.query_buffer_size.load(Ordering::Relaxed),
+            output_buffer_size: self.output_buffer_size.load(Ordering::Relaxed),
+            output_buffer_peak: self.output_buffer_peak.load(Ordering::Relaxed),
+            total: self.total_memory_usage(),
+        }
+    }
+
+    // Client-side caching tracking methods
+
+    /// Enable tracking with the given options.
+    pub fn enable_tracking(
+        &self,
+        redirect: i64,
+        bcast: bool,
+        prefixes: Vec<Bytes>,
+        optin: bool,
+        optout: bool,
+        noloop: bool,
+    ) {
+        let mut tracking = self.tracking.write();
+        tracking.enabled = true;
+        tracking.redirect = redirect;
+        tracking.bcast = bcast;
+        tracking.prefixes = prefixes;
+        tracking.optin = optin;
+        tracking.optout = optout;
+        tracking.noloop = noloop;
+        tracking.caching_yes = false;
+    }
+
+    /// Disable tracking.
+    pub fn disable_tracking(&self) {
+        let mut tracking = self.tracking.write();
+        tracking.enabled = false;
+        tracking.redirect = -1;
+        tracking.bcast = false;
+        tracking.prefixes.clear();
+        tracking.optin = false;
+        tracking.optout = false;
+        tracking.noloop = false;
+        tracking.caching_yes = false;
+    }
+
+    /// Check if tracking is enabled.
+    pub fn is_tracking_enabled(&self) -> bool {
+        self.tracking.read().enabled
+    }
+
+    /// Get tracking info for CLIENT TRACKINGINFO command.
+    pub fn tracking_info(&self) -> TrackingState {
+        self.tracking.read().clone()
+    }
+
+    /// Set CLIENT CACHING YES (for OPTIN mode).
+    pub fn set_caching_yes(&self) {
+        let mut tracking = self.tracking.write();
+        if tracking.optin {
+            tracking.caching_yes = true;
+        }
+    }
+
+    /// Set CLIENT CACHING NO (for OPTOUT mode).
+    pub fn set_caching_no(&self) {
+        let mut tracking = self.tracking.write();
+        if tracking.optout {
+            tracking.caching_yes = false;
+        }
+    }
+
+    /// Check if this key should be tracked based on current tracking state.
+    /// Returns true if the key should be added to the tracking table.
+    pub fn should_track_key(&self, key: &Key) -> bool {
+        let tracking = self.tracking.read();
+        if !tracking.enabled {
+            return false;
+        }
+
+        // In OPTIN mode, only track if caching_yes was set
+        if tracking.optin && !tracking.caching_yes {
+            return false;
+        }
+
+        // In OPTOUT mode with caching_no, don't track
+        // (caching_yes=false in optout mode means don't track)
+        if tracking.optout && !tracking.caching_yes {
+            // Actually in optout, caching_no means we should NOT track next key
+            // The default is to track, caching_no opts out of next
+            // This is inverted: we track unless explicitly opted out
+        }
+
+        // Check BCAST mode prefixes
+        if tracking.bcast && !tracking.prefixes.is_empty() {
+            let key_bytes = key.as_bytes();
+            return tracking.prefixes.iter().any(|prefix| {
+                key_bytes.starts_with(prefix.as_ref())
+            });
+        }
+
+        true
+    }
+
+    /// Clear caching_yes flag after a read (for OPTIN mode).
+    pub fn clear_caching_yes(&self) {
+        let mut tracking = self.tracking.write();
+        tracking.caching_yes = false;
+    }
+
+    /// Check if invalidations should not be sent back to this client (NOLOOP).
+    pub fn is_noloop(&self) -> bool {
+        self.tracking.read().noloop
+    }
+
+    /// Get the redirect client ID (-1 if no redirect).
+    pub fn tracking_redirect(&self) -> i64 {
+        self.tracking.read().redirect
+    }
+
+    /// Add a key to the pending invalidations list.
+    pub fn add_pending_invalidation(&self, key: Key) {
+        self.pending_invalidations.write().push(key);
+    }
+
+    /// Take all pending invalidations (clears the list).
+    pub fn take_pending_invalidations(&self) -> Vec<Key> {
+        std::mem::take(&mut *self.pending_invalidations.write())
+    }
+
+    /// Check if there are pending invalidations.
+    pub fn has_pending_invalidations(&self) -> bool {
+        !self.pending_invalidations.read().is_empty()
+    }
+}
+
+/// Memory information for a client.
+#[derive(Debug, Clone)]
+pub struct ClientMemoryInfo {
+    /// Query (input) buffer size
+    pub query_buffer_size: u64,
+    /// Output buffer size
+    pub output_buffer_size: u64,
+    /// Peak output buffer size
+    pub output_buffer_peak: u64,
+    /// Total memory usage
+    pub total: u64,
 }

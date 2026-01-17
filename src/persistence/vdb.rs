@@ -19,6 +19,30 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
+/// Result of loading a VDB file, containing metadata about the load operation.
+#[derive(Debug, Clone)]
+pub struct VdbLoadResult {
+    /// Version of Viator that created the VDB file
+    pub viator_version: String,
+    /// Creation timestamp (Unix seconds)
+    pub ctime: i64,
+    /// Number of keys successfully loaded
+    pub keys_loaded: u64,
+    /// Number of keys skipped due to expiration
+    pub keys_expired: u64,
+}
+
+/// Result of saving a VDB file, containing metadata about the save operation.
+#[derive(Debug, Clone)]
+pub struct VdbSaveResult {
+    /// Number of keys saved
+    pub keys_saved: u64,
+    /// Number of keys skipped (e.g., expired during save)
+    pub keys_skipped: u64,
+    /// Total bytes written to disk
+    pub bytes_written: u64,
+}
+
 /// CRC64 polynomial (ECMA-182)
 const CRC64_POLY: u64 = 0xC96C5795D7870F42;
 
@@ -302,6 +326,7 @@ const VDB_ENC_LZF: u8 = 3;
 pub struct VdbSaver {
     writer: BufWriter<File>,
     crc64: u64,
+    bytes_written: u64,
     temp_path: std::path::PathBuf,
     final_path: std::path::PathBuf,
 }
@@ -319,6 +344,7 @@ impl VdbSaver {
         Ok(Self {
             writer: BufWriter::new(file),
             crc64: 0,
+            bytes_written: 0,
             temp_path,
             final_path,
         })
@@ -328,16 +354,24 @@ impl VdbSaver {
     ///
     /// On success, atomically replaces the target file.
     /// On failure, cleans up the temporary file.
-    pub fn save(mut self, db: &Database) -> Result<(), StorageError> {
+    /// Returns metadata about the save operation.
+    pub fn save(mut self, db: &Database) -> Result<VdbSaveResult, StorageError> {
         match self.save_inner(db) {
-            Ok(()) => {
+            Ok(keys_saved) => {
+                let bytes_written = self.bytes_written;
+
                 // Drop the writer to close the file before rename
                 drop(self.writer);
 
                 // Atomic rename: this is the commit point. If we crash before this,
                 // the original file is untouched. If we crash after, the new file is complete.
                 std::fs::rename(&self.temp_path, &self.final_path).map_err(StorageError::Io)?;
-                Ok(())
+
+                Ok(VdbSaveResult {
+                    keys_saved,
+                    keys_skipped: 0, // We don't skip keys during save currently
+                    bytes_written,
+                })
             }
             Err(e) => {
                 // Clean up temp file on failure
@@ -347,7 +381,9 @@ impl VdbSaver {
         }
     }
 
-    fn save_inner(&mut self, db: &Database) -> Result<(), StorageError> {
+    fn save_inner(&mut self, db: &Database) -> Result<u64, StorageError> {
+        let mut keys_saved: u64 = 0;
+
         // Write header
         self.write_header()?;
 
@@ -486,6 +522,7 @@ impl VdbSaver {
                         }
                     }
                 }
+                keys_saved += 1;
             }
         }
 
@@ -494,17 +531,18 @@ impl VdbSaver {
 
         // Write CRC64 checksum
         let crc = self.crc64;
-        // Write without updating CRC
+        // Write without updating CRC (but count bytes)
         self.writer
             .write_all(&crc.to_le_bytes())
             .map_err(StorageError::Io)?;
+        self.bytes_written += 8;
         self.writer.flush().map_err(StorageError::Io)?;
 
         // CRITICAL: fsync to ensure data is on disk before we consider save complete.
         // Without this, a power failure could result in a truncated/corrupt VDB file.
         self.writer.get_ref().sync_all().map_err(StorageError::Io)?;
 
-        Ok(())
+        Ok(keys_saved)
     }
 
     fn write_header(&mut self) -> Result<(), StorageError> {
@@ -525,23 +563,27 @@ impl VdbSaver {
 
     fn write_u8(&mut self, byte: u8) -> Result<(), StorageError> {
         self.crc64 = crc64_update(self.crc64, &[byte]);
+        self.bytes_written += 1;
         self.writer.write_all(&[byte]).map_err(StorageError::Io)
     }
 
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), StorageError> {
         self.crc64 = crc64_update(self.crc64, bytes);
+        self.bytes_written += bytes.len() as u64;
         self.writer.write_all(bytes).map_err(StorageError::Io)
     }
 
     fn write_u64_le(&mut self, n: u64) -> Result<(), StorageError> {
         let bytes = n.to_le_bytes();
         self.crc64 = crc64_update(self.crc64, &bytes);
+        self.bytes_written += 8;
         self.writer.write_all(&bytes).map_err(StorageError::Io)
     }
 
     fn write_f64(&mut self, n: f64) -> Result<(), StorageError> {
         let bytes = n.to_le_bytes();
         self.crc64 = crc64_update(self.crc64, &bytes);
+        self.bytes_written += 8;
         self.writer.write_all(&bytes).map_err(StorageError::Io)
     }
 
@@ -627,7 +669,14 @@ impl VdbLoader {
     }
 
     /// Load the VDB file into the database.
-    pub fn load_into(mut self, db: &Database) -> Result<(), StorageError> {
+    /// Returns metadata about the loaded file including keys loaded/expired.
+    pub fn load_into(mut self, db: &Database) -> Result<VdbLoadResult, StorageError> {
+        // Track metadata for result
+        let mut viator_version = String::new();
+        let mut ctime: i64 = 0;
+        let mut keys_loaded: u64 = 0;
+        let mut keys_expired: u64 = 0;
+
         // Read and verify header (include in CRC64 checksum)
         let mut magic = [0u8; 5];
         self.reader
@@ -662,9 +711,17 @@ impl VdbLoader {
 
             match opcode {
                 VDB_OPCODE_AUX => {
-                    // Skip auxiliary data
-                    let _key = self.read_string()?;
-                    let _value = self.read_string()?;
+                    // Capture auxiliary data for metadata
+                    let key = self.read_string()?;
+                    let value = self.read_string()?;
+                    if let (Ok(k), Ok(v)) = (std::str::from_utf8(&key), std::str::from_utf8(&value))
+                    {
+                        match k {
+                            "viator-ver" => viator_version = v.to_string(),
+                            "ctime" => ctime = v.parse().unwrap_or(0),
+                            _ => {}
+                        }
+                    }
                 }
                 VDB_OPCODE_SELECTDB => {
                     current_db = self.read_length()? as u16;
@@ -708,6 +765,7 @@ impl VdbLoader {
                     // Skip if already expired
                     if expiry.is_expired() {
                         self.skip_value(value_type)?;
+                        keys_expired += 1;
                         continue;
                     }
 
@@ -837,13 +895,20 @@ impl VdbLoader {
                             // Unknown type - skip
                             tracing::warn!("Unknown VDB value type: {}", value_type);
                             self.skip_value(value_type)?;
+                            continue;
                         }
                     }
+                    keys_loaded += 1;
                 }
             }
         }
 
-        Ok(())
+        Ok(VdbLoadResult {
+            viator_version,
+            ctime,
+            keys_loaded,
+            keys_expired,
+        })
     }
 
     fn read_u8(&mut self) -> Result<u8, StorageError> {

@@ -475,12 +475,32 @@ pub fn cmd_object(
                 }
             }
             "FREQ" => {
-                // LFU frequency - not implemented, return 0
-                Ok(Frame::Integer(0))
+                // LFU frequency counter
+                if cmd.args.len() < 2 {
+                    return Err(CommandError::WrongArity {
+                        command: "OBJECT FREQ".to_string(),
+                    }
+                    .into());
+                }
+                let key = Key::from(cmd.args[1].clone());
+                match db.get_frequency(&key) {
+                    Some(freq) => Ok(Frame::Integer(freq as i64)),
+                    None => Ok(Frame::Null),
+                }
             }
             "IDLETIME" => {
-                // LRU idle time - not implemented, return 0
-                Ok(Frame::Integer(0))
+                // LRU idle time in seconds
+                if cmd.args.len() < 2 {
+                    return Err(CommandError::WrongArity {
+                        command: "OBJECT IDLETIME".to_string(),
+                    }
+                    .into());
+                }
+                let key = Key::from(cmd.args[1].clone());
+                match db.get_idle_time(&key) {
+                    Some(idle) => Ok(Frame::Integer(idle as i64)),
+                    None => Ok(Frame::Null),
+                }
             }
             "REFCOUNT" => {
                 // Reference count - always 1 in our implementation
@@ -565,6 +585,8 @@ pub fn cmd_sort(
         let mut limit_offset = 0usize;
         let mut limit_count: Option<usize> = None;
         let mut store_key: Option<Key> = None;
+        let mut by_pattern: Option<String> = None;
+        let mut get_patterns: Vec<String> = Vec::new();
 
         // Parse options
         let mut i = 1;
@@ -586,9 +608,13 @@ pub fn cmd_sort(
                         cmd.args.get(i).cloned().ok_or(CommandError::SyntaxError)?,
                     ));
                 }
-                "BY" | "GET" => {
-                    // BY and GET patterns not fully implemented
-                    i += 1; // Skip the pattern
+                "BY" => {
+                    i += 1;
+                    by_pattern = Some(cmd.get_str(i)?.to_string());
+                }
+                "GET" => {
+                    i += 1;
+                    get_patterns.push(cmd.get_str(i)?.to_string());
                 }
                 _ => {}
             }
@@ -617,31 +643,121 @@ pub fn cmd_sort(
             return Err(CommandError::WrongType.into());
         };
 
-        // Sort elements
-        if alpha {
-            // Lexicographic sort
-            elements.sort_by(|a, b| {
-                let sa = std::str::from_utf8(a).unwrap_or("");
-                let sb = std::str::from_utf8(b).unwrap_or("");
-                if desc { sb.cmp(sa) } else { sa.cmp(sb) }
-            });
-        } else {
-            // Numeric sort
-            elements.sort_by(|a, b| {
-                let na: f64 = std::str::from_utf8(a)
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0.0);
-                let nb: f64 = std::str::from_utf8(b)
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0.0);
-                if desc {
-                    nb.partial_cmp(&na).unwrap_or(std::cmp::Ordering::Equal)
-                } else {
-                    na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
+        // Helper function to expand a pattern with an element value
+        fn expand_pattern(pattern: &str, element: &[u8]) -> (Key, Option<String>) {
+            let elem_str = std::str::from_utf8(element).unwrap_or("");
+            
+            // Check for hash field access (pattern->field)
+            if let Some(arrow_pos) = pattern.find("->") {
+                let key_pattern = &pattern[..arrow_pos];
+                let field = &pattern[arrow_pos + 2..];
+                let key_str = key_pattern.replace('*', elem_str);
+                (Key::from(key_str), Some(field.to_string()))
+            } else {
+                let key_str = pattern.replace('*', elem_str);
+                (Key::from(key_str), None)
+            }
+        }
+
+        // Helper function to get value from pattern
+        fn get_pattern_value(db: &Db, pattern: &str, element: &[u8]) -> Option<Bytes> {
+            let (key, field) = expand_pattern(pattern, element);
+            
+            if pattern == "#" {
+                // # means return the element itself
+                return Some(Bytes::copy_from_slice(element));
+            }
+            
+            match db.get(&key) {
+                Some(value) => {
+                    if let Some(field_name) = field {
+                        // Hash field access
+                        if let Some(hash) = value.as_hash() {
+                            let guard = hash.read();
+                            guard.get(field_name.as_bytes()).cloned()
+                        } else {
+                            None
+                        }
+                    } else {
+                        // String value
+                        if let ViatorValue::String(s) = value {
+                            Some(s)
+                        } else {
+                            None
+                        }
+                    }
                 }
-            });
+                None => None,
+            }
+        }
+
+        // Sort elements
+        if let Some(ref by_pat) = by_pattern {
+            if by_pat == "nosort" {
+                // Don't sort, just skip
+            } else {
+                // Sort by external key values
+                let mut elements_with_sort_key: Vec<(Bytes, Option<Bytes>)> = elements
+                    .into_iter()
+                    .map(|e| {
+                        let sort_val = get_pattern_value(&db, by_pat, &e);
+                        (e, sort_val)
+                    })
+                    .collect();
+
+                if alpha {
+                    elements_with_sort_key.sort_by(|a, b| {
+                        let sa = a.1.as_ref().map(|v| std::str::from_utf8(v).unwrap_or("")).unwrap_or("");
+                        let sb = b.1.as_ref().map(|v| std::str::from_utf8(v).unwrap_or("")).unwrap_or("");
+                        if desc { sb.cmp(sa) } else { sa.cmp(sb) }
+                    });
+                } else {
+                    elements_with_sort_key.sort_by(|a, b| {
+                        let na: f64 = a.1.as_ref()
+                            .and_then(|v| std::str::from_utf8(v).ok())
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(0.0);
+                        let nb: f64 = b.1.as_ref()
+                            .and_then(|v| std::str::from_utf8(v).ok())
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(0.0);
+                        if desc {
+                            nb.partial_cmp(&na).unwrap_or(std::cmp::Ordering::Equal)
+                        } else {
+                            na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
+                        }
+                    });
+                }
+
+                elements = elements_with_sort_key.into_iter().map(|(e, _)| e).collect();
+            }
+        } else {
+            // Standard sort by element value
+            if alpha {
+                // Lexicographic sort
+                elements.sort_by(|a, b| {
+                    let sa = std::str::from_utf8(a).unwrap_or("");
+                    let sb = std::str::from_utf8(b).unwrap_or("");
+                    if desc { sb.cmp(sa) } else { sa.cmp(sb) }
+                });
+            } else {
+                // Numeric sort
+                elements.sort_by(|a, b| {
+                    let na: f64 = std::str::from_utf8(a)
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(0.0);
+                    let nb: f64 = std::str::from_utf8(b)
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(0.0);
+                    if desc {
+                        nb.partial_cmp(&na).unwrap_or(std::cmp::Ordering::Equal)
+                    } else {
+                        na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                });
+            }
         }
 
         // Apply limit
@@ -655,22 +771,42 @@ pub fn cmd_sort(
             elements.into_iter().skip(limit_offset).collect()
         };
 
+        // Build results with GET patterns
+        let results: Vec<Frame> = if get_patterns.is_empty() {
+            elements.into_iter().map(Frame::Bulk).collect()
+        } else {
+            let mut result = Vec::new();
+            for elem in &elements {
+                for pattern in &get_patterns {
+                    if pattern == "#" {
+                        result.push(Frame::Bulk(elem.clone()));
+                    } else {
+                        match get_pattern_value(&db, pattern, elem) {
+                            Some(val) => result.push(Frame::Bulk(val)),
+                            None => result.push(Frame::Null),
+                        }
+                    }
+                }
+            }
+            result
+        };
+
         // Store or return results
         if let Some(dest) = store_key {
-            let count = elements.len() as i64;
+            let count = results.len() as i64;
             let new_list = ViatorValue::new_list();
             if let Some(list) = new_list.as_list() {
                 let mut guard = list.write();
-                for elem in elements {
-                    guard.push_back(elem);
+                for frame in results {
+                    if let Frame::Bulk(b) = frame {
+                        guard.push_back(b);
+                    }
                 }
             }
             db.set(dest, new_list);
             Ok(Frame::Integer(count))
         } else {
-            Ok(Frame::Array(
-                elements.into_iter().map(Frame::Bulk).collect(),
-            ))
+            Ok(Frame::Array(results))
         }
     })
 }

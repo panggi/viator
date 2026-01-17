@@ -122,25 +122,60 @@ pub fn cmd_client(
             "UNPAUSE" => Ok(Frame::ok()),
             "GETREDIR" => {
                 // Return the client tracking redirection ID (-1 if not tracking)
-                Ok(Frame::Integer(-1))
+                let redirect = client.tracking_redirect();
+                Ok(Frame::Integer(redirect))
             }
             "TRACKINGINFO" => {
                 // Return tracking info
+                let tracking = client.tracking_info();
+
+                let mut flags = Vec::new();
+                if tracking.enabled {
+                    flags.push(Frame::Bulk("on".into()));
+                } else {
+                    flags.push(Frame::Bulk("off".into()));
+                }
+                if tracking.bcast {
+                    flags.push(Frame::Bulk("bcast".into()));
+                }
+                if tracking.optin {
+                    flags.push(Frame::Bulk("optin".into()));
+                }
+                if tracking.optout {
+                    flags.push(Frame::Bulk("optout".into()));
+                }
+                if tracking.noloop {
+                    flags.push(Frame::Bulk("noloop".into()));
+                }
+
+                let prefixes: Vec<Frame> = tracking
+                    .prefixes
+                    .iter()
+                    .map(|p| Frame::Bulk(p.clone()))
+                    .collect();
+
                 Ok(Frame::Array(vec![
                     Frame::Bulk("flags".into()),
-                    Frame::Array(vec![Frame::Bulk("off".into())]),
+                    Frame::Array(flags),
                     Frame::Bulk("redirect".into()),
-                    Frame::Integer(-1),
+                    Frame::Integer(tracking.redirect),
                     Frame::Bulk("prefixes".into()),
-                    Frame::Array(vec![]),
+                    Frame::Array(prefixes),
                 ]))
             }
             "CACHING" => {
                 // CLIENT CACHING YES|NO - for client-side caching tracking
                 if cmd.args.len() >= 2 {
-                    let state = cmd.get_str(1)?.to_uppercase();
-                    match state.as_str() {
-                        "YES" | "NO" => Ok(Frame::ok()),
+                    let caching_state = cmd.get_str(1)?.to_uppercase();
+                    match caching_state.as_str() {
+                        "YES" => {
+                            client.set_caching_yes();
+                            Ok(Frame::ok())
+                        }
+                        "NO" => {
+                            client.set_caching_no();
+                            Ok(Frame::ok())
+                        }
                         _ => Ok(Frame::Error(
                             "ERR Syntax error, CLIENT CACHING YES|NO".into(),
                         )),
@@ -154,9 +189,87 @@ pub fn cmd_client(
             "TRACKING" => {
                 // CLIENT TRACKING ON|OFF [REDIRECT client-id] [PREFIX prefix] [BCAST] [OPTIN] [OPTOUT] [NOLOOP]
                 if cmd.args.len() >= 2 {
-                    let state = cmd.get_str(1)?.to_uppercase();
-                    match state.as_str() {
-                        "ON" | "OFF" => Ok(Frame::ok()),
+                    let tracking_state = cmd.get_str(1)?.to_uppercase();
+                    match tracking_state.as_str() {
+                        "ON" => {
+                            // Parse options
+                            let mut redirect: i64 = -1;
+                            let mut bcast = false;
+                            let mut prefixes = Vec::new();
+                            let mut optin = false;
+                            let mut optout = false;
+                            let mut noloop = false;
+
+                            let mut idx = 2;
+                            while idx < cmd.args.len() {
+                                let opt = cmd.get_str(idx)?.to_uppercase();
+                                match opt.as_str() {
+                                    "REDIRECT" => {
+                                        idx += 1;
+                                        if idx < cmd.args.len() {
+                                            redirect = cmd.get_i64(idx)?;
+                                            idx += 1;
+                                        } else {
+                                            return Ok(Frame::Error(
+                                                "ERR REDIRECT requires a client ID".into(),
+                                            ));
+                                        }
+                                    }
+                                    "PREFIX" => {
+                                        idx += 1;
+                                        if idx < cmd.args.len() {
+                                            prefixes.push(cmd.args[idx].clone());
+                                            idx += 1;
+                                        } else {
+                                            return Ok(Frame::Error(
+                                                "ERR PREFIX requires a prefix string".into(),
+                                            ));
+                                        }
+                                    }
+                                    "BCAST" => {
+                                        bcast = true;
+                                        idx += 1;
+                                    }
+                                    "OPTIN" => {
+                                        optin = true;
+                                        idx += 1;
+                                    }
+                                    "OPTOUT" => {
+                                        optout = true;
+                                        idx += 1;
+                                    }
+                                    "NOLOOP" => {
+                                        noloop = true;
+                                        idx += 1;
+                                    }
+                                    _ => {
+                                        return Ok(Frame::Error(format!(
+                                            "ERR Unknown option '{}'",
+                                            opt
+                                        )));
+                                    }
+                                }
+                            }
+
+                            // Validate options
+                            if optin && optout {
+                                return Ok(Frame::Error(
+                                    "ERR OPTIN and OPTOUT are mutually exclusive".into(),
+                                ));
+                            }
+                            if !bcast && !prefixes.is_empty() {
+                                return Ok(Frame::Error(
+                                    "ERR PREFIX requires BCAST to be enabled".into(),
+                                ));
+                            }
+
+                            client.enable_tracking(redirect, bcast, prefixes, optin, optout, noloop);
+                            Ok(Frame::ok())
+                        }
+                        "OFF" => {
+                            client.disable_tracking();
+                            Ok(Frame::ok())
+                        }
                         _ => Ok(Frame::Error(
                             "ERR Syntax error, CLIENT TRACKING ON|OFF [options]".into(),
                         )),

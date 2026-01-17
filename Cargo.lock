@@ -2327,6 +2327,7 @@ dependencies = [
  "anyhow",
  "arbitrary",
  "argon2",
+ "base64",
  "bitflags",
  "bytes",
  "chrono",

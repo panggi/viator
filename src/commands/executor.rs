@@ -261,6 +261,19 @@ impl CommandExecutor {
             return self.handle_shutdown(&cmd).await;
         }
 
+        // Handle CLIENT PAUSE/UNPAUSE specially (needs access to Database for pause state)
+        if cmd.name == "CLIENT" && !cmd.args.is_empty() {
+            let subcommand = std::str::from_utf8(cmd.args.first().map(|b| b.as_ref()).unwrap_or(b""))
+                .unwrap_or("")
+                .to_uppercase();
+            if subcommand == "PAUSE" {
+                return self.handle_client_pause(&cmd).await;
+            }
+            if subcommand == "UNPAUSE" {
+                return self.handle_client_unpause().await;
+            }
+        }
+
         // Look up command
         let command = self
             .registry
@@ -322,6 +335,47 @@ impl CommandExecutor {
                         SlotCheck::ClusterDown => {
                             return Ok(Frame::Error("CLUSTERDOWN The cluster is down".to_string()));
                         }
+                    }
+                }
+            }
+        }
+
+        // Check for client pause
+        // Commands that are exempt from pause (can always execute):
+        // - CLIENT (for UNPAUSE)
+        // - PING, ECHO (connection health)
+        // - QUIT, RESET (connection management)
+        // - SUBSCRIBE, UNSUBSCRIBE, PSUBSCRIBE, PUNSUBSCRIBE (pub/sub - already subscribed clients)
+        let pause_exempt = matches!(
+            cmd.name.as_str(),
+            "CLIENT" | "PING" | "ECHO" | "QUIT" | "RESET" | "DEBUG" |
+            "SUBSCRIBE" | "UNSUBSCRIBE" | "PSUBSCRIBE" | "PUNSUBSCRIBE" |
+            "SSUBSCRIBE" | "SUNSUBSCRIBE"
+        );
+
+        if !pause_exempt {
+            let (is_paused, write_only) = self.database.is_clients_paused();
+            if is_paused {
+                // Check if this command should be blocked
+                let should_block = if write_only {
+                    // WRITE mode: only block write commands
+                    command.flags.contains(super::CommandFlags::WRITE)
+                        || command.flags.contains(super::CommandFlags::BLOCKING)
+                } else {
+                    // ALL mode: block all commands
+                    true
+                };
+
+                if should_block {
+                    // Wait until pause expires
+                    loop {
+                        let remaining = self.database.pause_remaining_ms();
+                        if remaining == 0 {
+                            break;
+                        }
+                        // Sleep for min(remaining, 100ms) to check periodically
+                        let sleep_time = std::cmp::min(remaining, 100);
+                        tokio::time::sleep(std::time::Duration::from_millis(sleep_time)).await;
                     }
                 }
             }
@@ -707,6 +761,58 @@ impl CommandExecutor {
 
         // Return OK - the server will detect the shutdown request
         // and perform graceful shutdown
+        Ok(Frame::ok())
+    }
+
+    /// Handle CLIENT PAUSE command.
+    /// CLIENT PAUSE timeout [WRITE|ALL]
+    async fn handle_client_pause(&self, cmd: &ParsedCommand) -> Result<Frame> {
+        // CLIENT PAUSE timeout [WRITE|ALL]
+        if cmd.args.len() < 2 {
+            return Err(Error::Command(CommandError::WrongArity {
+                command: "CLIENT PAUSE".to_string(),
+            }));
+        }
+
+        // Parse timeout (first argument after PAUSE subcommand)
+        let timeout_ms = cmd.get_u64(1)?;
+
+        // Validate timeout range (Redis limits to reasonable values)
+        if timeout_ms > 365 * 24 * 60 * 60 * 1000 {
+            // 1 year max
+            return Ok(Frame::error(
+                "ERR timeout is out of range",
+            ));
+        }
+
+        // Parse mode (optional second argument)
+        let write_only = if cmd.args.len() >= 3 {
+            let mode = std::str::from_utf8(cmd.args.get(2).map(|b| b.as_ref()).unwrap_or(b""))
+                .unwrap_or("")
+                .to_uppercase();
+            match mode.as_str() {
+                "WRITE" => true,
+                "ALL" => false,
+                _ => {
+                    return Ok(Frame::error(
+                        "ERR syntax error, CLIENT PAUSE timeout [WRITE|ALL]",
+                    ));
+                }
+            }
+        } else {
+            // Default is WRITE mode (as of Redis 6.2)
+            true
+        };
+
+        // Apply the pause
+        self.database.pause_clients(timeout_ms, write_only);
+
+        Ok(Frame::ok())
+    }
+
+    /// Handle CLIENT UNPAUSE command.
+    async fn handle_client_unpause(&self) -> Result<Frame> {
+        self.database.unpause_clients();
         Ok(Frame::ok())
     }
 

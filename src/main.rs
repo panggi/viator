@@ -26,11 +26,11 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Load configuration
-    let mut config = if let Some(ref config_path) = cli.config {
+    let (config_loaded_from_file, mut config) = if let Some(ref config_path) = cli.config {
         match Config::load_from_file(config_path) {
             Ok(cfg) => {
                 eprintln!("Loaded configuration from: {}", config_path.display());
-                cfg
+                (true, cfg)
             }
             Err(e) => {
                 eprintln!("Error loading config file: {e}");
@@ -38,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     } else {
-        Config::default()
+        (false, Config::default())
     };
 
     // Override with CLI arguments
@@ -128,10 +128,19 @@ async fn main() -> anyhow::Result<()> {
         print_banner(config.port);
     }
 
+    // Redis-style startup messages
+    warn!("oO0OoO0OoO0Oo Viator is starting oO0OoO0OoO0Oo");
     info!(
-        "Viator {} starting on {}:{}",
-        VERSION, config.bind, config.port,
+        "Viator version={}, bits=64, pid={}, just started",
+        VERSION,
+        std::process::id()
     );
+    if config_loaded_from_file {
+        info!("Configuration loaded");
+    }
+
+    // System warnings (production environment checks)
+    check_system_warnings(&config);
 
     // Run the server
     run_with_tokio(config, cli.config).await
@@ -152,7 +161,7 @@ async fn run_with_tokio(config: Config, config_path: Option<PathBuf>) -> anyhow:
             error!("Failed to listen for Ctrl+C: {}", e);
             return;
         }
-        info!("Received shutdown signal, saving data...");
+        info!("Received SIGINT scheduling shutdown...");
         server_clone.shutdown();
 
         // Ignore additional Ctrl-C signals during shutdown
@@ -392,6 +401,82 @@ fn daemonize(config: &Config) -> anyhow::Result<()> {
             std::process::exit(0);
         }
     }
+}
+
+/// Check system configuration and log warnings for production environments.
+/// These warnings help operators identify potential issues.
+#[allow(unsafe_code)]
+fn check_system_warnings(config: &viator::Config) {
+    // Check max clients vs open file limit
+    #[cfg(unix)]
+    {
+        let mut rlim = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        // SAFETY: getrlimit with RLIMIT_NOFILE is safe; we pass a valid pointer to rlim
+        if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut rlim) } == 0 {
+            let max_files = rlim.rlim_cur as usize;
+            // Redis recommends: maxclients + 32 for internal use
+            let recommended = config.max_clients + 32;
+            if max_files < recommended {
+                warn!(
+                    "You requested maxclients of {} but your current 'ulimit -n' is {}, reducing maxclients to {}.",
+                    config.max_clients,
+                    max_files,
+                    max_files.saturating_sub(32)
+                );
+            }
+        }
+    }
+
+    // Linux-specific warnings
+    #[cfg(target_os = "linux")]
+    {
+        // Check vm.overcommit_memory
+        if let Ok(content) = std::fs::read_to_string("/proc/sys/vm/overcommit_memory") {
+            if content.trim() == "0" {
+                warn!(
+                    "WARNING overcommit_memory is set to 0! \
+                    Background save may fail under low memory condition. \
+                    To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf \
+                    and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect."
+                );
+            }
+        }
+
+        // Check Transparent Huge Pages
+        if let Ok(content) = std::fs::read_to_string("/sys/kernel/mm/transparent_hugepage/enabled")
+        {
+            if content.contains("[always]") {
+                warn!(
+                    "WARNING you have Transparent Huge Pages (THP) support enabled in your kernel. \
+                    This will create latency and memory usage issues with Viator. \
+                    To fix this issue run the command 'echo madvise > /sys/kernel/mm/transparent_hugepage/enabled' as root, \
+                    and add it to your /etc/rc.local in order to retain the setting after a reboot."
+                );
+            }
+        }
+
+        // Check TCP backlog
+        if let Ok(content) = std::fs::read_to_string("/proc/sys/net/core/somaxconn") {
+            if let Ok(somaxconn) = content.trim().parse::<usize>() {
+                // Default TCP backlog is typically 511 (like Redis)
+                let tcp_backlog = 511;
+                if somaxconn < tcp_backlog {
+                    warn!(
+                        "WARNING: The TCP backlog setting of {} cannot be enforced \
+                        because /proc/sys/net/core/somaxconn is set to the lower value of {}.",
+                        tcp_backlog, somaxconn
+                    );
+                }
+            }
+        }
+    }
+
+    // Suppress unused warning on non-Unix platforms
+    #[cfg(not(unix))]
+    let _ = config;
 }
 
 fn print_banner(port: u16) {
