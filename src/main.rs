@@ -129,9 +129,27 @@ async fn main() -> anyhow::Result<()> {
         print_banner(config.port);
     }
 
+    // Check io_uring availability
+    let io_uring_available = viator::server::io_uring::is_available();
+    let use_io_uring = cli.io_uring && io_uring_available;
+
+    if cli.io_uring && !io_uring_available {
+        #[cfg(not(target_os = "linux"))]
+        warn!("io_uring requested but not available (not Linux)");
+
+        #[cfg(all(target_os = "linux", not(feature = "io-uring")))]
+        warn!("io_uring requested but not compiled in (build with --features io-uring)");
+
+        #[cfg(all(target_os = "linux", feature = "io-uring"))]
+        warn!("io_uring requested but kernel doesn't support it (requires Linux 5.1+)");
+    }
+
     info!(
-        "Viator {} starting on {}:{}",
-        VERSION, config.bind, config.port
+        "Viator {} starting on {}:{} (I/O backend: {})",
+        VERSION,
+        config.bind,
+        config.port,
+        if use_io_uring { "io_uring" } else { "tokio" }
     );
 
     // Create and run server
@@ -223,6 +241,8 @@ struct CliArgs {
     dir: Option<PathBuf>,
     help: bool,
     version: bool,
+    /// Use io_uring for I/O (Linux only, requires --features io-uring)
+    io_uring: bool,
 }
 
 fn parse_args(args: &[String]) -> anyhow::Result<CliArgs> {
@@ -241,6 +261,7 @@ fn parse_args(args: &[String]) -> anyhow::Result<CliArgs> {
         dir: None,
         help: false,
         version: false,
+        io_uring: false,
     };
 
     let mut i = 1;
@@ -307,6 +328,9 @@ fn parse_args(args: &[String]) -> anyhow::Result<CliArgs> {
             }
             "--version" | "-v" => {
                 cli.version = true;
+            }
+            "--io-uring" => {
+                cli.io_uring = true;
             }
             arg if arg.starts_with('-') => {
                 eprintln!("Unknown option: {arg}");
@@ -426,6 +450,7 @@ OPTIONS:
         --databases <NUM>    Set number of databases (default: 16)
         --appendonly         Enable AOF persistence
         --dir <DIR>          Set working directory
+        --io-uring           Use io_uring for I/O (Linux 5.1+ only)
     -h, --help               Print this help message
     -v, --version            Print version information
 
@@ -434,6 +459,7 @@ EXAMPLES:
     viator-server --port 6380                  Start on port 6380
     viator-server -c /etc/viator.conf          Load from config file
     viator-server -d --pidfile /var/run/viator.pid   Run as daemon
+    viator-server --io-uring                   Use io_uring (Linux only)
 "
     );
 }
