@@ -277,7 +277,7 @@ fn generate_sentinel_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_else(|_| unreachable!("system clock is before UNIX_EPOCH - check system time"))
         .as_nanos();
     format!("{:040x}", now)
 }
@@ -286,7 +286,7 @@ fn current_time_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_else(|_| unreachable!("system clock is before UNIX_EPOCH - check system time"))
         .as_millis() as u64
 }
 
