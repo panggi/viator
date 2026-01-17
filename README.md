@@ -370,7 +370,7 @@ viator-server --help
 
 ### viator-cli
 
-Interactive command-line client (viator-cli compatible).
+Interactive command-line client (redis-cli compatible).
 
 ```bash
 # Connect to server
@@ -385,7 +385,7 @@ viator-cli -h 127.0.0.1 -p 6379 -a mypassword
 
 ### viator-benchmark
 
-Performance benchmarking tool (viator-benchmark compatible).
+Performance benchmarking tool (redis-benchmark compatible).
 
 ```bash
 # Run default benchmarks
@@ -516,7 +516,9 @@ Viator targets Redis 8.4.0 protocol compatibility:
 ├── docs/
 │   ├── API.md          # RESP3 protocol and client guide
 │   ├── ARCHITECTURE.md # System design overview
+│   ├── BUILDING.md     # Build and development guide
 │   ├── CLUSTER.md      # Cluster and Sentinel guide
+│   ├── COMPATIBILITY.md # Redis command compatibility
 │   ├── CONFIG.md       # Configuration reference
 │   ├── DOCKER.md       # Docker deployment guide
 │   ├── PERSISTENCE.md  # VDB/AOF documentation
