@@ -292,14 +292,6 @@ Total:      ~800 bytes per element
 | VDEL | O(M × log N) |
 | VCARD | O(1) |
 
-### Benchmarks (1M vectors, 128-dim)
-
-| Operation | Latency (p50) | Latency (p99) |
-|-----------|---------------|---------------|
-| VADD | 0.5 ms | 2 ms |
-| VSIM (top-10) | 1 ms | 5 ms |
-| VSIM (top-100) | 3 ms | 10 ms |
-
 ### Tuning
 
 ```bash

@@ -47,7 +47,7 @@ cargo install viator
 ```
 
 This installs all binaries to `~/.cargo/bin/`:
-- `viator` - Main server
+- `viator-server` - Main server
 - `viator-cli` - Command-line client
 - `viator-benchmark` - Performance benchmarking
 - `viator-check-vdb` - VDB file integrity checker
@@ -65,14 +65,14 @@ cd viator
 cargo build --release
 
 # Run the server
-./target/release/viator
+./target/release/viator-server
 ```
 
 ## Quick Start
 
 ```bash
 # Start the server
-viator --port 6379 --bind 127.0.0.1
+viator-server --port 6379 --bind 127.0.0.1
 ```
 
 ### Using viator-cli
@@ -91,9 +91,9 @@ OK
 ### Configuration Options
 
 ```bash
-viator --port 6380           # Custom port
-viator --bind 0.0.0.0        # Listen on all interfaces
-viator --help                # Show all options
+viator-server --port 6380           # Custom port
+viator-server --bind 0.0.0.0        # Listen on all interfaces
+viator-server --help                # Show all options
 ```
 
 ## Features
@@ -266,7 +266,7 @@ Viator leverages Rust's zero-cost abstractions for high performance:
 
 - **Memory Allocator**: mimalloc for fast short-lived allocations
 - **Concurrency**: Lock-free data structures (DashMap, crossbeam)
-- **I/O**: Tokio async runtime with io_uring support (Linux)
+- **I/O**: Tokio async runtime
 - **Zero-Copy**: Bytes crate for efficient buffer management
 - **SIMD**: memchr for fast byte searching
 - **Perfect Hashing**: O(1) command dispatch with PHF
@@ -274,38 +274,14 @@ Viator leverages Rust's zero-cost abstractions for high performance:
 - **Inline Responses**: Pre-allocated RESP responses for common replies
 - **Response Coalescing**: Batched writes to reduce syscall overhead
 
-### Benchmark Results
-
-Tested with `redis-benchmark` on macOS (M-series Apple Silicon):
-
-**Single Commands** (50 clients, 100k requests):
-
-| Command | Viator | Redis 8.4.0 | Ratio |
-|---------|-------:|------------:|------:|
-| SET | 91K/s | 116K/s | 78% |
-| GET | 92K/s | 111K/s | 83% |
-
-**With Pipelining** (P=16, batching 16 commands per round-trip):
-
-| Command | Viator | Redis 8.4.0 | Ratio |
-|---------|-------:|------------:|------:|
-| SET | **1.19M/s** | 709K/s | **168%** |
-| GET | **1.45M/s** | 1.33M/s | **109%** |
-
-**Summary**: With pipelining (the typical production pattern), Viator **outperforms Redis by 68% on writes**. The concurrent DashMap architecture shines when TCP round-trip overhead is minimized.
-
-### Persistence Size
-
-VDB format matches Redis RDB size:
-- 6,000 keys × 100-byte values → VDB: 761KB, RDB: 762KB
-
 ## Security
 
 ### Memory Safety
-- Written in safe Rust (`#![forbid(unsafe_code)]`)
+- Written primarily in safe Rust with minimal, documented `unsafe` blocks
 - Eliminates buffer overflows, use-after-free, data races
 - Bounds checking on all array/slice access
 - NaN-safe float comparisons (no panic on edge cases)
+- All `unsafe` blocks have SAFETY documentation comments
 
 ### Authentication & Authorization
 - ACL system with user permissions and key patterns
@@ -366,7 +342,7 @@ cargo test
 cargo bench
 
 # Test with viator-cli (start server first)
-./target/release/viator &
+./target/release/viator-server &
 viator-cli PING
 viator-cli SET foo bar
 viator-cli GET foo
@@ -376,13 +352,13 @@ viator-cli GET foo
 
 Viator includes a complete suite of command-line utilities:
 
-### viator
+### viator-server
 
 The main server binary.
 
 ```bash
-viator --port 6379 --bind 127.0.0.1
-viator --help
+viator-server --port 6379 --bind 127.0.0.1
+viator-server --help
 ```
 
 ### viator-cli
@@ -489,7 +465,7 @@ Viator targets Redis 8.4.0 protocol compatibility:
 │   ├── types/          # Data type implementations (VectorSet, etc.)
 │   ├── pool.rs         # Buffer pooling
 │   ├── error.rs        # Error types
-│   ├── main.rs         # Server entry point (viator binary)
+│   ├── main.rs         # Server entry point (viator-server binary)
 │   └── lib.rs          # Library root
 ├── docs/
 │   ├── ARCHITECTURE.md # System design overview

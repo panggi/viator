@@ -225,7 +225,7 @@ After `cargo build --release`:
 
 | Binary | Description |
 |--------|-------------|
-| `target/release/viator` | Main server |
+| `target/release/viator-server` | Main server |
 | `target/release/viator-cli` | Command-line client |
 | `target/release/viator-benchmark` | Performance benchmarking |
 | `target/release/viator-check-vdb` | VDB file integrity checker |

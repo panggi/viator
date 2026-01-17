@@ -5,6 +5,20 @@ All notable changes to Viator will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-01-17
+
+### Fixed
+- **Dockerfile**: Correct binary name from `viator` to `viator-server`
+- **docker-compose**: Healthcheck now uses PING command instead of `--version`
+- **Code hardening**: Replace `unwrap()` with documented `unreachable!()` patterns
+  - compact.rs: IntSet slice-to-array conversions
+  - sentinel.rs: SystemTime::duration_since(UNIX_EPOCH) calls
+
+### Changed
+- **Documentation**: Update all `.md` files with correct binary names
+- **Documentation**: Remove benchmark results (environment-specific)
+- **Documentation**: Clarify memory safety claims (minimal documented unsafe blocks)
+
 ## [0.1.6] - 2026-01-16
 
 ### Added

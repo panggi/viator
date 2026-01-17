@@ -747,8 +747,7 @@ pub struct MonitoredMaster {
 ### I/O Optimization
 
 1. **Tokio Runtime**: Multi-threaded async I/O
-2. **io_uring Support**: Linux io_uring via tokio-uring
-3. **Batched Writes**: Coalesce small writes
+2. **Batched Writes**: Coalesce small writes
 
 ### CPU Optimization
 

@@ -49,7 +49,7 @@ Viator implements defense-in-depth with multiple security layers:
 
 ## Memory Safety
 
-Viator is written in safe Rust, eliminating entire classes of vulnerabilities:
+Viator is written primarily in safe Rust, eliminating entire classes of vulnerabilities:
 
 | Vulnerability | Status | How |
 |--------------|--------|-----|
@@ -60,10 +60,7 @@ Viator is written in safe Rust, eliminating entire classes of vulnerabilities:
 | Data races | Eliminated | Borrow checker |
 | Format string attacks | Eliminated | Type-safe formatting |
 
-```rust
-// Library root enforces safety
-#![forbid(unsafe_code)]
-```
+Minimal `unsafe` blocks are used only where necessary (e.g., system calls for daemonization, `getrusage` for CPU metrics). All `unsafe` blocks include SAFETY documentation comments explaining why they are safe.
 
 ---
 
