@@ -149,35 +149,35 @@ impl CommandExecutor {
             cmd.arg_count()
         );
 
-        let cmd_upper = cmd.name.to_uppercase();
+        // Note: cmd.name is already uppercase from ParsedCommand::from_frame()
 
         // Handle PUBLISH command specially (needs access to PubSubHub)
-        if cmd_upper == "PUBLISH" {
+        if cmd.name == "PUBLISH" {
             return self.handle_publish(&cmd).await;
         }
 
         // Handle PUBSUB command specially
-        if cmd_upper == "PUBSUB" {
+        if cmd.name == "PUBSUB" {
             return self.handle_pubsub_command(&cmd).await;
         }
 
         // Handle AUTH command specially (needs access to server auth config)
-        if cmd_upper == "AUTH" {
+        if cmd.name == "AUTH" {
             return self.handle_auth(&cmd, client).await;
         }
 
         // Handle HELLO command specially (needs access to server auth config)
-        if cmd_upper == "HELLO" {
+        if cmd.name == "HELLO" {
             return self.handle_hello(&cmd, client).await;
         }
 
         // Handle INFO command specially (needs access to Database for connected_clients)
-        if cmd_upper == "INFO" {
+        if cmd.name == "INFO" {
             return self.handle_info(&cmd).await;
         }
 
         // Handle SHUTDOWN command specially (needs access to Database for shutdown flag)
-        if cmd_upper == "SHUTDOWN" {
+        if cmd.name == "SHUTDOWN" {
             return self.handle_shutdown(&cmd).await;
         }
 
@@ -204,7 +204,7 @@ impl CommandExecutor {
 
         // Check cluster slot ownership for commands that access keys
         if let Some(cluster) = &self.cluster {
-            if cluster.is_enabled() && !SKIP_SLOT_CHECK.contains(&cmd_upper.as_str()) {
+            if cluster.is_enabled() && !SKIP_SLOT_CHECK.contains(&cmd.name.as_str()) {
                 // Check if client sent ASKING (for ASK redirections)
                 let is_asking = client.is_asking();
                 if is_asking {
@@ -250,12 +250,12 @@ impl CommandExecutor {
         // Handle transaction mode
         if client.is_in_transaction() {
             // EXEC - execute all queued commands
-            if cmd_upper == "EXEC" {
+            if cmd.name == "EXEC" {
                 return self.execute_transaction(client).await;
             }
 
             // These commands are executed immediately, not queued
-            if !TRANSACTION_COMMANDS.contains(&cmd_upper.as_str()) {
+            if !TRANSACTION_COMMANDS.contains(&cmd.name.as_str()) {
                 // Queue the command for later execution
                 client.queue_command(cmd.name.clone(), cmd.args.clone());
                 return Ok(Frame::queued());
@@ -639,11 +639,10 @@ impl CommandExecutor {
         }
 
         // Most Redis commands have the key as the first argument
-        // Some exceptions handled below
-        let cmd_upper = cmd.name.to_uppercase();
+        // Some exceptions handled below (cmd.name is already uppercase)
 
         // Handle special commands with different key positions
-        match cmd_upper.as_str() {
+        match cmd.name.as_str() {
             // Commands with no keys (handled by SKIP_SLOT_CHECK but double check)
             "INFO" | "DEBUG" | "CONFIG" | "CLIENT" | "PING" | "ECHO" | "AUTH" | "HELLO" => None,
 
