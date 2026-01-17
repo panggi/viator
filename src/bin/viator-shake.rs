@@ -913,7 +913,7 @@ fn ctrlc_handler<F: FnMut() + Send + 'static>(mut handler: F) {
             static mut SIGNAL_WRITE_FD: i32 = -1;
             unsafe {
                 SIGNAL_WRITE_FD = write_fd;
-                libc::signal(libc::SIGINT, signal_handler as usize);
+                libc::signal(libc::SIGINT, signal_handler as *const () as usize);
             }
 
             extern "C" fn signal_handler(_: i32) {
