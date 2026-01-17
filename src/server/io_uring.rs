@@ -222,13 +222,13 @@ pub mod runtime {
     use super::*;
     use crate::commands::{CommandExecutor, ParsedCommand};
     use crate::protocol::{Frame, RespParser};
-    use crate::server::metrics::ServerMetrics;
     use crate::server::ClientState;
+    use crate::server::metrics::ServerMetrics;
     use crate::storage::Database;
     use bytes::BytesMut;
     use std::net::SocketAddr;
-    use std::sync::atomic::AtomicU64;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicU64;
     use tokio_uring::net::{TcpListener, TcpStream};
     use tracing::{debug, error, info, trace, warn};
 
@@ -297,9 +297,15 @@ pub mod runtime {
 
                 std::thread::spawn(move || {
                     tokio_uring::start(async move {
-                        if let Err(e) =
-                            run_worker(worker_id, &config, database, executor, metrics, next_conn_id)
-                                .await
+                        if let Err(e) = run_worker(
+                            worker_id,
+                            &config,
+                            database,
+                            executor,
+                            metrics,
+                            next_conn_id,
+                        )
+                        .await
                         {
                             error!("Worker {} failed: {}", worker_id, e);
                         }
@@ -312,7 +318,7 @@ pub mod runtime {
         for handle in handles {
             handle
                 .join()
-                .map_err(|_| io::Error::new(io::ErrorKind::Other, "Worker thread panicked"))?;
+                .map_err(|_| io::Error::other("Worker thread panicked"))?;
         }
 
         Ok(())
