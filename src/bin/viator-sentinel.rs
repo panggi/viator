@@ -173,8 +173,9 @@ impl Sentinel {
 
         listener.set_nonblocking(true).ok();
 
-        println!("Viator Sentinel {} running on {}", &self.my_id[..8], addr);
-        println!("Monitoring {} master(s)", self.state.read().masters.len());
+        let pid = std::process::id();
+        println!("{pid}:X * Running mode=sentinel, port={}", self.config.port);
+        println!("{pid}:X # Sentinel ID is {}", self.my_id);
 
         // Start monitoring threads
         let state_clone = self.state.clone();
@@ -261,7 +262,8 @@ fn monitor_loop(state: Arc<RwLock<SentinelState>>, config: SentinelConfig) {
                     if elapsed > config.down_after_milliseconds && inst.state == InstanceState::Up {
                         inst.state = InstanceState::SubjectivelyDown;
                         inst.down_since = Some(Instant::now());
-                        eprintln!("+sdown master {name} {host}:{port}");
+                        let pid = std::process::id();
+                        eprintln!("{pid}:X # +sdown master {name} {host} {port}");
                     }
                 }
             }
@@ -992,8 +994,9 @@ fn main() {
 
     let sentinel = Sentinel::new(config);
 
+    let pid = std::process::id();
     for (name, host, port, quorum) in masters {
-        println!("Monitoring master '{name}' at {host}:{port} (quorum: {quorum})");
+        println!("{pid}:X * +monitor master {name} {host} {port} quorum {quorum}");
         sentinel.add_master(&name, &host, port, quorum);
     }
 

@@ -310,9 +310,6 @@ fn run_interactive(config: &Config) -> Result<(), String> {
     let mut current_db = config.database;
     let mut history: Vec<String> = Vec::new();
 
-    println!("Connected to Viator at {}:{}", config.host, config.port);
-    println!("Type 'help' for available commands, 'quit' to exit.\n");
-
     loop {
         let current_prompt = if current_db > 0 {
             format!("{}:{}[{}]> ", config.host, config.port, current_db)

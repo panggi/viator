@@ -59,9 +59,8 @@ impl Stats {
         }
     }
 
-    fn summary(&self, test_name: &str, total_time: Duration) {
+    fn summary(&self, test_name: &str, total_time: Duration, config: &Config) {
         let completed = self.completed.load(Ordering::Relaxed);
-        let errors = self.errors.load(Ordering::Relaxed);
         let mut latencies = self.latencies.lock();
 
         let rps = completed as f64 / total_time.as_secs_f64();
@@ -69,53 +68,28 @@ impl Stats {
         // Sort latencies for percentile calculation
         latencies.sort();
 
-        let avg = if latencies.is_empty() {
-            Duration::ZERO
-        } else {
-            let sum: Duration = latencies.iter().sum();
-            sum / latencies.len() as u32
-        };
-
-        let p50 = latencies
-            .get(latencies.len() / 2)
-            .copied()
-            .unwrap_or(Duration::ZERO);
-        let p95 = latencies
-            .get(latencies.len() * 95 / 100)
-            .copied()
-            .unwrap_or(Duration::ZERO);
-        let p99 = latencies
-            .get(latencies.len() * 99 / 100)
-            .copied()
-            .unwrap_or(Duration::ZERO);
-
         println!("====== {test_name} ======");
         println!(
             "  {} requests completed in {:.2} seconds",
             completed,
             total_time.as_secs_f64()
         );
-        if errors > 0 {
-            println!("  {errors} errors");
+        println!("  {} parallel clients", config.clients);
+        println!("  {} bytes payload", config.data_size);
+        println!("  keep alive: {}\n", if config.keepalive { 1 } else { 0 });
+
+        // Print percentiles in redis-benchmark format
+        let percentiles = [50.0, 75.0, 90.0, 95.0, 99.0, 99.9, 100.0];
+        for pct in percentiles {
+            let idx = ((latencies.len() as f64 * pct / 100.0) as usize).saturating_sub(1);
+            let idx = idx.min(latencies.len().saturating_sub(1));
+            if let Some(lat) = latencies.get(idx) {
+                let ms = lat.as_secs_f64() * 1000.0;
+                println!("{:.2}% <= {:.0} milliseconds", pct, ms.ceil());
+            }
         }
-        println!("  {rps:.2} requests per second\n");
-        println!("Latency by percentile distribution:");
-        println!(
-            "  50.000% <= {:.3} milliseconds",
-            p50.as_secs_f64() * 1000.0
-        );
-        println!(
-            "  95.000% <= {:.3} milliseconds",
-            p95.as_secs_f64() * 1000.0
-        );
-        println!(
-            "  99.000% <= {:.3} milliseconds",
-            p99.as_secs_f64() * 1000.0
-        );
-        println!(
-            "  avg     =  {:.3} milliseconds\n",
-            avg.as_secs_f64() * 1000.0
-        );
+
+        println!("{:.2} requests per second\n", rps);
     }
 }
 
@@ -300,7 +274,7 @@ fn run_benchmark(
     });
 
     let total_time = start.elapsed();
-    stats.summary(test_name, total_time);
+    stats.summary(test_name, total_time, config);
 }
 
 fn print_usage() {
@@ -393,13 +367,6 @@ fn main() {
         }
         i += 1;
     }
-
-    println!("Viator Benchmark");
-    println!("  Host: {}:{}", config.host, config.port);
-    println!("  Clients: {}", config.clients);
-    println!("  Requests: {}", config.requests);
-    println!("  Data size: {} bytes", config.data_size);
-    println!();
 
     // Test connection first
     let addr = format!("{}:{}", config.host, config.port);

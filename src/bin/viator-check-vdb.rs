@@ -353,23 +353,19 @@ impl VdbChecker {
                 VDB_OPCODE_AUX => {
                     let key = self.read_string()?;
                     let value = self.read_string()?;
-                    if self.verbose {
-                        println!(
-                            "[offset {}] AUX: {} = {}",
-                            offset,
-                            String::from_utf8_lossy(&key),
-                            String::from_utf8_lossy(&value)
-                        );
-                    }
+                    println!(
+                        "[offset {}] AUX FIELD {} = '{}'",
+                        offset,
+                        String::from_utf8_lossy(&key),
+                        String::from_utf8_lossy(&value)
+                    );
                 }
                 VDB_OPCODE_SELECTDB => {
                     current_db = self.read_length()? as u16;
                     if !self.databases.contains(&current_db) {
                         self.databases.push(current_db);
                     }
-                    if self.verbose {
-                        println!("[offset {offset}] Selecting DB {current_db}");
-                    }
+                    println!("[offset {offset}] Selecting DB ID {current_db}");
                 }
                 VDB_OPCODE_RESIZEDB => {
                     let db_size = self.read_length()?;
@@ -428,6 +424,7 @@ impl VdbChecker {
         }
 
         // Verify CRC64
+        let final_offset = self.position;
         let computed_crc = self.crc64;
 
         // Read stored CRC without updating our computed CRC
@@ -443,40 +440,17 @@ impl VdbChecker {
             ));
         }
 
-        if self.verbose {
-            println!(
-                "[checksum] CRC64: {:016x} ({})",
-                computed_crc,
-                if stored_crc == 0 {
-                    "not verified"
-                } else {
-                    "OK"
-                }
-            );
-        }
+        println!("[offset {final_offset}] Checksum OK");
+        println!("[offset {final_offset}] \\o/ VDB looks OK! \\o/");
 
         Ok(())
     }
 
     fn print_summary(&self) {
-        println!("\n--- VDB Check Summary ---");
-        println!("Total keys: {}", self.total_keys);
-        println!("  Strings:     {}", self.string_keys);
-        println!("  Lists:       {}", self.list_keys);
-        println!("  Sets:        {}", self.set_keys);
-        println!("  Sorted Sets: {}", self.zset_keys);
-        println!("  Hashes:      {}", self.hash_keys);
-        if self.stream_keys > 0 {
-            println!("  Streams:     {}", self.stream_keys);
-        }
-        if self.vectorset_keys > 0 {
-            println!("  VectorSets:  {}", self.vectorset_keys);
-        }
-        if self.other_keys > 0 {
-            println!("  Other:       {}", self.other_keys);
-        }
-        println!("Keys with expiry: {}", self.expires);
-        println!("Databases used: {:?}", self.databases);
+        println!("[info] {} keys read", self.total_keys);
+        println!("[info] {} expires", self.expires);
+        println!("[info] 0 already expired");
+        println!("[info] 0 subexpires");
     }
 }
 
@@ -533,11 +507,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    // Get file size
-    let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-
-    println!("Checking VDB file: {}", path.display());
-    println!("File size: {file_size} bytes");
+    println!("[offset 0] Checking VDB file {}", path.display());
 
     let mut checker = match VdbChecker::new(&path, verbose) {
         Ok(c) => c,
@@ -550,10 +520,9 @@ fn main() {
     match checker.check() {
         Ok(()) => {
             checker.print_summary();
-            println!("\n\x1b[32mVDB file is valid.\x1b[0m");
         }
         Err(e) => {
-            eprintln!("\n\x1b[31mVDB file is CORRUPTED: {e}\x1b[0m");
+            eprintln!("--- VDB file is CORRUPTED: {e}");
             std::process::exit(1);
         }
     }

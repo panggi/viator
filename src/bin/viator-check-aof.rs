@@ -160,10 +160,8 @@ impl AofChecker {
     }
 
     fn check(&mut self) -> Result<bool, String> {
-        let file_size = std::fs::metadata(&self.path).map(|m| m.len()).unwrap_or(0);
-
-        println!("Checking AOF file: {}", self.path.display());
-        println!("File size: {file_size} bytes");
+        println!("Start checking Old-Style AOF");
+        println!("[offset 0] Checking AOF file {}", self.path.display());
 
         let mut is_valid = true;
         let mut first_error: Option<String> = None;
@@ -192,7 +190,7 @@ impl AofChecker {
                 }
                 Err(e) => {
                     if first_error.is_none() {
-                        first_error = Some(format!("Error at offset {cmd_start}: {e}"));
+                        first_error = Some(format!("0x{:x}: {}", cmd_start, e));
                     }
                     is_valid = false;
 
@@ -206,13 +204,16 @@ impl AofChecker {
             }
         }
 
-        println!("\n--- AOF Check Summary ---");
-        println!("Total commands processed: {}", self.total_commands);
-        println!("Valid commands: {}", self.valid_commands);
-        println!("Last valid byte offset: {}", self.last_valid_position);
+        println!(
+            "AOF analyzed: size={}, ok_up_to={}, ok_up_to_line={}, diff={}",
+            self.position,
+            self.last_valid_position,
+            self.valid_commands,
+            self.position - self.last_valid_position
+        );
 
-        if let Some(err) = first_error {
-            println!("\nFirst error: {err}");
+        if let Some(err) = &first_error {
+            println!("{err}");
         }
 
         Ok(is_valid)
@@ -327,29 +328,29 @@ fn main() {
 
     match checker.check() {
         Ok(true) => {
-            println!("\n\x1b[32mAOF file is valid.\x1b[0m");
+            println!("AOF is valid");
         }
         Ok(false) => {
-            eprintln!("\n\x1b[31mAOF file has errors.\x1b[0m");
+            eprintln!("AOF is not valid");
 
             if fix {
-                println!("\nAttempting to fix by truncating at last valid command...");
+                println!("Trying to fix by truncating at last valid command...");
                 match checker.truncate_at_last_valid() {
                     Ok(()) => {
-                        println!("\x1b[32mAOF file has been repaired.\x1b[0m");
+                        println!("Successfully truncated AOF");
                     }
                     Err(e) => {
-                        eprintln!("\x1b[31mFailed to repair: {e}\x1b[0m");
+                        eprintln!("Failed to fix AOF: {e}");
                         std::process::exit(1);
                     }
                 }
             } else {
-                println!("\nUse --fix to truncate the file at the last valid command.");
+                println!("Use --fix to truncate the file at the last valid command.");
                 std::process::exit(1);
             }
         }
         Err(e) => {
-            eprintln!("\n\x1b[31mError checking AOF: {e}\x1b[0m");
+            eprintln!("Error checking AOF: {e}");
             std::process::exit(1);
         }
     }
