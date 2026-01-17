@@ -128,38 +128,14 @@ async fn main() -> anyhow::Result<()> {
         print_banner(config.port);
     }
 
-    // Check io_uring availability
-    let io_uring_available = viator::server::io_uring::is_available();
-    let use_io_uring = cli.io_uring && io_uring_available;
-
-    if cli.io_uring && !io_uring_available {
-        #[cfg(not(target_os = "linux"))]
-        warn!("io_uring requested but not available (not Linux)");
-
-        #[cfg(all(target_os = "linux", not(feature = "io-uring")))]
-        warn!("io_uring requested but not compiled in (build with --features io-uring)");
-
-        #[cfg(all(target_os = "linux", feature = "io-uring"))]
-        warn!("io_uring requested but kernel doesn't support it (requires Linux 5.1+)");
-    }
-
     info!(
-        "Viator {} starting on {}:{} (I/O backend: {})",
+        "Viator {} starting on {}:{}",
         VERSION,
         config.bind,
         config.port,
-        if use_io_uring { "io_uring" } else { "tokio" }
     );
 
-    // Run with io_uring if available and requested (Linux only)
-    #[cfg(all(target_os = "linux", feature = "io-uring"))]
-    {
-        if use_io_uring {
-            return run_with_io_uring(config);
-        }
-    }
-
-    // Fall back to tokio-based server
+    // Run the server
     run_with_tokio(config, cli.config).await
 }
 
@@ -243,48 +219,6 @@ async fn run_with_tokio(config: Config, config_path: Option<PathBuf>) -> anyhow:
     Ok(())
 }
 
-/// Run the server with io_uring (Linux only, high-performance mode).
-#[cfg(all(target_os = "linux", feature = "io-uring"))]
-fn run_with_io_uring(config: Config) -> anyhow::Result<()> {
-    use std::sync::Arc;
-    use viator::commands::CommandExecutor;
-    use viator::server::PubSubHub;
-    use viator::server::io_uring::runtime::{IoUringServerConfig, start_server};
-    use viator::storage::Database;
-
-    // Create database and executor (same as tokio mode)
-    let database = Arc::new(Database::with_config(
-        config.requirepass.clone(),
-        config.maxmemory,
-        config.maxmemory_policy,
-    ));
-    let pubsub = Arc::new(PubSubHub::new());
-    let executor = Arc::new(CommandExecutor::with_pubsub(database.clone(), pubsub));
-
-    // Configure io_uring server
-    let bind_addr = format!("{}:{}", config.bind, config.port)
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Invalid bind address: {}", e))?;
-
-    let uring_config = IoUringServerConfig {
-        bind_addr,
-        workers: std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1),
-        uring_config: viator::server::io_uring::IoUringConfig::high_throughput(),
-    };
-
-    // Start io_uring server (blocks until shutdown)
-    start_server(uring_config, database, executor)?;
-
-    // Clean up PID file
-    if let Some(ref pidfile) = config.pidfile {
-        let _ = std::fs::remove_file(pidfile);
-    }
-
-    Ok(())
-}
-
 /// CLI arguments
 struct CliArgs {
     config: Option<PathBuf>,
@@ -301,8 +235,6 @@ struct CliArgs {
     dir: Option<PathBuf>,
     help: bool,
     version: bool,
-    /// Use io_uring for I/O (Linux only, requires --features io-uring)
-    io_uring: bool,
 }
 
 fn parse_args(args: &[String]) -> anyhow::Result<CliArgs> {
@@ -321,7 +253,6 @@ fn parse_args(args: &[String]) -> anyhow::Result<CliArgs> {
         dir: None,
         help: false,
         version: false,
-        io_uring: false,
     };
 
     let mut i = 1;
@@ -388,9 +319,6 @@ fn parse_args(args: &[String]) -> anyhow::Result<CliArgs> {
             }
             "--version" | "-v" => {
                 cli.version = true;
-            }
-            "--io-uring" => {
-                cli.io_uring = true;
             }
             arg if arg.starts_with('-') => {
                 eprintln!("Unknown option: {arg}");
@@ -510,7 +438,6 @@ OPTIONS:
         --databases <NUM>    Set number of databases (default: 16)
         --appendonly         Enable AOF persistence
         --dir <DIR>          Set working directory
-        --io-uring           Use io_uring for I/O (Linux 5.1+ only)
     -h, --help               Print this help message
     -v, --version            Print version information
 
@@ -519,7 +446,6 @@ EXAMPLES:
     viator-server --port 6380                  Start on port 6380
     viator-server -c /etc/viator.conf          Load from config file
     viator-server -d --pidfile /var/run/viator.pid   Run as daemon
-    viator-server --io-uring                   Use io_uring (Linux only)
 "
     );
 }

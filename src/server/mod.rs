@@ -7,7 +7,6 @@ pub mod cluster;
 pub mod cluster_bus;
 pub mod config;
 mod connection;
-pub mod io_uring;
 pub mod metrics;
 pub mod pubsub;
 pub mod rate_limit;

@@ -144,7 +144,7 @@ impl CommandExecutor {
 
     /// Execute a command.
     pub async fn execute(&self, cmd: ParsedCommand, client: Arc<ClientState>) -> Result<Frame> {
-        // FAST PATH: Handle GET/SET without Box allocation or special command checks
+        // FAST PATH: Handle common commands without Box allocation or special command checks
         // These are the most common commands in benchmarks and production
         if !client.is_in_transaction() {
             match cmd.name.as_str() {
@@ -157,15 +157,69 @@ impl CommandExecutor {
                     };
                 }
                 "SET" if cmd.args.len() == 2 => {
-                    // Simple SET key value (no options)
+                    // Simple SET key value (no options) - use set_fast to skip LRU/expires
                     let db = self.database.get_db(client.db_index())?;
                     let key = Key::from(cmd.args[0].clone());
                     let value = cmd.args[1].clone();
-                    db.set(key, ViatorValue::String(value));
+                    db.set_fast(key, ViatorValue::String(value));
                     return Ok(Frame::ok());
+                }
+                "INCR" if cmd.args.len() == 1 => {
+                    let db = self.database.get_db(client.db_index())?;
+                    let key = Key::from(cmd.args[0].clone());
+                    // Fast path for INCR: read -> parse -> increment -> write
+                    let current = match db.get_string_fast(&key)? {
+                        Some(v) => match std::str::from_utf8(&v) {
+                            Ok(s) => match s.parse::<i64>() {
+                                Ok(n) => n,
+                                Err(_) => {
+                                    return Ok(Frame::error(
+                                        "ERR value is not an integer or out of range",
+                                    ))
+                                }
+                            },
+                            Err(_) => {
+                                return Ok(Frame::error(
+                                    "ERR value is not an integer or out of range",
+                                ))
+                            }
+                        },
+                        None => 0,
+                    };
+                    let new_value = match current.checked_add(1) {
+                        Some(n) => n,
+                        None => {
+                            return Ok(Frame::error(
+                                "ERR increment or decrement would overflow",
+                            ))
+                        }
+                    };
+                    db.set_fast(key, ViatorValue::string(new_value.to_string()));
+                    return Ok(Frame::Integer(new_value));
                 }
                 "PING" if cmd.args.is_empty() => {
                     return Ok(Frame::pong());
+                }
+                "LPUSH" if cmd.args.len() == 2 => {
+                    // Fast path for simple LPUSH key element
+                    let db = self.database.get_db(client.db_index())?;
+                    let key = Key::from(cmd.args[0].clone());
+                    let element = cmd.args[1].clone();
+                    return match db.lpush_fast(key, element) {
+                        Ok(len) => Ok(Frame::Integer(len as i64)),
+                        Err(e) => Ok(Frame::error(e.to_string())),
+                    };
+                }
+                "HSET" if cmd.args.len() == 3 => {
+                    // Fast path for simple HSET key field value
+                    let db = self.database.get_db(client.db_index())?;
+                    let key = Key::from(cmd.args[0].clone());
+                    let field = cmd.args[1].clone();
+                    let value = cmd.args[2].clone();
+                    return match db.hset_fast(key, field, value) {
+                        Ok(is_new) => Ok(Frame::Integer(if is_new { 1 } else { 0 })),
+                        Err(e) => Ok(Frame::error(e.to_string())),
+                    };
                 }
                 _ => {}
             }

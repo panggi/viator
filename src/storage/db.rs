@@ -443,6 +443,72 @@ impl Db {
         }
     }
 
+    /// Fast path for LPUSH - pushes a single element to the front of a list.
+    /// Returns Ok(new_len) on success, Err if key exists with wrong type.
+    #[inline]
+    pub fn lpush_fast(&self, key: Key, element: Bytes) -> Result<usize> {
+        // Try to get existing value
+        if let Some(mut entry) = self.data.get_mut(&key) {
+            if entry.is_expired() {
+                // Key expired, create new list
+                let list = ViatorValue::new_list();
+                let list_inner = list.as_list().expect("just created");
+                list_inner.write().push_front(element);
+                *entry = StoredValue::new(list);
+                return Ok(1);
+            }
+            // Key exists, check type
+            match &entry.value {
+                ViatorValue::List(l) => {
+                    let mut list = l.write();
+                    list.push_front(element);
+                    Ok(list.len())
+                }
+                _ => Err(CommandError::WrongType.into()),
+            }
+        } else {
+            // Key doesn't exist, create new list
+            let list = ViatorValue::new_list();
+            let list_inner = list.as_list().expect("just created");
+            list_inner.write().push_front(element);
+            self.data.insert(key, StoredValue::new(list));
+            Ok(1)
+        }
+    }
+
+    /// Fast path for HSET - sets a single field in a hash.
+    /// Returns Ok(true) if field was new, Ok(false) if field was updated.
+    #[inline]
+    pub fn hset_fast(&self, key: Key, field: Bytes, value: Bytes) -> Result<bool> {
+        // Try to get existing value
+        if let Some(mut entry) = self.data.get_mut(&key) {
+            if entry.is_expired() {
+                // Key expired, create new hash
+                let hash = ViatorValue::new_hash();
+                let hash_inner = hash.as_hash().expect("just created");
+                hash_inner.write().insert(field, value);
+                *entry = StoredValue::new(hash);
+                return Ok(true);
+            }
+            // Key exists, check type
+            match &entry.value {
+                ViatorValue::Hash(h) => {
+                    let mut hash = h.write();
+                    let is_new = hash.insert(field, value).is_none();
+                    Ok(is_new)
+                }
+                _ => Err(CommandError::WrongType.into()),
+            }
+        } else {
+            // Key doesn't exist, create new hash
+            let hash = ViatorValue::new_hash();
+            let hash_inner = hash.as_hash().expect("just created");
+            hash_inner.write().insert(field, value);
+            self.data.insert(key, StoredValue::new(hash));
+            Ok(true)
+        }
+    }
+
     /// Set only if key doesn't exist (SETNX).
     pub fn set_nx(&self, key: Key, value: ViatorValue) -> bool {
         self.set_nx_with_expiry(key, value, Expiry::Never)

@@ -932,17 +932,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "14c00403deb17c3221a1fe4fb571b9ed0370b3dcd116553c77fa294a3d918699"
 
 [[package]]
-name = "io-uring"
-version = "0.7.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fdd7bddefd0a8833b88a4b68f90dae22c7450d11b354198baee3874fd811b344"
-dependencies = [
- "bitflags",
- "cfg-if",
- "libc",
-]
-
-[[package]]
 name = "is-terminal"
 version = "0.4.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2352,7 +2341,6 @@ dependencies = [
  "hmac",
  "instant-distance",
  "integer-encoding",
- "io-uring",
  "jsonpath-rust",
  "libc",
  "lzf",
@@ -2372,9 +2360,7 @@ dependencies = [
  "serde_json",
  "sha1",
  "sha2",
- "slab",
  "smallvec",
- "socket2 0.5.10",
  "subtle",
  "test-case",
  "thiserror 2.0.17",
