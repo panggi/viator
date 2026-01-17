@@ -254,9 +254,12 @@ Viator is built on a modular architecture:
 
 For detailed documentation:
 
+- **[API.md](docs/API.md)** - RESP3 protocol and client integration
 - **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System design and module overview
+- **[CLUSTER.md](docs/CLUSTER.md)** - Cluster and Sentinel deployment guide
 - **[COMPATIBILITY.md](docs/COMPATIBILITY.md)** - Redis 8.4.0 command compatibility spec
 - **[CONFIG.md](docs/CONFIG.md)** - Complete configuration reference
+- **[DOCKER.md](docs/DOCKER.md)** - Docker deployment guide
 - **[PERSISTENCE.md](docs/PERSISTENCE.md)** - AOF and VDB persistence
 - **[SECURITY.md](docs/SECURITY.md)** - Authentication, ACL, TLS
 - **[VECTORSET.md](docs/VECTORSET.md)** - Vector similarity search
@@ -469,8 +472,11 @@ Viator targets Redis 8.4.0 protocol compatibility:
 │   ├── main.rs         # Server entry point (viator-server binary)
 │   └── lib.rs          # Library root
 ├── docs/
+│   ├── API.md          # RESP3 protocol and client guide
 │   ├── ARCHITECTURE.md # System design overview
+│   ├── CLUSTER.md      # Cluster and Sentinel guide
 │   ├── CONFIG.md       # Configuration reference
+│   ├── DOCKER.md       # Docker deployment guide
 │   ├── PERSISTENCE.md  # VDB/AOF documentation
 │   ├── SECURITY.md     # Security features
 │   └── VECTORSET.md    # Vector similarity search
