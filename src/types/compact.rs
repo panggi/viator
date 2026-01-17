@@ -98,15 +98,30 @@ impl IntSet {
         let offset = index * self.encoding.width();
         match self.encoding {
             IntEncoding::Int16 => {
-                let bytes: [u8; 2] = self.data[offset..offset + 2].try_into().unwrap();
+                let bytes: [u8; 2] =
+                    self.data[offset..offset + 2]
+                        .try_into()
+                        .unwrap_or_else(|_| {
+                            unreachable!("IntSet invariant: data aligned to encoding width")
+                        });
                 i16::from_le_bytes(bytes) as i64
             }
             IntEncoding::Int32 => {
-                let bytes: [u8; 4] = self.data[offset..offset + 4].try_into().unwrap();
+                let bytes: [u8; 4] =
+                    self.data[offset..offset + 4]
+                        .try_into()
+                        .unwrap_or_else(|_| {
+                            unreachable!("IntSet invariant: data aligned to encoding width")
+                        });
                 i32::from_le_bytes(bytes) as i64
             }
             IntEncoding::Int64 => {
-                let bytes: [u8; 8] = self.data[offset..offset + 8].try_into().unwrap();
+                let bytes: [u8; 8] =
+                    self.data[offset..offset + 8]
+                        .try_into()
+                        .unwrap_or_else(|_| {
+                            unreachable!("IntSet invariant: data aligned to encoding width")
+                        });
                 i64::from_le_bytes(bytes)
             }
         }
@@ -176,17 +191,26 @@ impl IntSet {
             let value = match old_encoding {
                 IntEncoding::Int16 => {
                     let offset = i * 2;
-                    let bytes: [u8; 2] = old_data[offset..offset + 2].try_into().unwrap();
+                    let bytes: [u8; 2] =
+                        old_data[offset..offset + 2].try_into().unwrap_or_else(|_| {
+                            unreachable!("IntSet invariant: old_data aligned to encoding width")
+                        });
                     i16::from_le_bytes(bytes) as i64
                 }
                 IntEncoding::Int32 => {
                     let offset = i * 4;
-                    let bytes: [u8; 4] = old_data[offset..offset + 4].try_into().unwrap();
+                    let bytes: [u8; 4] =
+                        old_data[offset..offset + 4].try_into().unwrap_or_else(|_| {
+                            unreachable!("IntSet invariant: old_data aligned to encoding width")
+                        });
                     i32::from_le_bytes(bytes) as i64
                 }
                 IntEncoding::Int64 => {
                     let offset = i * 8;
-                    let bytes: [u8; 8] = old_data[offset..offset + 8].try_into().unwrap();
+                    let bytes: [u8; 8] =
+                        old_data[offset..offset + 8].try_into().unwrap_or_else(|_| {
+                            unreachable!("IntSet invariant: old_data aligned to encoding width")
+                        });
                     i64::from_le_bytes(bytes)
                 }
             };
