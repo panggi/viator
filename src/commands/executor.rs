@@ -8,6 +8,7 @@ use crate::protocol::Frame;
 use crate::server::cluster::{ClusterManager, SlotCheck, key_slot};
 use crate::server::{ClientState, SharedPubSubHub};
 use crate::storage::Database;
+use crate::types::{Key, ViatorValue};
 use std::sync::Arc;
 use tracing::{debug, trace};
 
@@ -143,6 +144,33 @@ impl CommandExecutor {
 
     /// Execute a command.
     pub async fn execute(&self, cmd: ParsedCommand, client: Arc<ClientState>) -> Result<Frame> {
+        // FAST PATH: Handle GET/SET without Box allocation or special command checks
+        // These are the most common commands in benchmarks and production
+        if !client.is_in_transaction() {
+            match cmd.name.as_str() {
+                "GET" if cmd.args.len() == 1 => {
+                    let db = self.database.get_db(client.db_index())?;
+                    let key = Key::from(cmd.args[0].clone());
+                    return match db.get_string_fast(&key)? {
+                        Some(value) => Ok(Frame::Bulk(value)),
+                        None => Ok(Frame::Null),
+                    };
+                }
+                "SET" if cmd.args.len() == 2 => {
+                    // Simple SET key value (no options)
+                    let db = self.database.get_db(client.db_index())?;
+                    let key = Key::from(cmd.args[0].clone());
+                    let value = cmd.args[1].clone();
+                    db.set(key, ViatorValue::String(value));
+                    return Ok(Frame::ok());
+                }
+                "PING" if cmd.args.is_empty() => {
+                    return Ok(Frame::pong());
+                }
+                _ => {}
+            }
+        }
+
         trace!(
             "Executing command: {} with {} args",
             cmd.name,
