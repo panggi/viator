@@ -256,6 +256,7 @@ For detailed documentation:
 
 - **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System design and module overview
 - **[COMPATIBILITY.md](docs/COMPATIBILITY.md)** - Redis 8.4.0 command compatibility spec
+- **[CONFIG.md](docs/CONFIG.md)** - Complete configuration reference
 - **[PERSISTENCE.md](docs/PERSISTENCE.md)** - AOF and VDB persistence
 - **[SECURITY.md](docs/SECURITY.md)** - Authentication, ACL, TLS
 - **[VECTORSET.md](docs/VECTORSET.md)** - Vector similarity search
@@ -469,6 +470,7 @@ Viator targets Redis 8.4.0 protocol compatibility:
 │   └── lib.rs          # Library root
 ├── docs/
 │   ├── ARCHITECTURE.md # System design overview
+│   ├── CONFIG.md       # Configuration reference
 │   ├── PERSISTENCE.md  # VDB/AOF documentation
 │   ├── SECURITY.md     # Security features
 │   └── VECTORSET.md    # Vector similarity search
