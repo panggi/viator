@@ -1,6 +1,6 @@
 # Viator
 
-A complete Redis-compatible server implementation
+A high-performance, memory-safe Redis-compatible toolkit
 
 [![Crates.io](https://img.shields.io/crates/v/viator.svg)](https://crates.io/crates/viator)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
@@ -27,7 +27,7 @@ A complete Redis-compatible server implementation
 
 ## Overview
 
-Viator is a complete Redis-compatible server implementation featuring:
+Viator is a high-performance, memory-safe Redis-compatible toolkit featuring:
 
 - **Full RESP3 Protocol** - Wire-compatible with Redis clients
 - **All Core Data Types** - String, List, Hash, Set, Sorted Set, Stream, VectorSet
@@ -53,6 +53,9 @@ This installs all binaries to `~/.cargo/bin/`:
 - `viator-check-vdb` - VDB file integrity checker
 - `viator-check-aof` - AOF file checker
 - `viator-sentinel` - High availability monitor
+- `viator-dump` - Data export tool
+- `viator-load` - Data import tool
+- `viator-shake` - Live data synchronization
 
 ### Build from Source
 
@@ -431,6 +434,42 @@ viator-sentinel --master mymaster --host 127.0.0.1 --port 6379 --quorum 2
 viator-sentinel --master mymaster --host 127.0.0.1 --port 6379 --quorum 2 --down-after 5000
 ```
 
+### viator-dump
+
+Data export tool for backup and migration.
+
+```bash
+# Export to RDB format
+viator-dump -h 127.0.0.1 -p 6379 -o backup.rdb
+
+# Export to JSON format
+viator-dump -h 127.0.0.1 -p 6379 --format json -o backup.json
+```
+
+### viator-load
+
+Data import tool for restoration and migration.
+
+```bash
+# Import from RDB file
+viator-load -h 127.0.0.1 -p 6379 -i backup.rdb
+
+# Import from JSON file
+viator-load -h 127.0.0.1 -p 6379 --format json -i backup.json
+```
+
+### viator-shake
+
+Live data synchronization between instances.
+
+```bash
+# Sync from source to target
+viator-shake --source 127.0.0.1:6379 --target 127.0.0.1:6380
+
+# With filtering
+viator-shake --source 127.0.0.1:6379 --target 127.0.0.1:6380 --filter "user:*"
+```
+
 ## Compatibility
 
 Viator targets Redis 8.4.0 protocol compatibility:
@@ -459,7 +498,10 @@ Viator targets Redis 8.4.0 protocol compatibility:
 │   │   ├── viator-benchmark.rs  # Performance benchmarking
 │   │   ├── viator-check-vdb.rs  # VDB file checker
 │   │   ├── viator-check-aof.rs  # AOF file checker
-│   │   └── viator-sentinel.rs   # HA monitoring daemon
+│   │   ├── viator-sentinel.rs   # HA monitoring daemon
+│   │   ├── viator-dump.rs       # Data export tool
+│   │   ├── viator-load.rs       # Data import tool
+│   │   └── viator-shake.rs      # Live data sync
 │   ├── commands/       # Command implementations (200+ commands)
 │   ├── protocol/       # RESP3 parser and frame handling
 │   ├── server/         # TCP server, connections, cluster, sentinel
