@@ -18,8 +18,9 @@ use tokio::sync::broadcast;
 use tracing::{debug, trace};
 
 /// Buffer size for reading from socket.
-/// 64KB aligns with typical TCP receive window sizes for better throughput.
-const READ_BUFFER_SIZE: usize = 64 * 1024;
+/// 8KB is sufficient for most commands while being cache-friendly.
+/// Larger values (64KB) only help with bulk data transfers.
+const READ_BUFFER_SIZE: usize = 8 * 1024;
 
 /// Maximum number of responses to batch before flushing.
 /// This significantly improves throughput for pipelined requests.
