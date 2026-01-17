@@ -385,6 +385,15 @@ impl ServerMetrics {
         self.command_latency.record(latency);
     }
 
+    /// Record a batch of commands (for reduced atomic operation overhead).
+    /// Latency tracking is skipped for batched commands.
+    #[inline]
+    pub fn record_command_batch(&self, count: u64, bytes_in: u64, bytes_out: u64) {
+        self.commands_processed.fetch_add(count, Ordering::Relaxed);
+        self.bytes_received.fetch_add(bytes_in, Ordering::Relaxed);
+        self.bytes_sent.fetch_add(bytes_out, Ordering::Relaxed);
+    }
+
     /// Increment connection count.
     #[inline]
     pub fn connection_opened(&self) {

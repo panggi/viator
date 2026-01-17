@@ -11,7 +11,7 @@ use crate::storage::Database;
 use bytes::{Bytes, BytesMut};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::broadcast;
@@ -57,6 +57,12 @@ pub struct Connection {
     pending_writes: usize,
     /// Idle timeout for clients (0 = disabled)
     idle_timeout: Option<Duration>,
+    /// Batched metrics: commands processed since last flush
+    batched_commands: u64,
+    /// Batched metrics: bytes received since last flush
+    batched_bytes_in: u64,
+    /// Batched metrics: bytes sent since last flush
+    batched_bytes_out: u64,
 }
 
 impl Connection {
@@ -96,6 +102,9 @@ impl Connection {
             write_buffer: BytesMut::with_capacity(WRITE_BUFFER_INITIAL),
             pending_writes: 0,
             idle_timeout,
+            batched_commands: 0,
+            batched_bytes_in: 0,
+            batched_bytes_out: 0,
         }
     }
 
@@ -485,7 +494,6 @@ impl Connection {
     /// Handle a complete frame (command).
     async fn handle_frame(&mut self, frame: Frame, bytes_in: u64) -> Result<()> {
         trace!("Handling frame: {:?}", frame);
-        let start = Instant::now();
 
         // Parse command
         let cmd = match ParsedCommand::from_frame(frame) {
@@ -515,9 +523,10 @@ impl Connection {
         // Queue response (will be batched)
         let bytes_out = self.queue_frame(&response);
 
-        // Record metrics
-        self.metrics
-            .record_command(start.elapsed(), bytes_in, bytes_out as u64);
+        // Batch metrics locally (flushed on write flush)
+        self.batched_commands += 1;
+        self.batched_bytes_in += bytes_in;
+        self.batched_bytes_out += bytes_out as u64;
 
         Ok(())
     }
@@ -540,6 +549,18 @@ impl Connection {
         self.stream.write_all(&self.write_buffer).await?;
         self.write_buffer.clear();
         self.pending_writes = 0;
+
+        // Flush batched metrics (reduces atomic ops from per-command to per-flush)
+        if self.batched_commands > 0 {
+            self.metrics.record_command_batch(
+                self.batched_commands,
+                self.batched_bytes_in,
+                self.batched_bytes_out,
+            );
+            self.batched_commands = 0;
+            self.batched_bytes_in = 0;
+            self.batched_bytes_out = 0;
+        }
 
         // Shrink write buffer if it has grown too large
         // This prevents unbounded memory growth for long-lived connections
