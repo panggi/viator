@@ -24,7 +24,7 @@ sentinel = []
 tokio = { version = "1.43", features = ["rt-multi-thread", "io-util", "sync", "time", "macros", "fs"] }
 
 # Zero-copy byte handling
-bytes = "1.9"
+bytes = "1.11"
 
 # Fast byte searching (SIMD-optimized)
 memchr = "2.7"
